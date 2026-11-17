@@ -397,6 +397,10 @@ pub enum Command {
     /// forwarded to the running service, which exchanges the code and discovers
     /// the vehicles inside an open collection window. The client secret is used
     /// for the exchange only and never stored. Never accepts tokens.
+    /// `setup-fleet public-key --output PATH` saves the Hub's Fleet public key
+    /// (made on first use) as PEM for the domain's key file; `setup-fleet
+    /// register` reads {"clientId","clientSecret","domain","region"} and
+    /// registers the domain with Tesla inside an open collection window.
     #[cfg(unix)]
     #[command(name = "setup-fleet", args_conflicts_with_subcommands = true)]
     SetupFleet {
@@ -712,12 +716,25 @@ pub enum BackupPasswordAction {
     Status,
 }
 
-/// The first step of the Fleet sign-in (`setup-fleet begin`).
+/// The Fleet steps before the redeem: the sign-in's begin (M09-T09) and the
+/// partner prerequisites, the public key and the domain registration (M09-T18).
 #[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Subcommand)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub enum FleetSetupStep {
     /// Start a Fleet sign-in: print the regional authorise URL and its binding.
     Begin,
+    /// Save the Hub's Fleet public key as PEM, creating the key pair on first
+    /// use. Publish it at https://<domain>/.well-known/appspecific/com.tesla.3p.public-key.pem.
+    #[command(name = "public-key")]
+    PublicKey {
+        /// Where to write the PEM file. An existing file is replaced.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Register your domain with Tesla in your region. Reads one
+    /// {"clientId","clientSecret","domain","region"} JSON object from stdin;
+    /// the client secret is used once and never stored.
+    Register,
 }
 
 /// Collection-window verbs (docs/operations/collection-windows.md).

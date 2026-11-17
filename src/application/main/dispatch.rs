@@ -309,6 +309,40 @@ fn parse_setup_material(bytes: &[u8]) -> Result<SetupMaterial, OperatorRefusal> 
     })
 }
 
+/// The refusal of a Fleet partner verb: its fixed code and owner text.
+#[cfg(unix)]
+fn partner_refusal(refusal: tesatlas_hub::auth::fleet_credentials::FleetPartnerRefusal) -> OperatorRefusal {
+    OperatorRefusal::new(refusal.code, refusal.message)
+}
+
+/// Writes the Hub's Fleet public key, as the service answered it, to the
+/// path the user named: a new file beside it, then renamed over the path, so
+/// a reader never sees half a key and a link at the path is replaced, not
+/// followed. The file is public (0644).
+#[cfg(unix)]
+fn write_fleet_public_key(path: &Path, pem: &str) -> Result<(), OperatorRefusal> {
+    use std::{io::Write as _, os::unix::fs::OpenOptionsExt as _};
+    let unwritable = || OperatorRefusal::new("fleet_public_key_unwritable", "the public key file cannot be written at that path");
+    if !pem.starts_with("-----BEGIN PUBLIC KEY-----") || pem.len() > 4096 {
+        return Err(OperatorRefusal::new("fleet_partner_unavailable", "the service did not answer a public key"));
+    }
+    let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else { return Err(unwritable()) };
+    let mut temporary = name.to_owned();
+    temporary.push(format!(".{}.partial", std::process::id()));
+    let temporary = directory.join(temporary);
+    let written = (|| {
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o644).open(&temporary)?;
+        file.write_all(pem.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary);
+        return Err(unwritable());
+    }
+    Ok(())
+}
+
 /// Reads one bounded, non-secret input file (a grant or a trust document).
 fn read_bounded_input(path: &Path, maximum: usize, what: &str) -> Result<Vec<u8>, OperatorRefusal> {
     let file = fs::File::open(path)
@@ -372,17 +406,40 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             all_vehicles,
         } => {
             use tesatlas_hub::auth::credential_sign_in::{FleetSignInStep, check_fleet_sign_in_input};
+            use operator::cli::FleetSetupStep;
+            // The partner prerequisites (M09-T18): the key export reads no
+            // input and the Hub writes the PEM it is answered here; the
+            // registration's input is checked as the service will read it.
+            if let Some(FleetSetupStep::PublicKey { output }) = step {
+                let output = absolute_path(output)?;
+                let result = operator::channel::exchange(stream, &OperatorRequest::FleetPublicKey, FORWARD_TIMEOUT)?;
+                write_fleet_public_key(&output, result["publicKeyPem"].as_str().unwrap_or_default())?;
+                let report = serde_json::json!({
+                    "status": "public_key_saved",
+                    "path": output,
+                    "publishAt": tesatlas_hub::auth::fleet_credentials::FLEET_PUBLIC_KEY_WELL_KNOWN_PATH,
+                });
+                println!("{}", serde_json::to_string(&report)?);
+                return Ok(());
+            }
             let bytes = read_bounded_migration_secret(std::io::stdin(), SETUP_INPUT_MAX_BYTES)
                 .map_err(|_| setup_input_invalid("setup-fleet input is unreadable or larger than 4 KiB"))?;
-            let begin = matches!(step, Some(operator::cli::FleetSetupStep::Begin));
-            check_fleet_sign_in_input(if begin { FleetSignInStep::Begin } else { FleetSignInStep::Redeem }, &bytes)
-                .map_err(setup_refusal)?;
+            let begin = matches!(step, Some(FleetSetupStep::Begin));
+            let register = matches!(step, Some(FleetSetupStep::Register));
+            if register {
+                drop(tesatlas_hub::auth::fleet_credentials::read_fleet_partner_input(&bytes).map_err(partner_refusal)?);
+            } else {
+                check_fleet_sign_in_input(if begin { FleetSignInStep::Begin } else { FleetSignInStep::Redeem }, &bytes)
+                    .map_err(setup_refusal)?;
+            }
             let input = FleetSignInInput(
                 std::str::from_utf8(&bytes)
                     .map_err(|_| setup_input_invalid("setup-fleet input is not UTF-8"))?
                     .to_owned(),
             );
-            if begin {
+            if register {
+                OperatorRequest::FleetPartnerRegister { input }
+            } else if begin {
                 OperatorRequest::FleetSignInBegin { input }
             } else {
                 OperatorRequest::FleetSignInRedeem {
@@ -769,6 +826,38 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         });
         *self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())? = Some(binding);
         Ok(report)
+    }
+
+    /// `setup-fleet public-key` (M09-T18): the Hub's Fleet public key as PEM,
+    /// the key pair made on first use. The private key stays in the secrets
+    /// folder; nothing is sent.
+    fn fleet_public_key(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        let pem = tesatlas_hub::auth::fleet_credentials::fleet_public_key_pem(&self.data_dir).map_err(partner_refusal)?;
+        Ok(serde_json::json!({ "publicKeyPem": pem }))
+    }
+
+    /// `setup-fleet register` (M09-T18): obtains the partner token and
+    /// registers the user's domain in the user's region, then requires the
+    /// key Tesla holds for it to be the Hub's. The input, with its client
+    /// secret, is wiped when this returns; the secret is never stored.
+    fn fleet_partner_register(&self, input: FleetSignInInput) -> Result<serde_json::Value, OperatorRefusal> {
+        let data_dir = self.data_dir.as_path();
+        let report = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|_| OperatorRefusal::new("fleet_partner_unavailable", "the registration could not start"))?;
+                    runtime
+                        .block_on(tesatlas_hub::auth::fleet_credentials::register_fleet_partner(data_dir, input.0.as_bytes()))
+                        .map_err(partner_refusal)
+                })
+                .join()
+                .unwrap_or_else(|_| Err(OperatorRefusal::new("fleet_partner_unavailable", "the registration stopped")))
+        });
+        drop(input);
+        report
     }
 
     /// `setup-fleet` (M09-T09): redeems the begun sign-in's code at the

@@ -251,6 +251,20 @@ pub trait ServiceBackend: Send + Sync {
             "this service has no Fleet sign-in",
         ))
     }
+    /// `setup-fleet public-key` (M09-T18): no send, so no window needed.
+    fn fleet_public_key(&self) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_partner_unavailable",
+            "this service has no Fleet partner registration",
+        ))
+    }
+    /// `setup-fleet register` (M09-T18). Called only while the window is Open.
+    fn fleet_partner_register(&self, _input: FleetSignInInput) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_partner_unavailable",
+            "this service has no Fleet partner registration",
+        ))
+    }
     /// Called only while the window is Closed, holding the import lock.
     fn recovery_export(
         &self,
@@ -451,6 +465,14 @@ impl OperatorHandler for OperatorService {
                 self.require_open_window()?;
                 self.backend
                     .fleet_sign_in_redeem(input, vehicle_id, all_vehicles)
+            }
+            // The Fleet partner verbs (M09-T18): the key export sends
+            // nothing; the registration needs an Open window and each of its
+            // sends asks the egress gate again.
+            OperatorRequest::FleetPublicKey => self.backend.fleet_public_key(),
+            OperatorRequest::FleetPartnerRegister { input } => {
+                self.require_open_window()?;
+                self.backend.fleet_partner_register(input)
             }
             OperatorRequest::RecoveryExport {
                 destination,

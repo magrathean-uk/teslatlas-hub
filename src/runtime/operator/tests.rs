@@ -106,6 +106,16 @@ impl ServiceBackend for FakeBackend {
         self.0.push(&format!("fleet_redeem:{}:{vehicle_id:?}:{all_vehicles}", input.0.len()));
         Ok(json!({ "status": "signed_in" }))
     }
+
+    fn fleet_public_key(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("fleet_public_key");
+        Ok(json!({ "publicKeyPem": "-----BEGIN PUBLIC KEY-----" }))
+    }
+
+    fn fleet_partner_register(&self, input: FleetSignInInput) -> Result<Value, OperatorRefusal> {
+        self.0.push(&format!("fleet_partner_register:{}", input.0.len()));
+        Ok(json!({ "status": "partner_registered" }))
+    }
 }
 
 /// The owner at the Hub Mac: answers the trust confirmation as told and
@@ -369,6 +379,34 @@ fn fleet_sign_in_operator_channel_needs_an_open_window() {
     assert_eq!(rig.calls.all(), vec!["fleet_begin:36".to_owned(), "fleet_redeem:36:Some(7):false".to_owned()]);
 }
 
+/// The Fleet partner verbs (M09-T18): the public key export sends nothing
+/// and needs no window; the domain registration is refused `window_closed`
+/// outside an Open window before the backend is asked, and its input, which
+/// holds the client secret, is never printed.
+#[test]
+fn fleet_partner_operator_channel_gates_the_registration_only() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let register = OperatorRequest::FleetPartnerRegister {
+        input: FleetSignInInput(r#"{"clientSecret":"fleet-secret-0002"}"#.to_owned()),
+    };
+    assert!(!format!("{register:?}").contains("fleet-secret-0002"));
+    rig.forward(&OperatorRequest::FleetPublicKey).expect("key export outside a window");
+    assert_eq!(rig.forward(&register).unwrap_err().code, "window_closed");
+    assert_eq!(rig.calls.all(), vec!["fleet_public_key".to_owned()]);
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(3_600)),
+    })
+    .expect("open");
+    rig.forward(&register).expect("forwarded inside the window");
+    assert_eq!(rig.calls.all(), vec!["fleet_public_key".to_owned(), "fleet_partner_register:36".to_owned()]);
+}
+
 #[test]
 fn collection_window_operator_channel_refuses_a_replayed_grant_and_bad_material() {
     let rig = Rig::new();
@@ -501,6 +539,8 @@ fn collection_window_operator_routes_every_operator_command() {
     assert_eq!(route(&["setup", "--all-vehicles"]), Route::Service);
     assert_eq!(route(&["setup-fleet"]), Route::Service);
     assert_eq!(route(&["setup-fleet", "begin"]), Route::Service);
+    assert_eq!(route(&["setup-fleet", "register"]), Route::Service);
+    assert_eq!(route(&["setup-fleet", "public-key", "--output", "key.pem"]), Route::Service);
     assert_eq!(route(&["configure-fleet-telemetry"]), Route::Refused("provider_parked"));
     for verb in [
         vec!["window", "status"],

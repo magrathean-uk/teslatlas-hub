@@ -192,6 +192,9 @@ fn source_credential_disabled_removed_inputs_are_rejected_by_the_parser() {
         vec!["setup-fleet", "begin", "--all-vehicles"],
         vec!["setup-fleet", "--client-secret", &key],
         vec!["setup-fleet", "--access-token-file", &key],
+        vec!["setup-fleet", "register", "--all-vehicles"],
+        vec!["setup-fleet", "register", "--client-secret", &key],
+        vec!["setup-fleet", "public-key", "--output", &key, "--vehicle-id", "7"],
         vec![
             "source-check", "--source", "postgresql://reader@127.0.0.1:9/sourcedb", "--car-id",
             "1", "--postgres-password-file", &key, "--history-only",
@@ -218,6 +221,10 @@ fn source_credential_disabled_removed_inputs_are_rejected_by_the_parser() {
         assert_eq!(output.status.code(), Some(2), "{case:?}: {text}");
         assert!(text.contains("unexpected argument"), "{case:?}: {text}");
     }
+    // The public key export names its file (M09-T18).
+    let output = hub.run(&["setup-fleet", "public-key"], TOKENS);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(stderr(&output).contains("--output"), "{}", stderr(&output));
     assert!(!hub.data().exists(), "no Hub state was created");
     assert_eq!(hub.endpoint.connections(), 0);
 }
@@ -232,6 +239,7 @@ fn source_credential_disabled_service_verbs_refuse_before_any_secret_read() {
         hub.secret("recovery.key"),
         hub.secret("export.tthcr"),
     );
+    let pem = hub.path("fleet-public-key.pem").to_str().expect("path").to_owned();
     let cases: Vec<Vec<&str>> = vec![
         vec!["setup", "--all-vehicles"],
         vec!["setup", "--vehicle-id", "7"],
@@ -239,6 +247,8 @@ fn source_credential_disabled_service_verbs_refuse_before_any_secret_read() {
         vec!["setup-fleet"],
         vec!["setup-fleet", "--all-vehicles"],
         vec!["setup-fleet", "--vehicle-id", "7"],
+        vec!["setup-fleet", "register"],
+        vec!["setup-fleet", "public-key", "--output", &pem],
         vec!["window", "status"],
         vec!["window", "close"],
         vec!["window", "trust", &trust],
@@ -261,6 +271,7 @@ fn source_credential_disabled_service_verbs_refuse_before_any_secret_read() {
     }
     let created: Vec<_> = fs::read_dir(hub.data()).expect("data").collect();
     assert!(created.is_empty(), "nothing was created in the data directory");
+    assert!(!Path::new(&pem).exists(), "no public key file was written");
     assert_eq!(hub.endpoint.connections(), 0, "no network connection");
 }
 

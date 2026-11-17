@@ -106,7 +106,7 @@ pub fn check_fleet_sign_in_input(step: FleetSignInStep, line: &[u8]) -> Result<(
 /// The first pass over an input object: only its keys are looked at, every
 /// value is skipped unread. A key naming a token, in any case, is a source
 /// credential and refused as one, before the second pass reads a value.
-fn refuse_token_keys(line: &[u8]) -> Result<(), CredentialCommandError> {
+pub fn refuse_token_keys(line: &[u8]) -> Result<(), CredentialCommandError> {
     struct Keys<'a>(&'a std::cell::Cell<bool>);
     impl<'de> Visitor<'de> for Keys<'_> {
         type Value = ();

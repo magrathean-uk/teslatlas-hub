@@ -253,6 +253,162 @@ fn fleet_discovery_code(error: &crate::collection::collector::CollectorError, ba
     }
 }
 
+/// Where Tesla fetches a registered domain's public key.
+pub const FLEET_PUBLIC_KEY_WELL_KNOWN_PATH: &str = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
+/// One bound per partner send (token, registration, key read), well inside
+/// the operator channel's wait.
+const PARTNER_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A refused Fleet partner verb (M09-T18): a fixed code and fixed owner text,
+/// never a provider body, the domain's answer or the client secret.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FleetPartnerRefusal {
+    pub code: &'static str,
+    pub message: &'static str,
+}
+
+impl FleetPartnerRefusal {
+    const fn new(code: &'static str, message: &'static str) -> Self {
+        Self { code, message }
+    }
+
+    fn settings_invalid() -> Self {
+        Self::new("fleet_partner_settings_invalid", "setup-fleet register reads one JSON object with exactly clientId, clientSecret, domain (a host name such as example.com) and region (na, eu or cn)")
+    }
+
+    fn key(error: crate::fleet_api::partner::keys::FleetKeyError) -> Self {
+        use crate::fleet_api::partner::keys::FleetKeyError;
+        match error {
+            FleetKeyError::Busy => Self::new("fleet_partner_key_busy", "another request is using the Hub's Fleet key; try again"),
+            FleetKeyError::Storage => Self::new("fleet_partner_key_storage", "the Hub's Fleet key cannot be created or read in its secrets folder"),
+            FleetKeyError::Unsafe => Self::new("fleet_partner_key_unsafe", "the Hub's Fleet key file is not a private file of this user; it was left unchanged"),
+            FleetKeyError::Invalid => Self::new("fleet_partner_key_invalid", "the Hub's Fleet key file is not a P-256 key; it was left unchanged"),
+            FleetKeyError::Generation => Self::new("fleet_partner_key_generation", "the Hub could not create its Fleet key"),
+        }
+    }
+
+    fn partner(error: crate::fleet_api::partner::PartnerError) -> Self {
+        use crate::fleet_api::partner::PartnerError;
+        match error {
+            PartnerError::InvalidInput => Self::settings_invalid(),
+            PartnerError::WindowClosed => Self::new(crate::auth::credential_sign_in::WINDOW_CLOSED, "Fleet partner registration needs an open collection window"),
+            PartnerError::ProviderParked => Self::new("provider_parked", "Fleet partner registration is not offered on this Hub"),
+            PartnerError::Timeout => Self::new("fleet_partner_timeout", "Tesla did not answer in time; nothing is retried, try again"),
+            PartnerError::Transport => Self::new("fleet_partner_transport", "Tesla could not be reached; check the network and try again"),
+            PartnerError::InvalidResponse => Self::new("fleet_partner_invalid_response", "Tesla's answer was not understood"),
+            PartnerError::Authentication => Self::new("fleet_partner_auth_failed", "Tesla refused the client id or client secret of your developer application"),
+            PartnerError::PublicKeyUnreachable => Self::new("fleet_partner_public_key_unreachable", "Tesla cannot fetch the public key file at https://<your domain>/.well-known/appspecific/com.tesla.3p.public-key.pem; publish this Hub's public key there (setup-fleet public-key) and try again"),
+            PartnerError::PublicKeyMismatch => Self::new("fleet_partner_public_key_mismatch", "the public key Tesla holds for your domain is not this Hub's key; publish this Hub's public key (setup-fleet public-key) at /.well-known/appspecific/com.tesla.3p.public-key.pem and try again"),
+            PartnerError::OverLimit => Self::new("fleet_partner_over_limit", "Tesla refused the request for its rate or billing limit; try again later"),
+            PartnerError::Registration => Self::new("fleet_partner_registration_failed", "Tesla refused to register the domain"),
+        }
+    }
+}
+
+impl std::fmt::Display for FleetPartnerRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for FleetPartnerRefusal {}
+
+/// `setup-fleet register`'s standard input: exactly these four keys. The
+/// strings are wiped on drop; the secret moves into a wiping buffer.
+#[derive(serde::Deserialize, Zeroize, ZeroizeOnDrop)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PartnerInput {
+    client_id: String,
+    client_secret: String,
+    domain: String,
+    region: String,
+}
+
+/// The checked registration input, holding the client secret until the
+/// registration consumes it.
+pub struct FleetPartnerSettings {
+    region: FleetRegion,
+    domain: String,
+    credentials: crate::fleet_api::partner::PartnerCredentials,
+}
+
+impl std::fmt::Debug for FleetPartnerSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FleetPartnerSettings([redacted])")
+    }
+}
+
+/// Reads `setup-fleet register`'s input, as the operator command checks it
+/// before forwarding and the service reads it again. A key naming a token,
+/// in any case, is refused `source_credential_disabled` from the keys alone,
+/// before any value is read; any other shape, an unknown region, an invalid
+/// client id, secret or domain is `fleet_partner_settings_invalid`.
+pub fn read_fleet_partner_input(line: &[u8]) -> Result<FleetPartnerSettings, FleetPartnerRefusal> {
+    use crate::auth::credential_sign_in::{SOURCE_CREDENTIAL_DISABLED_TEXT, refuse_token_keys};
+    use crate::fleet_api::partner::{PartnerCredentials, validate_domain};
+    refuse_token_keys(line).map_err(|error| FleetPartnerRefusal::new(error.code(), SOURCE_CREDENTIAL_DISABLED_TEXT))?;
+    let mut input: PartnerInput = serde_json::from_slice(line).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let region = FleetRegion::from_storage_code(&input.region).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let client_id = FleetClientId::parse(&input.client_id).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let domain = validate_domain(&input.domain).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let secret = Zeroizing::new(std::mem::take(&mut input.client_secret));
+    let credentials = PartnerCredentials::new(client_id, secret).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    Ok(FleetPartnerSettings { region, domain, credentials })
+}
+
+/// `setup-fleet public-key` inside the service: the Hub's Fleet public key
+/// as PEM, the key pair made on first use under `data_dir/secrets` (which
+/// backups exclude). The private key is never read out. Nothing is sent.
+pub fn fleet_public_key_pem(data_dir: &Path) -> Result<String, FleetPartnerRefusal> {
+    crate::fleet_api::partner::keys::ensure_command_key(data_dir)
+        .map(|key| key.public_pem().to_owned())
+        .map_err(FleetPartnerRefusal::key)
+}
+
+/// `setup-fleet register` inside the service (design T-B3). Order, so that a
+/// refusal sends nothing it need not:
+/// 1. the input (token-named keys refused from the keys alone);
+/// 2. the Hub's key pair, made on first use;
+/// 3. the partner token (client credentials) and the registration, each
+///    asking the window's egress gate (`window_closed` outside a window);
+/// 4. the key Tesla then holds for the domain must be the Hub's.
+///
+/// A domain already registered is success. The client secret is wiped when
+/// the token request ends and is never stored.
+pub async fn register_fleet_partner(data_dir: &Path, line: &[u8]) -> Result<serde_json::Value, FleetPartnerRefusal> {
+    register_fleet_partner_with(data_dir, line, |region| {
+        crate::fleet_api::partner::PartnerApi::new(region, PARTNER_SEND_TIMEOUT)
+    })
+    .await
+}
+
+async fn register_fleet_partner_with(
+    data_dir: &Path,
+    line: &[u8],
+    client: impl FnOnce(FleetRegion) -> Result<crate::fleet_api::partner::PartnerApi, crate::fleet_api::partner::PartnerError>,
+) -> Result<serde_json::Value, FleetPartnerRefusal> {
+    use crate::fleet_api::partner::Registration;
+    let settings = read_fleet_partner_input(line)?;
+    let key = crate::fleet_api::partner::keys::ensure_command_key(data_dir).map_err(FleetPartnerRefusal::key)?;
+    let FleetPartnerSettings { region, domain, credentials } = settings;
+    let api = client(region).map_err(FleetPartnerRefusal::partner)?;
+    let registration = api.register(&domain, credentials, &key).await.map_err(|error| {
+        let refusal = FleetPartnerRefusal::partner(error);
+        tracing::warn!(code = refusal.code, "Fleet partner registration refused");
+        refusal
+    })?;
+    tracing::info!("Fleet partner domain registered");
+    Ok(serde_json::json!({
+        "status": "partner_registered",
+        "registration": match registration {
+            Registration::Registered => "registered",
+            Registration::AlreadyRegistered => "already_registered",
+        },
+        "domain": domain,
+        "region": region.storage_code(),
+    }))
+}
+
 pub fn validate_stored_fleet_credentials(entry: &crate::CredentialVaultEntry, _data_dir: &Path) -> Result<(), FleetCredentialError> {
     validate_stored_fleet_credentials_after(entry.vault(), || {})
 }
@@ -1077,5 +1233,172 @@ mod n1_src_auth_fleet_credentials_rs_display_tests {
         check_fleet_credential_error(FleetCredentialError::Cipher(example()));
         check_fleet_credential_error(FleetCredentialError::Key(example()));
         check_fleet_credential_error(FleetCredentialError::Store(example()));
+    }
+}
+
+/// The Fleet partner verbs inside the service (M09-T18), against an
+/// in-process Tesla double: no network, no Keychain.
+#[cfg(test)]
+mod fleet_partner_service_tests {
+    use super::*;
+    use crate::fleet_api::{
+        in_process::{InProcessAnswer, InProcessTransport},
+        partner::{PartnerApi, PartnerError},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const SECRET: &str = "synthetic-partner-secret-0001";
+    const TOKEN: &str = r#"{"access_token":"synthetic-partner-bearer","token_type":"Bearer","expires_in":3600}"#;
+
+    fn input(domain: &str) -> String {
+        format!(r#"{{"clientId":"synthetic-client","clientSecret":"{SECRET}","domain":"{domain}","region":"eu"}}"#)
+    }
+
+    fn answer(status: u16, body: &str) -> InProcessAnswer {
+        Ok(http::Response::builder().status(status).body(body.as_bytes().to_vec()).unwrap())
+    }
+
+    /// Tesla's three answers: token, registration, then the key it holds.
+    async fn run(data: &Path, line: &str, registration: (u16, String), held: String) -> (Result<serde_json::Value, FleetPartnerRefusal>, usize) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let transport = InProcessTransport::new(move |_| {
+            let result = match count.fetch_add(1, Ordering::SeqCst) {
+                0 => answer(200, TOKEN),
+                1 => answer(registration.0, &registration.1),
+                _ => answer(200, &held),
+            };
+            async { result }
+        });
+        let result = register_fleet_partner_with(data, line.as_bytes(), |region| {
+            assert_eq!(region, FleetRegion::EuropeMiddleEastAndAfrica);
+            Ok(PartnerApi::stubbed_for_test(region, transport))
+        })
+        .await;
+        (result, calls.load(Ordering::SeqCst))
+    }
+
+    fn held(hex: &str) -> String {
+        format!(r#"{{"response":{{"public_key":"{hex}"}}}}"#)
+    }
+
+    fn hub_key_hex(data: &Path) -> String {
+        crate::fleet_api::partner::keys::ensure_command_key(data).unwrap().public_point_hex()
+    }
+
+    fn files_hold(dir: &Path, needle: &str) -> bool {
+        fs::read_dir(dir).unwrap().flatten().any(|entry| {
+            let path = entry.path();
+            if path.is_dir() { files_hold(&path, needle) } else {
+                fs::read(&path).is_ok_and(|bytes| bytes.windows(needle.len()).any(|w| w == needle.as_bytes()))
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn fleet_partner_register_reports_registration_and_never_keeps_the_secret() {
+        let tmp = crate::private_tempdir().unwrap();
+        let hex = hub_key_hex(tmp.path());
+        for (registration, expected) in [
+            ((200, r#"{"response":{"domain":"synthetic.example.test"}}"#.to_owned()), "registered"),
+            ((409, r#"{"error":"already_registered"}"#.to_owned()), "already_registered"),
+        ] {
+            let (result, sends) = run(tmp.path(), &input("Synthetic.Example.Test"), registration, held(&hex.to_ascii_uppercase())).await;
+            let report = result.unwrap();
+            assert_eq!(report, serde_json::json!({
+                "status": "partner_registered", "registration": expected,
+                "domain": "synthetic.example.test", "region": "eu",
+            }));
+            assert_eq!(sends, 3);
+            assert!(!report.to_string().contains(SECRET));
+        }
+        assert!(!files_hold(tmp.path(), SECRET), "the client secret is never stored");
+    }
+
+    /// The key file at the domain: missing is unreachable, another key is a
+    /// mismatch; neither echoes Tesla's text.
+    #[tokio::test]
+    async fn fleet_partner_register_refuses_an_unreachable_or_foreign_key() {
+        let tmp = crate::private_tempdir().unwrap();
+        let hex = hub_key_hex(tmp.path());
+        let mut foreign = hex.clone();
+        foreign.replace_range(128.., if hex.ends_with('0') { "11" } else { "00" });
+        let registered = || (200, r#"{"response":{"domain":"synthetic.example.test"}}"#.to_owned());
+        for (registration, held_key, code, sends) in [
+            ((400, r#"{"error":"public_key_not_found","error_description":"synthetic-echo"}"#.to_owned()), held(&hex), "fleet_partner_public_key_unreachable", 2),
+            (registered(), held(&foreign), "fleet_partner_public_key_mismatch", 3),
+            ((409, r#"{"error":"already_registered"}"#.to_owned()), held(&foreign), "fleet_partner_public_key_mismatch", 3),
+            ((401, "synthetic-echo".to_owned()), held(&hex), "fleet_partner_auth_failed", 2),
+        ] {
+            let (result, count) = run(tmp.path(), &input("synthetic.example.test"), registration, held_key).await;
+            let refusal = result.unwrap_err();
+            assert_eq!((refusal.code, count), (code, sends));
+            assert!(!refusal.to_string().contains("synthetic-echo") && !refusal.to_string().contains(SECRET));
+        }
+    }
+
+    /// Exactly clientId, clientSecret, domain and region. A token-named key
+    /// is refused from the keys alone, even before a malformed value; nothing
+    /// is sent and no key is made for a refused input.
+    #[tokio::test]
+    async fn fleet_partner_register_input_is_exact_and_refuses_token_keys_first() {
+        let tmp = crate::private_tempdir().unwrap();
+        let valid = input("synthetic.example.test");
+        let token_cases = [
+            r#"{"clientId":"synthetic-client","accessToken":"x","clientSecret":"s","domain":"synthetic.example.test","region":"eu"}"#.to_owned(),
+            r#"{"REFRESH_TOKEN": not json"#.to_owned(),
+            valid.replace(r#""region":"eu""#, r#""region":"eu","partnerToken":"x""#),
+        ];
+        let invalid_cases = [
+            "not json".to_owned(),
+            valid.replace(r#","region":"eu""#, ""),
+            valid.replace(r#""region":"eu""#, r#""region":"eu","redirectUri":"x""#),
+            valid.replace(r#""region":"eu""#, r#""region":"eu","region":"eu""#),
+            valid.replace(r#""region":"eu""#, r#""region":"us""#),
+            valid.replace(SECRET, ""),
+            valid.replace(SECRET, "synthetic secret"),
+            valid.replace("synthetic.example.test", "https://synthetic.example.test/"),
+            valid.replace("synthetic.example.test", "127.0.0.1"),
+            valid.replace("synthetic-client", ""),
+            format!("{valid} {valid}"),
+        ];
+        for (cases, code) in [(&token_cases[..], "source_credential_disabled"), (&invalid_cases[..], "fleet_partner_settings_invalid")] {
+            for line in cases {
+                let refusal = read_fleet_partner_input(line.as_bytes()).unwrap_err();
+                assert_eq!(refusal.code, code, "{line}");
+                assert!(!refusal.to_string().contains(SECRET));
+                let (result, sends) = run(tmp.path(), line, (200, String::new()), String::new()).await;
+                assert_eq!((result.unwrap_err().code, sends), (code, 0), "{line}");
+            }
+        }
+        assert!(!tmp.path().join("secrets").exists(), "no key made for a refused input");
+        assert!(!format!("{:?}", read_fleet_partner_input(valid.as_bytes()).unwrap()).contains(SECRET));
+    }
+
+    #[test]
+    fn fleet_partner_public_key_is_made_once_and_holds_no_private_key() {
+        let tmp = crate::private_tempdir().unwrap();
+        let first = fleet_public_key_pem(tmp.path()).unwrap();
+        assert!(first.starts_with("-----BEGIN PUBLIC KEY-----") && !first.contains("PRIVATE"));
+        assert_eq!(fleet_public_key_pem(tmp.path()).unwrap(), first);
+        let missing = tmp.path().join("absent");
+        assert_eq!(fleet_public_key_pem(&missing).unwrap_err().code, "fleet_partner_key_storage");
+    }
+
+    /// Every library refusal has a fixed code; the window refusal is the
+    /// service's `window_closed`.
+    #[test]
+    fn fleet_partner_refusals_are_fixed_codes() {
+        use PartnerError::*;
+        for (error, code) in [
+            (WindowClosed, "window_closed"), (InvalidInput, "fleet_partner_settings_invalid"),
+            (Timeout, "fleet_partner_timeout"), (Transport, "fleet_partner_transport"),
+            (InvalidResponse, "fleet_partner_invalid_response"), (Authentication, "fleet_partner_auth_failed"),
+            (PublicKeyUnreachable, "fleet_partner_public_key_unreachable"),
+            (PublicKeyMismatch, "fleet_partner_public_key_mismatch"), (OverLimit, "fleet_partner_over_limit"),
+            (Registration, "fleet_partner_registration_failed"), (ProviderParked, "provider_parked"),
+        ] {
+            assert_eq!(FleetPartnerRefusal::partner(error).code, code);
+        }
     }
 }

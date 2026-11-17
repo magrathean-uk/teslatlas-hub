@@ -143,6 +143,14 @@ pub enum OperatorRequest {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     },
+    /// `setup-fleet public-key` (M09-T18): the Hub's Fleet public key, made
+    /// on first use. Nothing secret travels either way.
+    FleetPublicKey,
+    /// `setup-fleet register` (M09-T18): the user's domain registration,
+    /// with the client secret, which is used once and never stored.
+    FleetPartnerRegister {
+        input: FleetSignInInput,
+    },
     RecoveryExport {
         destination: PathBuf,
         recovery_key_file: PathBuf,
