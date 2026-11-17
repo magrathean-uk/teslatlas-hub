@@ -95,6 +95,19 @@ pub(crate) fn sample_elevation(
         tile.try_cell(r0 + 1, c0 + 1)?,
     ];
     if let [Some(v00), Some(v01), Some(v10), Some(v11)] = nodes {
+        // Reject invalid contributing nodes before they can average into range.
+        // A zero-weight neighbour does not affect an exact node or edge sample.
+        let weighted_nodes = [
+            (v00, (1.0 - fr) * (1.0 - fc)),
+            (v01, (1.0 - fr) * fc),
+            (v10, fr * (1.0 - fc)),
+            (v11, fr * fc),
+        ];
+        if weighted_nodes.iter().any(|(value, weight)| {
+            *weight > 0.0 && !(K_TERRAIN_MIN..=K_TERRAIN_MAX).contains(value)
+        }) {
+            return Ok(SampleOutcome::OutOfRange);
+        }
         let (v00, v01, v10, v11) = (
             f64::from(v00),
             f64::from(v01),
