@@ -150,9 +150,14 @@ impl Rig {
         let key = tmp.path().join("issuer.key");
         let trust = issuer.init(&key).expect("issuer init").to_bytes().expect("trust bytes");
         let probe = Arc::new(ManualProbe::new(0.2));
+        // A private data folder, as every admitted command requires, whatever the umask.
+        let data = tmp.path().join("data");
+        std::fs::create_dir(&data).expect("data dir");
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o700))
+            .expect("private data dir");
         let (controller, _) = WindowController::start(
             WindowConfig {
-                dir: super::window_dir(&tmp.path().join("data")),
+                dir: super::window_dir(&data),
                 claim_path: crate::collection::window::HostClaim::default_path(&tmp.path().join("home")),
                 host_id: HOST.to_owned(),
             },
@@ -731,6 +736,8 @@ fn collection_window_operator_restore_admission_follows_the_host_claim() {
     std::fs::create_dir_all(rig.data()).expect("data dir");
     let other = rig.tmp.path().join("other-data");
     std::fs::create_dir_all(&other).expect("other data dir");
+    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o700))
+        .expect("private other data dir");
     rig.controller
         .trust(&crate::collection::window::TrustDocument::parse(&rig.trust).expect("trust"))
         .expect("trusted");
