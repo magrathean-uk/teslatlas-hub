@@ -913,10 +913,9 @@ impl WindowController {
                 return Ok(last_accepted.min(grant.body.expires_at));
             }
         }
-        if state.close_reason == Some(CloseReason::Expired) {
-            return Ok(observed.min(grant.body.expires_at));
-        }
-        Ok(observed)
+        // A gate is never open past expiry, so no handback claims coverage after it
+        // (an expiry close, and a reboot or clock close observed after the deadline).
+        Ok(observed.min(grant.body.expires_at))
     }
 
     /// Completes a close: writes and syncs the handback, releases the host
