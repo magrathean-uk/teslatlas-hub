@@ -2837,3 +2837,22 @@ fn m04_t12_stream_checks_never_target_asleep_or_offline_cars() {
         );
     }
 }
+
+#[test]
+fn m04_t12_a_failed_stream_state_check_keeps_its_cooldown_timer() {
+    let mut bed = StreamBed::new();
+    let id = core_id(1);
+    let first = bed.core.clock.mono_now();
+    bed.dispatch(StreamEvent::VehicleOffline);
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(first), vec![id]);
+    // Model a failed check returning with the ordinary 30-second state timer.
+    bed.core.scheduler.vehicles.get_mut(&id).unwrap().next_check_due =
+        Some(first + Duration::from_secs(30));
+    bed.core.clock.advance(Duration::from_secs(30));
+    let now = bed.core.clock.mono_now();
+    assert!(bed.core.scheduler.due_offline_state_vehicles(now).is_empty());
+    assert_eq!(bed.core.scheduler.vehicles[&id].next_check_due,
+        Some(first + Duration::from_secs(60)));
+    bed.core.clock.advance(Duration::from_secs(30));
+    assert_eq!(bed.core.scheduler.due_offline_state_vehicles(bed.core.clock.mono_now()), vec![id]);
+}

@@ -2151,6 +2151,13 @@ impl VehicleScheduler {
             {
                 vehicle.next_check_due = None;
                 vehicle.stream_state_check_pending = false;
+            } else if vehicle.stream_state_check_pending
+                && let (Some(due), Some(last)) = (vehicle.next_check_due, vehicle.last_stream_state_check)
+            {
+                // A failed record may have rescheduled using the ordinary state
+                // interval. Preserve the stream cooldown in its due timer too,
+                // so the scheduler cannot busy-wait on a check it cannot send.
+                vehicle.next_check_due = Some(due.max(last + Duration::from_secs(60)));
             }
         }
         let mut due: Vec<(Instant, VehicleId)> = self
