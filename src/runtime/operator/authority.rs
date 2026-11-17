@@ -26,7 +26,7 @@ use super::{
     channel::{OperatorHandler, OperatorRequest, SetupMaterial},
     trust::{DialogConfirmation, TrustAuthority},
 };
-use crate::collection::collector::IntakeLatencyBoard;
+use crate::collection::collector::IntakeRecorder;
 use crate::collection::window::{
     AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, Handback, HandbackSource,
     HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
@@ -292,8 +292,8 @@ pub struct OperatorService {
     trust: TrustAuthority,
     window_dir: PathBuf,
     recovery: Arc<RecoveryGate>,
-    /// The collector's intake latency records (M04-T11).
-    intake: IntakeLatencyBoard,
+    /// The collector's intake latency recorder (M04-T11), read only.
+    intake: &'static IntakeRecorder,
 }
 
 impl OperatorService {
@@ -313,14 +313,14 @@ impl OperatorService {
             trust,
             window_dir: super::window_dir(data_dir),
             recovery: RecoveryGate::new(false),
-            intake: IntakeLatencyBoard::process_wide().clone(),
+            intake: IntakeRecorder::process_wide(),
         }
     }
 
-    /// Answers with the intake latency records of `board` (the process's own by
+    /// Answers with the intake latency figures of `recorder` (the process's own by
     /// default).
-    pub fn with_intake_latency(mut self, board: IntakeLatencyBoard) -> Self {
-        self.intake = board;
+    pub fn with_intake_latency(mut self, recorder: &'static IntakeRecorder) -> Self {
+        self.intake = recorder;
         self
     }
 
@@ -396,16 +396,9 @@ impl OperatorHandler for OperatorService {
             }
             OperatorRequest::WindowOpen { grant } => {
                 let bytes = Self::decode(&grant, GRANT_MAX_BYTES, "grant")?;
-                // The window's intake latency record starts empty, current before
-                // the window can start a run (M04-T11).
-                let opening = self.intake.opening();
-                match self.controller.open(&bytes) {
-                    Ok(opened) => self.intake.opened(opening, &opened),
-                    Err(refusal) => {
-                        self.intake.open_refused(opening);
-                        return Err(OperatorRefusal::window(refusal));
-                    }
-                }
+                self.controller
+                    .open(&bytes)
+                    .map_err(OperatorRefusal::window)?;
                 (self.kick)();
                 Ok(self.status())
             }

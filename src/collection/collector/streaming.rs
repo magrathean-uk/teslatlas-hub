@@ -1481,7 +1481,7 @@ fn process_stream_telemetry_inner(
     let intake = FrameIntake {
         accepted_at: queued_at,
         clock: scheduler.clock.as_ref(),
-        record: scheduler.write_guard().and_then(RunWriteGuard::intake),
+        guard: scheduler.write_guard(),
     };
     let stored = persist_stream_update_with_projection(
         store,
@@ -1505,11 +1505,25 @@ fn persist_stream_update(
 }
 
 /// A frame's intake latency (M04-T11): when the Hub accepted it, the clock its
-/// commit is read on and the run's record.
+/// commit is read on and the run that records it.
 struct FrameIntake<'a> {
     accepted_at: Instant,
     clock: &'a dyn CollectorClock,
-    record: Option<&'a IntakeRecord>,
+    guard: Option<&'a RunWriteGuard>,
+}
+
+/// A stream frame's commit: the writer's transaction (in a test, with the time the
+/// test gives it).
+fn commit_stream_frame(
+    writer: &mut StreamObservationWriter,
+    input: &ObservationInput,
+    received_at_ms: i64,
+    car_id: i64,
+) -> Result<StreamObservationResult, StoreError> {
+    let result = writer.accept(input, received_at_ms, car_id);
+    #[cfg(test)]
+    let _ = SUPERVISED_COLLECTOR_TEST_SEAM.try_with(|seam| seam.stream_commit_hook());
+    result
 }
 
 struct StreamContext {
@@ -1637,13 +1651,13 @@ fn persist_stream_update_with_projection(
         payload: stream_observation_payload(update),
     };
     let result = if let Some((context, queue_lag, intake)) = context.as_mut() {
-        let result = context.writer.accept(&input, received_at_ms, pack_car_id)?;
+        let result = commit_stream_frame(&mut context.writer, &input, received_at_ms, pack_car_id)?;
+        // The commit has just returned: the intake latency ends here (M04-T11),
+        // before any bookkeeping and the health report below.
+        let committed_at = intake.clock.mono_now();
         if matches!(result, StreamObservationResult::Committed { .. }) {
-            // Durable now: the intake latency ends here (M04-T11), before the
-            // health report below.
-            if let Some(record) = intake.record {
-                let committed_at = intake.clock.mono_now();
-                record.record(&[committed_at.saturating_duration_since(intake.accepted_at)]);
+            if let Some(guard) = intake.guard {
+                guard.record_intake(committed_at.saturating_duration_since(intake.accepted_at));
             }
             context.report_ingestion_health(update.timestamp_ms, *queue_lag);
         }

@@ -67,13 +67,17 @@ where
     // step, before the credential unit is touched or the store read. The run holds
     // the window from here to its end: every write boundary and every lease renewal
     // re-checks it, and the run ends when it ends (review round 2, finding 2).
+    // The window's grant sequence is read before and after the permit (M04-T11):
+    // equal reads name the window the permit belongs to, whose intake latencies the
+    // run records.
+    let window_seq = intake_window_seq();
     write_guard.window().hold(require_open_collection_window(
         &stream_endpoint,
         crate::fleet_api::egress::Provider::Legacy,
     )?);
-    // The run takes its window's intake latency record (M04-T11), which an earlier
-    // run of the same window may have filled; the window's open made it empty.
-    write_guard.take_intake_record();
+    if let Some(seq) = window_seq.filter(|seq| intake_window_seq() == Some(*seq)) {
+        write_guard.hold_intake_window(seq);
+    }
     let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
