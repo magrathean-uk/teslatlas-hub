@@ -267,6 +267,18 @@ impl Geocoder {
         wait_for_slot_every(&self.limiter, request_interval(&self.endpoint)).await?;
         admit(egress_guard)?;
 
+        // Scripted responses exercise the cached request path without network I/O.
+        #[cfg(test)]
+        if let Some((delay, status, retry_after_seconds)) =
+            tests::SCRIPTED_REFUSAL.with(|response| response.take())
+        {
+            tokio::time::sleep(delay).await;
+            return Err(RequestFailure {
+                error: GeocoderError::HttpStatus(status),
+                retry_after_seconds,
+            });
+        }
+
         // C7 R1 step 5: one GET with exactly three headers (R13, R14).
         let response = self
             .client
@@ -602,6 +614,46 @@ mod tests {
     };
 
     use axum::{Router, body::Body, response::Response, routing::any};
+
+    thread_local! {
+        pub(super) static SCRIPTED_REFUSAL:
+            std::cell::Cell<Option<(Duration, u16, Option<u64>)>> = const {
+                std::cell::Cell::new(None)
+            };
+    }
+
+    #[tokio::test]
+    async fn p21_f02_slow_refusals_keep_the_full_pause_after_the_response() {
+        for (status, retry_after, pause_ms) in [(403, None, 60_000), (429, Some(120), 120_000)] {
+            let temporary = crate::private_tempdir().unwrap();
+            let store = HubStore::initialize(temporary.path()).unwrap();
+            let geocoder = Geocoder::new(&config("https://geocoder.example/".into())).unwrap();
+            let started_at_ms = i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap();
+            // The collector's tick can already be old when enrichment starts.
+            let looked_up_at_ms = started_at_ms - 120_000;
+            SCRIPTED_REFUSAL.with(|response| {
+                response.set(Some((Duration::from_millis(120), status, retry_after)));
+            });
+            let result = geocoder
+                .reverse_cached(&store, Wgs84Point::new(1.0, 2.0).unwrap(), looked_up_at_ms)
+                .await;
+            assert!(matches!(result, Err(GeocoderError::HttpStatus(code)) if code == status));
+            let state: serde_json::Value = serde_json::from_str(
+                &store.geocoder_provider_state().unwrap().unwrap(),
+            )
+            .unwrap();
+            let since_ms = state["since_ms"].as_i64().unwrap();
+            let until_ms = state["until_ms"].as_i64().unwrap();
+            assert!(since_ms >= started_at_ms + 100, "the refusal was received after the delay");
+            assert_eq!(until_ms - since_ms, pause_ms);
+        }
+    }
 
     // Reverse-geocoder request, admission and pacing tests (C7 part A).
     #[path = "b3_c7_a_tests.rs"]
