@@ -1487,3 +1487,135 @@ fn production_start_admission_decides_as_the_whole_store_form() {
     config.collector.interval_seconds = 300;
     assert_eq!(same(&config, "no configured car"), Ok(false));
 }
+
+// M08-T25: the command-line `preflight` the Mac app's Start runs, its answers
+// for every state the app shows, and its reads.
+
+/// `preflight` as the app's Start runs it, on a read-only catalogue.
+fn start(config: &HubConfig) -> Result<serde_json::Value, String> {
+    start_preflight(config, |read| read(&HubStore::open_read_only(&config.data_dir)?)).map_err(|error| error.to_string())
+}
+
+/// Whether the `doctor` admits the selected provider's stored pair: the
+/// credential decision `preflight` gives for a configured Hub.
+fn doctor_admits(config: &HubConfig) -> bool {
+    let store = HubStore::open_read_only(&config.data_dir).expect("store");
+    let report = crate::diagnostics::inspect_hub(&store, config).expect("doctor");
+    let present = match config.collector.provider {
+        CollectorProvider::Legacy => report.credentials.legacy.present,
+        CollectorProvider::Fleet => report.credentials.fleet.present,
+    };
+    present && report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed)
+}
+
+/// The refusal `preflight` gives when the selected pair is absent or not admitted.
+fn credential_refusal(config: &HubConfig) -> String {
+    let store = HubStore::open_read_only(&config.data_dir).expect("store");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_epoch_ms().expect("clock")).expect("status");
+    crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).to_string()
+}
+
+/// A configured collecting Legacy Hub with the Hub's own login stored.
+fn seed_signed_in_hub(data: &Path) -> HubConfig {
+    let config = seed_awaiting_hub(data);
+    let store = HubStore::initialize(data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, data, "access-0001", "refresh-0001", None).expect("own login");
+    config
+}
+
+/// M08-T25: `preflight`'s answer and refusal for every state the app shows. The
+/// credential decision for a configured Hub is the `doctor`'s.
+#[test]
+fn start_preflight_answers_every_state_the_app_shows() {
+    let provider = |provider| serde_json::to_value(provider).expect("provider");
+    let ready = serde_json::json!({"status": "ready", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy)});
+
+    // Never configured: idle, the store is not created.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let fresh = temporary.path().join("fresh");
+    fs::create_dir(&fresh).expect("data folder");
+    assert_eq!(
+        start(&idle_start_config(&fresh)),
+        Ok(serde_json::json!({"status": "ready", "state": "idle", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy), "collectorEnabled": false})),
+    );
+    assert!(!fresh.join("hub.sqlite").exists(), "idle creates no store");
+
+    // Imported history and no login: the answer the imported-history sign-in requires.
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    let awaiting = serde_json::json!({"status": "ready", "state": "awaiting_sign_in", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy), "collectorEnabled": false});
+    assert_eq!(start(&config), Ok(awaiting.clone()), "awaiting the owner's sign-in");
+
+    // No login and Legacy refresh disabled: refused with the credential status.
+    let mut disabled = config.clone();
+    disabled.collector.legacy_auth.enabled = false;
+    assert!(!doctor_admits(&disabled));
+    assert_eq!(start(&disabled), Err(credential_refusal(&disabled)), "Legacy refresh disabled");
+
+    // A quarantined car: refused before any credential is read.
+    let store = HubStore::open_read_only(&data).expect("store");
+    let (vehicle, _, _) = store.configured_tesla_vehicles().expect("cars").into_iter().next().expect("the configured car");
+    let connection = rusqlite::Connection::open(data.join("hub.sqlite")).expect("writable");
+    let quarantine = |value: i64| {
+        connection
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(vehicle_id, car_id, last_observation_id, open_session_json, quarantined, updated_at_ms)
+                 VALUES (?1, 1, 0, CAST('{}' AS BLOB), ?2, 1)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET quarantined = excluded.quarantined",
+                rusqlite::params![vehicle.to_string(), value],
+            )
+            .expect("lifecycle row")
+    };
+    quarantine(1);
+    let unavailable = format!("Hub data is unavailable: {}", store.readiness_check().expect_err("quarantined"));
+    assert_eq!(start(&config), Err(unavailable.clone()), "quarantined, awaiting");
+
+    // The Hub's own login is stored: ready, and still refused while a car is quarantined.
+    let writable = HubStore::initialize(&data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&writable, &data, "access-0001", "refresh-0001", None).expect("own login");
+    assert_eq!(start(&config), Err(unavailable), "quarantined, signed in");
+    quarantine(0);
+    drop(connection);
+    assert!(doctor_admits(&config));
+    assert_eq!(start(&config), Ok(ready.clone()), "signed in");
+
+    // Tesla refused the login: attention, not a refusal.
+    write_auth_stop(&writable, "api_refused", None);
+    assert!(doctor_admits(&config));
+    assert_eq!(start(&config), Ok(ready.clone()), "Tesla refused the login");
+
+    // The Hub's collection stopped on the stored login: refused, needs a sign-in.
+    let vault = crate::auth::credential_vault::fixtures::legacy_vault(&writable, &data);
+    let slot = crate::auth::credential_envelope::CredentialSlot::OwnerApi;
+    let generation = vault.stored_generation(slot).expect("generation").expect("pair");
+    write_auth_stop(&writable, "signed_out", Some(generation));
+    let doctor = if doctor_admits(&config) { Ok(ready.clone()) } else { Err(credential_refusal(&config)) };
+    assert_eq!(start(&config), doctor, "stopped on the stored login");
+
+    // A refresh whose outcome is unknown: refused.
+    write_auth_stop(&writable, "api_refused", None);
+    vault.begin_refresh(slot, generation).expect("unresolved refresh");
+    assert!(!doctor_admits(&config));
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "refresh outcome unknown");
+    drop(vault);
+    drop(writable);
+    drop(store);
+
+    // A Fleet Hub: the stored Fleet pair is refused (M02-T02).
+    let fleet = temporary.path().join("fleet");
+    seed_fleet_ready_hub(&fleet);
+    let mut config = idle_start_config(&fleet);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = 30;
+    assert!(!doctor_admits(&config));
+    let refusal = credential_refusal(&config);
+    assert!(refusal.contains("source_credential_disabled"), "{refusal}");
+    assert_eq!(start(&config), Err(refusal), "Fleet");
+
+    // No configured car.
+    let empty = temporary.path().join("empty");
+    HubStore::initialize(&empty).expect("empty store");
+    let mut config = idle_start_config(&empty);
+    config.collector.interval_seconds = 300;
+    assert_eq!(start(&config), Err("at least one configured vehicle is required".to_owned()), "no configured car");
+}

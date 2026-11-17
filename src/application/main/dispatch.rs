@@ -1285,64 +1285,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 );
                 return Ok(());
             }
-            // A Hub that was never configured starts idle (M02-T21, DEC-115):
-            // the store is neither opened nor created here, and the serve
-            // admission applies the same rule. Anything else is checked below.
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "idle",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            // A configured Hub without the Hub's own login starts for the
-            // owner's sign-in, the serve admission's same rule (M09-T16, B2).
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_awaits_owner_sign_in(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "awaiting_sign_in",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            run_immutable_diagnostic(&config.data_dir, |store| {
-                store.catalogue_check()?;
-                let configured = store.configured_tesla_vehicles()?;
-                if configured.is_empty() {
-                    return Err("at least one configured vehicle is required".into());
-                }
-                let report = inspect_hub(store, &config)?;
-                let present = match config.collector.provider {
-                    CollectorProvider::Legacy => report.credentials.legacy.present,
-                    CollectorProvider::Fleet => report.credentials.fleet.present,
-                };
-                if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
-                    let status = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
-                    return Err(tesatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
-                }
-                Ok(())
+            let answer = tesatlas_hub::macos_launch_agent::start_preflight(&config, |read| {
+                run_immutable_diagnostic(&config.data_dir, read)
             })?;
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "ready",
-                    "version": tesatlas_hub::BUILD_VERSION,
-                    "provider": config.collector.provider,
-                })
-            );
+            println!("{answer}");
             return Ok(());
         }
         Command::ObservationWatermark { car_id } => {

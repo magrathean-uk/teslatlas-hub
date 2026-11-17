@@ -224,6 +224,74 @@ fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
     crate::auth::credential_keys::check_keyring(&secrets).map(drop).map_err(|error| refused(error.into()))
 }
 
+/// A read of the catalogue that the caller runs for [`start_preflight`]; the
+/// command-line `preflight` runs it on an immutable snapshot with its retries.
+pub type PreflightCatalogueRead<'a> = &'a mut dyn FnMut(&crate::db::HubStore) -> Result<(), Box<dyn std::error::Error>>;
+
+/// The command-line `preflight` (not `--history-only`): the check the Mac app's
+/// Start runs before it starts the service, with a 30-second limit; the app's
+/// diagnostics report shows it, and the imported-history sign-in requires its
+/// `awaiting_sign_in` answer. `read_catalogue` runs the configured Hub's read on
+/// the catalogue. The answer is the JSON line `preflight` prints; a refusal is
+/// the error it reports.
+pub fn start_preflight(
+    config: &crate::config::HubConfig,
+    read_catalogue: impl FnOnce(PreflightCatalogueRead<'_>) -> Result<(), Box<dyn std::error::Error>>,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    // A Hub that was never configured starts idle (M02-T21, DEC-115): the
+    // store is neither opened nor created here, and the serve admission
+    // applies the same rule. Anything else is checked below.
+    #[cfg(target_os = "macos")]
+    if hub_is_never_configured(config)? {
+        return Ok(serde_json::json!({
+            "status": "ready",
+            "state": "idle",
+            "version": crate::BUILD_VERSION,
+            "provider": config.collector.provider,
+            "collectorEnabled": false,
+        }));
+    }
+    // A configured Hub without the Hub's own login starts for the owner's
+    // sign-in, the serve admission's same rule (M09-T16, B2).
+    #[cfg(target_os = "macos")]
+    if hub_awaits_owner_sign_in(config)? {
+        return Ok(serde_json::json!({
+            "status": "ready",
+            "state": "awaiting_sign_in",
+            "version": crate::BUILD_VERSION,
+            "provider": config.collector.provider,
+            "collectorEnabled": false,
+        }));
+    }
+    read_catalogue(&mut |store| {
+        store.catalogue_check()?;
+        let configured = store.configured_tesla_vehicles()?;
+        if configured.is_empty() {
+            return Err("at least one configured vehicle is required".into());
+        }
+        let report = crate::diagnostics::inspect_hub(store, config)?;
+        let present = match config.collector.provider {
+            crate::config::CollectorProvider::Legacy => report.credentials.legacy.present,
+            crate::config::CollectorProvider::Fleet => report.credentials.fleet.present,
+        };
+        if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
+            let status = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, preflight_epoch_ms()?)?;
+            return Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into());
+        }
+        Ok(())
+    })?;
+    Ok(serde_json::json!({
+        "status": "ready",
+        "version": crate::BUILD_VERSION,
+        "provider": config.collector.provider,
+    }))
+}
+
+fn preflight_epoch_ms() -> io::Result<i64> {
+    let elapsed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(io::Error::other)?;
+    i64::try_from(elapsed.as_millis()).map_err(|_| io::Error::other("system clock exceeds epoch milliseconds"))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DevelopmentServeMode {
     Fixture,
