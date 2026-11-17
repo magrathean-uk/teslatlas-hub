@@ -310,8 +310,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var fleetPublicKey: HubFleetPublicKey?
     private var fleetStateReading: UInt64 = 0
     private var lastRenderedFleetStep: HubFleetStep?
-    /// Test seam: opens the Fleet sign-in's browser leg. Nil opens `TeslaAuthWindowController`.
-    var presentFleetSignIn: ((FleetOAuthFlow, @escaping (Result<TeslaAuthCodeGrant, Error>) -> Void) -> Void)?
+    /// The client secret of the sign-in attempt waiting for the Tesla window (between `begin` and
+    /// the redeem), held only in the attempt's wiping buffer, never in a control. Its identity is
+    /// the attempt's: a callback for any other attempt is ignored. `endFleetSignIn` wipes it.
+    private var fleetSignInSecret: HubFleetSecret?
+    private var quitObservation: NSObjectProtocol?
+    #if DEBUG
+    /// Every secret buffer the Fleet route made, so tests can check each was wiped.
+    private(set) var fleetSecretsForTests: [HubFleetSecret] = []
+    #endif
+    /// Test seam: opens the Fleet sign-in's browser leg; throwing stands for a window that could
+    /// not be built. Nil opens `TeslaAuthWindowController`.
+    var presentFleetSignIn: ((FleetOAuthFlow, @escaping (Result<TeslaAuthCodeGrant, Error>) -> Void) throws -> Void)?
     /// Test seam: asks where to save the public key.
     var presentFleetKeySavePanel: (NSSavePanel, NSWindow, @escaping (URL?) -> Void) -> Void = { panel, window, completion in
         panel.beginSheetModal(for: window) { response in completion(response == .OK ? panel.url : nil) }
@@ -508,6 +518,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             DispatchQueue.main.async { [weak self] in self?.runVerification() }
         }
         lifecycleObservation = controller.observeLifecycle { [weak self] _ in self?.updateFooter() }
+        // Quitting ends a sign-in attempt and wipes its secret.
+        quitObservation = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.fleetApplicationWillTerminate() }
     }
 
     private static func previewState(route: String?) -> HubOnboardingState? {
@@ -565,9 +579,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return true
     }
 
+    /// The app is quitting: a Fleet sign-in attempt ends and its secret is wiped. (A secret
+    /// buffer released with this window wipes itself as well.)
+    func fleetApplicationWillTerminate() {
+        endFleetSignIn()
+    }
+
     func windowWillClose(_ notification: Notification) {
         sourceEncryptionKey.stringValue = ""
-        fleetClientSecret.stringValue = ""
+        endFleetSignIn()
         fleetStateReading &+= 1
         resetMigrationProgress()
         closeMigrationSession()
@@ -618,6 +638,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         handoverAcknowledged = false
         importedAwaitingTakeover = false
         takeoverFailure = nil
+        endFleetSignIn()
         fleetStep = .prerequisites
         fleetResumeAfterConsent = .signIn
         fleetNotice = nil
@@ -1956,6 +1977,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         errorMessage = nil
         errorFromWindowCheck = false
         signInIdle = false
+        if state.route == .fleet { endFleetSignIn() }
         if state.route == .fleet, let previous = fleetStep.previous {
             fleetStep = previous
             fleetNotice = nil
@@ -1972,6 +1994,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             return
         }
         if !closesWindowOnCancel {
+            endFleetSignIn()
             resetMigrationProgress()
             closeMigrationSession()
             discardDiscoveryRetry()
@@ -3721,6 +3744,7 @@ extension OnboardingWindowController {
         if let saved = controller.savedFleetApplication, saved.sameRegistration(as: application) {
             application.registered = saved.registered
         }
+        fleetClientSecret.stringValue = ""
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.prepare", fallback: "Preparing Hub for the Fleet API…"),
                 operation: .fleet)
         controller.prepareFleetHub { [weak self] result in
@@ -3762,6 +3786,7 @@ extension OnboardingWindowController {
     }
 
     private func fleetSavePublicKey(to url: URL, afterStart: Bool) {
+        fleetClientSecret.stringValue = ""
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.key", fallback: "Saving the public key…"),
                 operation: .fleet)
         controller.saveFleetPublicKey(to: url) { [weak self] result in
@@ -3781,13 +3806,14 @@ extension OnboardingWindowController {
     }
 
     private func fleetRegister() {
-        guard let application = controller.savedFleetApplication else { return fleetDetailsMissing() }
-        let secret = fleetClientSecret.stringValue
-        // Typed once for this call: the field is cleared as it starts.
-        fleetClientSecret.stringValue = ""
+        // The registration owns the secret for its own call: taken from the field, which is
+        // cleared as the command starts, into a buffer the call wipes.
+        guard let secret = takeFleetSecret() else { return }
+        guard let application = controller.savedFleetApplication else { secret.wipe(); return fleetDetailsMissing() }
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.register", fallback: "Registering your domain with Tesla…"),
                 operation: .fleet)
         controller.registerFleetDomain(application, clientSecret: secret) { [weak self] result in
+            secret.wipe()
             guard let self else { return }
             self.setBusy(false)
             switch result {
@@ -3801,43 +3827,86 @@ extension OnboardingWindowController {
         }
     }
 
+    /// Takes the typed client secret into a wiping buffer and clears the field, as every command
+    /// of the route starts. A secret that cannot be passed is wiped and refused: the owner types
+    /// it again.
+    private func takeFleetSecret() -> HubFleetSecret? {
+        let secret = HubFleetSecret(fleetClientSecret.stringValue)
+        fleetClientSecret.stringValue = ""
+        #if DEBUG
+        fleetSecretsForTests.append(secret)
+        #endif
+        guard secret.isPassable else {
+            secret.wipe()
+            showInlineError(HubL10n.text("hub.fleetSetup.secretUnpassable",
+                fallback: "Enter the client secret of your Tesla developer application. A secret with a quote, a backslash or a control character cannot be used."))
+            return nil
+        }
+        return secret
+    }
+
+    /// Ends the sign-in attempt waiting for the Tesla window, if any: its secret is wiped and
+    /// its window closed, and a late callback of that attempt is ignored. Every path that ends
+    /// an attempt comes here: success, a refused or invalid begin, a window that could not be
+    /// built, a wrong `state`, access denied, a navigation failure, cancel, a closed window,
+    /// Back, a newer attempt and quit.
+    private func endFleetSignIn() {
+        fleetClientSecret.stringValue = ""
+        guard let secret = fleetSignInSecret else { return }
+        fleetSignInSecret = nil
+        secret.wipe()
+        if let auth = authWindow {
+            authWindow = nil
+            auth.close()
+            updateWindowCloseAvailability()
+            updateFooter()
+        }
+    }
+
     /// Section 10, step 4: begin, the browser leg on the registered redirect URI with its `state`
-    /// checked, then the redeem with the attempt's binding.
+    /// checked, then the redeem with the attempt's binding. The attempt owns the secret from
+    /// `begin` to the end of its redeem.
     private func fleetSignIn() {
         guard authWindow == nil else {
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
-        guard let application = controller.savedFleetApplication else { return fleetDetailsMissing() }
-        guard HubFleetApplication.passable(fleetClientSecret.stringValue) else {
-            showInlineError(HubL10n.text("hub.fleetSetup.secretUnpassable",
-                fallback: "Enter the client secret of your Tesla developer application. A secret with a quote, a backslash or a control character cannot be used."))
-            return
-        }
+        // A newer attempt ends the one before it.
+        endFleetSignIn()
+        guard let secret = takeFleetSecret() else { return }
+        guard let application = controller.savedFleetApplication else { secret.wipe(); return fleetDetailsMissing() }
+        fleetSignInSecret = secret
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.begin", fallback: "Preparing the Tesla sign-in…"),
                 operation: .fleet)
         controller.beginFleetSignIn(application) { [weak self] result in
-            guard let self else { return }
+            guard let self else { secret.wipe(); return }
             self.setBusy(false)
+            guard self.fleetSignInSecret === secret else { secret.wipe(); return }
             switch result {
-            case let .success(attempt): self.openFleetLogin(attempt)
-            case let .failure(error): self.fleetFailed(error)
+            case let .success(attempt):
+                self.openFleetLogin(attempt, secret: secret)
+            case let .failure(error):
+                self.endFleetSignIn()
+                self.fleetFailed(error)
             }
         }
     }
 
-    private func openFleetLogin(_ attempt: HubFleetSignInAttempt) {
+    private func openFleetLogin(_ attempt: HubFleetSignInAttempt, secret: HubFleetSecret) {
         HubAppLog.shared.record("authentication.started", category: "account", fields: ["provider": "fleet"])
         let finished: (Result<TeslaAuthCodeGrant, Error>) -> Void = { [weak self] result in
-            guard let self else { return }
+            guard let self else { secret.wipe(); return }
+            // A callback of an attempt that has ended (Back, close, quit, a newer attempt) is ignored.
+            guard self.fleetSignInSecret === secret else { secret.wipe(); return }
             self.authWindow = nil
             self.updateWindowCloseAvailability()
             self.updateFooter()
             switch result {
             case let .success(grant):
                 HubAppLog.shared.record("authentication.completed", category: "account", fields: ["provider": "fleet"])
-                self.fleetRedeem(attempt, code: grant.code)
+                self.fleetRedeem(attempt, code: grant.code, secret: secret)
             case let .failure(error):
+                self.endFleetSignIn()
                 if error as? TeslaAuthError == .cancelled {
                     HubAppLog.shared.record("authentication.cancelled", category: "account", fields: ["provider": "fleet"])
                     return
@@ -3847,11 +3916,11 @@ extension OnboardingWindowController {
                 self.fleetFailed(error)
             }
         }
-        if let presentFleetSignIn {
-            presentFleetSignIn(attempt.flow, finished)
-            return
-        }
         do {
+            if let presentFleetSignIn {
+                try presentFleetSignIn(attempt.flow, finished)
+                return
+            }
             let auth = try TeslaAuthWindowController(flow: attempt.flow, completion: finished)
             authWindow = auth
             updateWindowCloseAvailability()
@@ -3859,19 +3928,20 @@ extension OnboardingWindowController {
             auth.showWindow(nil)
             auth.window?.makeKeyAndOrderFront(nil)
         } catch {
+            endFleetSignIn()
             fleetFailed(error)
         }
     }
 
-    private func fleetRedeem(_ attempt: HubFleetSignInAttempt, code: String) {
-        let secret = fleetClientSecret.stringValue
-        // Typed once for this sign-in: the field is cleared as the redeem starts.
+    private func fleetRedeem(_ attempt: HubFleetSignInAttempt, code: String, secret: HubFleetSecret) {
         fleetClientSecret.stringValue = ""
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.redeem", fallback: "Signing in with Tesla…"),
                 operation: .fleet)
         controller.redeemFleetSignIn(attempt, code: code, clientSecret: secret) { [weak self] result in
+            secret.wipe()
             guard let self else { return }
             self.setBusy(false)
+            if self.fleetSignInSecret === secret { self.endFleetSignIn() }
             switch result {
             case let .success(.vehiclesConfigured(count)) where count > 0:
                 self.errorMessage = nil
@@ -3896,6 +3966,7 @@ extension OnboardingWindowController {
     }
 
     private func fleetDiscover(afterStart: Bool = false) {
+        fleetClientSecret.stringValue = ""
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.discover", fallback: "Finding your car…"), operation: .fleet)
         controller.discoverFleetVehicles { [weak self] result in
             guard let self else { return }
@@ -3929,6 +4000,7 @@ extension OnboardingWindowController {
     /// Section 10, step 6: the last page runs `setup-fleet activate`, only with the owner's
     /// consent on record.
     private func fleetActivate(afterStart: Bool = false) {
+        fleetClientSecret.stringValue = ""
         guard controller.fleetConsentInEffect else {
             fleetStep = fleetStepBehindConsent(.start)
             render()
@@ -4083,6 +4155,7 @@ extension OnboardingWindowController {
     var fleetStateUnknownForTests: String? { fleetStateUnknown }
     var errorMessageForTests: String? { errorMessage }
     var fleetSecretForTests: String { fleetClientSecret.stringValue }
+    var fleetSignInPendingForTests: Bool { fleetSignInSecret != nil }
     var fleetPublicKeyForTests: HubFleetPublicKey? { fleetPublicKey }
     var fleetConsentEnabledForTests: Bool { continueButton.isEnabled }
     func enterFleetSecretForTests(_ secret: String) {

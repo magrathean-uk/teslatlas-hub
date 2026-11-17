@@ -522,6 +522,224 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(fixture.runner.fleetVerbs, [], "nothing is sent from an unknown state")
     }
 
+    // MARK: The secret's lifetime (B1): each attempted operation owns it for exactly its own life
+
+    private final class Leg {
+        var flow: FleetOAuthFlow?
+        var done: ((Result<TeslaAuthCodeGrant, Error>) -> Void)?
+        var buffer: HubFleetSecret?
+    }
+
+    /// A consented Hub waiting for the sign-in, an attempt begun and its Tesla window open.
+    private func openAttempt(_ fixture: Fixture, secret: String = FleetSignInFlowTests.secret) throws -> Leg {
+        let window = fixture.window
+        if window.fleetStepForTests != .signIn || window.isBusyForTests {
+            try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        }
+        let leg = Leg()
+        window.presentFleetSignIn = { flow, done in leg.flow = flow; leg.done = done }
+        window.enterFleetSecretForTests(secret)
+        window.continueForTests()
+        XCTAssertEqual(window.fleetSecretForTests, "", "the field is cleared as begin starts")
+        try fixture.waitUntil { leg.done != nil }
+        leg.buffer = window.fleetSecretsForTests.last
+        XCTAssertEqual(leg.buffer?.isWiped, false, "held while the Tesla window is open")
+        XCTAssertTrue(window.fleetSignInPendingForTests)
+        return leg
+    }
+
+    private func assertEnded(_ fixture: Fixture, _ leg: Leg?, file: StaticString = #filePath, line: UInt = #line) {
+        let window = fixture.window
+        XCTAssertFalse(window.fleetSignInPendingForTests, "the attempt ended", file: file, line: line)
+        XCTAssertEqual(window.fleetSecretForTests, "", "no control holds the secret", file: file, line: line)
+        XCTAssertTrue(window.fleetSecretsForTests.allSatisfy(\.isWiped), "every secret buffer is wiped", file: file, line: line)
+        XCTAssertEqual(leg?.buffer?.isWiped ?? true, true, file: file, line: line)
+    }
+
+    /// After an ended attempt, its late callback redeems nothing.
+    private func assertLateCallbackIgnored(_ fixture: Fixture, _ leg: Leg, file: StaticString = #filePath, line: UInt = #line) throws {
+        let flow = try XCTUnwrap(leg.flow)
+        leg.done?(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)"))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(fixture.runner.call("redeem"), "a late callback of an ended attempt is ignored", file: file, line: line)
+    }
+
+    func testTheSecretIsWipedWhenTheSignInSucceeds() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        let flow = try XCTUnwrap(leg.flow)
+        leg.done?(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)"))
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .start && !fixture.window.isBusyForTests }
+        XCTAssertNotNil(fixture.runner.call("redeem"))
+        assertEnded(fixture, leg)
+    }
+
+    func testTheSecretIsWipedWhenBeginIsRefused() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        window.presentFleetSignIn = { _, _ in XCTFail("no browser after a refused begin") }
+        fixture.runner.results["begin"] = [.failure(HubActionError.commandExited(1, "sign_in_busy: another sign-in holds the vault"))]
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests && window.errorMessageForTests != nil }
+        assertEnded(fixture, nil)
+        XCTAssertEqual(window.fleetSecretsForTests.count, 1)
+    }
+
+    func testTheSecretIsWipedWhenTheBeginAnswerIsInvalid() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        window.presentFleetSignIn = { _, _ in XCTFail("no browser after an invalid begin answer") }
+        fixture.runner.results["begin"] = [.success(#"{"status":"sign_in_begun","slot":"fleet_api","authorizeUrl":"https://auth.example.com/","binding":"x","expiresAt":1}"#)]
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests && window.errorMessageForTests != nil }
+        XCTAssertEqual(window.errorMessageForTests,
+                       "Hub did not confirm the answer. Hub has checked where the set-up stands; continue from the step shown.")
+        assertEnded(fixture, nil)
+    }
+
+    func testTheSecretIsWipedWhenTheSignInWindowCannotBeBuilt() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        window.presentFleetSignIn = { _, _ in throw TeslaAuthError.invalidAuthorizationURL }
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests && window.errorMessageForTests != nil }
+        XCTAssertEqual(window.errorMessageForTests, TeslaAuthError.invalidAuthorizationURL.localizedDescription)
+        assertEnded(fixture, nil)
+        XCTAssertNil(fixture.runner.call("redeem"))
+    }
+
+    func testTheSecretIsWipedWhenTheCallbackHasAnotherState() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        let flow = try XCTUnwrap(leg.flow)
+        leg.done?(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=abandoned-attempt-state-000000000000"))
+        XCTAssertEqual(fixture.window.errorMessageForTests, TeslaAuthError.stateMismatch.localizedDescription)
+        assertEnded(fixture, leg)
+        XCTAssertNil(fixture.runner.call("redeem"))
+    }
+
+    func testTheSecretIsWipedWhenAccessIsDenied() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        let flow = try XCTUnwrap(leg.flow)
+        leg.done?(Self.grant(flow, url: "\(Self.redirect)?error=access_denied&state=\(flow.state)"))
+        XCTAssertEqual(fixture.window.errorMessageForTests,
+                       "Tesla did not grant vehicle information and vehicle location. Sign in with Tesla again and allow both on Tesla's consent page.")
+        assertEnded(fixture, leg)
+        XCTAssertNil(fixture.runner.call("redeem"))
+    }
+
+    func testTheSecretIsWipedWhenTheNavigationFails() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        leg.done?(.failure(URLError(.notConnectedToInternet)))
+        XCTAssertNotNil(fixture.window.errorMessageForTests)
+        assertEnded(fixture, leg)
+        XCTAssertNil(fixture.runner.call("redeem"))
+    }
+
+    func testTheSecretIsWipedWhenTheSignInIsCancelled() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        leg.done?(.failure(TeslaAuthError.cancelled))
+        assertEnded(fixture, leg)
+        XCTAssertNil(fixture.runner.call("redeem"))
+    }
+
+    func testTheSecretIsWipedWhenTheWindowCloses() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        fixture.window.close()
+        assertEnded(fixture, leg)
+        try assertLateCallbackIgnored(fixture, leg)
+    }
+
+    func testTheSecretIsWipedOnBack() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        fixture.window.backForTests()
+        XCTAssertEqual(fixture.window.fleetStepForTests, .publicKey)
+        assertEnded(fixture, leg)
+        try assertLateCallbackIgnored(fixture, leg)
+    }
+
+    func testTheSecretIsWipedWhenANewerAttemptStarts() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let first = try openAttempt(fixture)
+        let second = try openAttempt(fixture, secret: Self.secret + "-second")
+        XCTAssertEqual(first.buffer?.isWiped, true, "the newer attempt ended the first")
+        XCTAssertEqual(second.buffer?.isWiped, false)
+        try assertLateCallbackIgnored(fixture, first)
+        let flow = try XCTUnwrap(second.flow)
+        second.done?(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)"))
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .start && !fixture.window.isBusyForTests }
+        XCTAssertEqual(try Self.object(fixture.runner.call("redeem")?.stdin)["clientSecret"], Self.secret + "-second")
+        XCTAssertEqual(fixture.runner.fleetVerbs.filter { $0 == "redeem" }.count, 1)
+        assertEnded(fixture, second)
+    }
+
+    func testTheSecretIsWipedOnQuit() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let leg = try openAttempt(fixture)
+        // The handler NSApplication.willTerminateNotification runs (posting the real notification
+        // in the test host would also reach AppKit's and WebKit's own observers).
+        fixture.window.fleetApplicationWillTerminate()
+        assertEnded(fixture, leg)
+        try assertLateCallbackIgnored(fixture, leg)
+    }
+
+    func testALocallyInvalidSecretIsClearedAndWipedAndNothingRuns() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        window.enterFleetSecretForTests("with\"quote")
+        window.continueForTests()
+        XCTAssertEqual(window.errorMessageForTests,
+                       "Enter the client secret of your Tesla developer application. A secret with a quote, a backslash or a control character cannot be used.")
+        assertEnded(fixture, nil)
+        XCTAssertEqual(window.fleetSecretsForTests.count, 1)
+        XCTAssertEqual(fixture.runner.fleetVerbs, [])
+    }
+
+    func testTheRegistrationOwnsTheSecretForItsCallAndOtherCommandsClearTheField() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, registered: false)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .publicKey && !window.isBusyForTests }
+        // Saving the public key is a command of its own: a secret typed before it is cleared.
+        window.enterFleetSecretForTests(Self.secret)
+        window.presentFleetKeySavePanel = { _, _, done in done(fixture.home.appendingPathComponent("Desktop/key.pem")) }
+        window.saveFleetPublicKeyForTests()
+        try fixture.waitUntil { window.fleetPublicKeyForTests != nil && !window.isBusyForTests }
+        XCTAssertEqual(window.fleetSecretForTests, "")
+        XCTAssertFalse(window.continueEnabledForTests, "the registration needs the secret typed again")
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        XCTAssertEqual(window.fleetSecretForTests, "", "cleared as the registration starts")
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        XCTAssertEqual(window.fleetSecretsForTests.count, 1)
+        XCTAssertTrue(window.fleetSecretsForTests.allSatisfy(\.isWiped), "wiped when the registration ends")
+    }
+
     // MARK: The figures in effect (note 3)
 
     func testTheConsentPageStatesTheDefaultFiguresWhenNothingOverridesThem() throws {
@@ -629,6 +847,9 @@ final class FleetSignInFlowTests: XCTestCase {
 
         fixture.runner.results["begin"] = [.failure(HubActionError.commandExited(
             1, "window_closed: sign-in and vehicle discovery need an open collection window"))]
+        XCTAssertEqual(window.fleetSecretForTests, "", "the refused attempt ended with its secret")
+        XCTAssertFalse(window.continueEnabledForTests, "a new attempt needs the secret typed again")
+        window.enterFleetSecretForTests(Self.secret)
         window.continueForTests()
         try fixture.waitUntil { !window.isBusyForTests && window.errorMessageForTests?.hasPrefix("This step") == true }
         XCTAssertEqual(window.errorMessageForTests,
@@ -706,15 +927,26 @@ final class FleetSignInFlowTests: XCTestCase {
     func testInputsCarryNoEscapeTheServiceRefusesAndNoTokenKey() throws {
         let application = HubFleetApplication(clientID: Self.clientID, region: .na, redirectURI: Self.redirect,
                                               domain: Self.domain)
-        for bad in ["with\"quote", "with\\backslash", "with\nnewline", "with\u{7}bell", "with\u{85}nel", ""] {
-            XCTAssertThrowsError(try HubController.fleetRegisterInput(application, clientSecret: bad), bad)
+        for bad in ["with\"quote", "with\\backslash", "with\nnewline", "with\u{7}bell", "with\u{85}nel", "with\u{7F}del", ""] {
+            XCTAssertThrowsError(try HubController.fleetRegisterInput(application, clientSecret: HubFleetSecret(bad)), bad)
         }
-        let input = try HubController.fleetRegisterInput(application, clientSecret: "ok/secret-é")
+        let secret = HubFleetSecret("ok/secret-é")
+        let input = try HubController.fleetRegisterInput(application, clientSecret: secret)
         let text = input.withBytes { String(decoding: $0, as: UTF8.self) }
         input.wipe()
-        XCTAssertFalse(text.replacingOccurrences(of: "\\/", with: "").contains("\\"), text)
+        XCTAssertEqual(text, #"{"clientId":"c0ffee00-1111-4222-8333-444455556666","clientSecret":"ok/secret-é","domain":"example.com","region":"na"}"#,
+                       "plain UTF-8 with no escape at all")
+        XCTAssertFalse(text.contains("\\"), text)
         XCTAssertFalse(text.lowercased().contains("token"))
         XCTAssertTrue(input.isWiped)
+        secret.wipe()
+        XCTAssertTrue(secret.isWiped)
+        XCTAssertEqual(secret.withBytes { $0.count }, 0, "a wiped secret yields no bytes")
+        XCTAssertThrowsError(try HubController.fleetRegisterInput(application, clientSecret: secret), "a wiped secret is not sent")
+        let foreign = HubFleetApplication(clientID: "quoted\"id", region: .eu, redirectURI: Self.redirect, domain: Self.domain)
+        XCTAssertThrowsError(try HubController.fleetRegisterInput(foreign, clientSecret: HubFleetSecret("ok"))) {
+            XCTAssertEqual(($0 as? HubFleetRefusal)?.code, "fleet_partner_settings_invalid")
+        }
         XCTAssertFalse(try HubController.fleetBeginInput(application).lowercased().contains("secret"))
 
         XCTAssertThrowsError(try HubFleetApplication.validated(clientID: "id", region: .eu,

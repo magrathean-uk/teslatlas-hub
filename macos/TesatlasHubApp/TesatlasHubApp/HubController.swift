@@ -8620,6 +8620,57 @@ enum HubFleetConsentReading: Equatable {
     case unreadable(setting: String)
 }
 
+/// The client secret of one attempted Fleet operation, held only in memory this object owns and
+/// wipes (M09-T12 B1): never in a control, a file, a log, a preference or the pasteboard. A
+/// registration owns one for its call; a sign-in attempt owns one from `begin` to the end of its
+/// redeem, and every path that ends the attempt wipes it. `deinit` wipes it too.
+final class HubFleetSecret {
+    private let storage: UnsafeMutableRawPointer
+    let count: Int
+    private let lock = NSLock()
+    private var wiped = false
+
+    init(_ text: String) {
+        var text = text
+        count = text.utf8.count
+        storage = .allocate(byteCount: max(1, count), alignment: 1)
+        text.withUTF8 { bytes in
+            if let base = bytes.baseAddress, count > 0 { storage.copyMemory(from: base, byteCount: count) }
+        }
+    }
+
+    var isWiped: Bool { lock.lock(); defer { lock.unlock() }; return wiped }
+
+    /// The secret can travel unescaped (interface section 11): no double quote, backslash or
+    /// control character (U+0000 to U+001F, U+007F to U+009F), at most 2,048 bytes.
+    var isPassable: Bool {
+        withBytes { bytes in
+            guard !bytes.isEmpty, bytes.count <= 2_048 else { return false }
+            var previous: UInt8 = 0
+            for byte in bytes {
+                if byte == 0x22 || byte == 0x5C || byte < 0x20 || byte == 0x7F { return false }
+                if previous == 0xC2, (0x80...0x9F).contains(byte) { return false }
+                previous = byte
+            }
+            return true
+        }
+    }
+
+    func withBytes<T>(_ body: (UnsafeRawBufferPointer) throws -> T) rethrows -> T {
+        lock.lock(); defer { lock.unlock() }
+        return try body(UnsafeRawBufferPointer(start: wiped ? nil : storage, count: wiped ? 0 : count))
+    }
+
+    func wipe() {
+        lock.lock(); defer { lock.unlock() }
+        guard !wiped else { return }
+        _ = memset_s(storage, max(1, count), 0, max(1, count))
+        wiped = true
+    }
+
+    deinit { wipe(); storage.deallocate() }
+}
+
 /// `setup-fleet public-key --output` saved the Hub's public key.
 struct HubFleetPublicKey: Equatable {
     let path: String
@@ -8980,9 +9031,11 @@ extension HubController {
 
     /// Registers the owner's domain with Tesla (`setup-fleet register`). The client secret goes
     /// only to the command's standard input and is wiped after it. The completion runs on the main queue.
-    func registerFleetDomain(_ application: HubFleetApplication, clientSecret: String,
+    func registerFleetDomain(_ application: HubFleetApplication, clientSecret: HubFleetSecret,
                              completion: @escaping (Result<HubFleetApplication, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
+        // The registration owns the secret for its call: copied into the stdin buffer, then wiped.
+        defer { clientSecret.wipe() }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
         let input: HubSensitiveInput
         do { input = try Self.fleetRegisterInput(application, clientSecret: clientSecret) }
@@ -9040,10 +9093,12 @@ extension HubController {
     /// binding). The redeem lists the cars, a request Tesla bills: it runs only with the owner's
     /// consent on record. The client secret goes only to standard input and is wiped after it. Collection
     /// is not switched on here. The completion runs on the main queue.
-    func redeemFleetSignIn(_ attempt: HubFleetSignInAttempt, code: String, clientSecret: String,
+    func redeemFleetSignIn(_ attempt: HubFleetSignInAttempt, code: String, clientSecret: HubFleetSecret,
                            now: Date = Date(),
                            completion: @escaping (Result<HubFleetSignInOutcome, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
+        // The sign-in attempt's secret ends here: copied into the stdin buffer, then wiped.
+        defer { clientSecret.wipe() }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
         guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         guard now < attempt.expiresAt else {
@@ -9127,8 +9182,11 @@ extension HubController {
         }
     }
 
-    // The stdin objects (interface section 11): plain UTF-8 with no escape but `\/`. A value
-    // with a double quote, a backslash or a control character is refused here, never sent.
+    // The stdin objects (interface section 11). `begin` carries no secret and is written by
+    // JSONSerialization. Register and the redeem are written byte by byte as plain UTF-8 with no
+    // escape at all, straight into the buffer that becomes the wiped standard input, so the
+    // secret never passes through a Foundation string or JSON object. A value with a double
+    // quote, a backslash or a control character is refused here, never sent.
 
     static func fleetBeginInput(_ application: HubFleetApplication) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: [
@@ -9139,31 +9197,73 @@ extension HubController {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func fleetRegisterInput(_ application: HubFleetApplication, clientSecret: String) throws -> HubSensitiveInput {
-        guard HubFleetApplication.passable(clientSecret) else { throw unpassableSecret }
-        var data = try JSONSerialization.data(withJSONObject: [
-            "clientId": application.clientID,
-            "clientSecret": clientSecret,
-            "domain": application.domain,
-            "region": application.region.rawValue
-        ], options: [.sortedKeys])
-        return HubSensitiveInput(&data)
+    static func fleetRegisterInput(_ application: HubFleetApplication,
+                                   clientSecret: HubFleetSecret) throws -> HubSensitiveInput {
+        guard clientSecret.isPassable else { throw unpassableSecret }
+        return try fleetStdin([
+            ("clientId", .text(application.clientID)),
+            ("clientSecret", .secret(clientSecret)),
+            ("domain", .text(application.domain)),
+            ("region", .text(application.region.rawValue))
+        ], refusal: "fleet_partner_settings_invalid")
     }
 
     static func fleetRedeemInput(_ attempt: HubFleetSignInAttempt, code: String,
-                                 clientSecret: String) throws -> HubSensitiveInput {
-        guard HubFleetApplication.passable(clientSecret) else { throw unpassableSecret }
+                                 clientSecret: HubFleetSecret) throws -> HubSensitiveInput {
+        guard clientSecret.isPassable else { throw unpassableSecret }
         guard HubFleetApplication.passable(code) else {
             throw HubFleetRefusal.refusal(code: "sign_in_material_invalid", serviceMessage: "")
         }
-        var data = try JSONSerialization.data(withJSONObject: [
-            "code": code,
-            "redirectUri": attempt.application.redirectURI,
-            "clientId": attempt.application.clientID,
-            "clientSecret": clientSecret,
-            "region": attempt.application.region.rawValue,
-            "binding": attempt.binding
-        ], options: [.sortedKeys])
+        return try fleetStdin([
+            ("binding", .text(attempt.binding)),
+            ("clientId", .text(attempt.application.clientID)),
+            ("clientSecret", .secret(clientSecret)),
+            ("code", .text(code)),
+            ("redirectUri", .text(attempt.application.redirectURI)),
+            ("region", .text(attempt.application.region.rawValue))
+        ], refusal: "sign_in_settings_invalid")
+    }
+
+    private enum FleetStdinValue {
+        case text(String)
+        case secret(HubFleetSecret)
+    }
+
+    /// One flat JSON object of string values, written without any escape into one allocation of
+    /// its exact size (no growth leaves a partial copy behind), then moved into the wiped input.
+    private static func fleetStdin(_ fields: [(String, FleetStdinValue)], refusal: String) throws -> HubSensitiveInput {
+        var size = 2 + max(0, fields.count - 1)
+        for (key, value) in fields {
+            switch value {
+            case let .text(text):
+                guard HubFleetApplication.passable(text) else {
+                    throw HubFleetRefusal.refusal(code: refusal, serviceMessage: "")
+                }
+                size += key.utf8.count + text.utf8.count + 5
+            case let .secret(secret):
+                size += key.utf8.count + secret.count + 5
+            }
+        }
+        var data = Data(capacity: size)
+        data.append(UInt8(ascii: "{"))
+        for (index, (key, value)) in fields.enumerated() {
+            if index > 0 { data.append(UInt8(ascii: ",")) }
+            data.append(UInt8(ascii: "\""))
+            data.append(contentsOf: Array(key.utf8))
+            data.append(contentsOf: Array("\":\"".utf8))
+            switch value {
+            case let .text(text):
+                data.append(contentsOf: Array(text.utf8))
+            case let .secret(secret):
+                secret.withBytes { bytes in
+                    if let base = bytes.baseAddress, !bytes.isEmpty {
+                        data.append(base.assumingMemoryBound(to: UInt8.self), count: bytes.count)
+                    }
+                }
+            }
+            data.append(UInt8(ascii: "\""))
+        }
+        data.append(UInt8(ascii: "}"))
         return HubSensitiveInput(&data)
     }
 
