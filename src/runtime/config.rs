@@ -2301,6 +2301,20 @@ impl HubConfig {
             crate::tesla_stream::validate_endpoint_override(endpoint)
                 .map_err(|_| ConfigError::InvalidStreamEndpoint)?;
         }
+        // Polling only (M09-T19 ruling 2): a Fleet Hub has no telemetry push
+        // and no command proxy, so neither table nor key is admitted; nothing
+        // configured here can lead to a send. A Legacy Hub never reads the
+        // proxy keys (an old configuration keeps loading) and never admitted
+        // the telemetry table.
+        if self.collector.fleet_telemetry.is_some() {
+            return Err(ConfigError::FleetTelemetryNotOffered);
+        }
+        if self.collector.provider == CollectorProvider::Fleet
+            && (self.collector.fleet_command_proxy_url.is_some()
+                || self.collector.fleet_command_proxy_root_certificate_path.is_some())
+        {
+            return Err(ConfigError::FleetCommandProxyNotOffered);
+        }
         if let Some(endpoint) = self.collector.fleet_command_proxy_url.as_deref() {
             crate::fleet_api::FleetCommandProxyBase::parse(endpoint)
                 .map_err(|_| ConfigError::InvalidFleetCommandProxy)?;
@@ -2436,9 +2450,17 @@ pub enum ConfigError {
     )]
     FleetTelemetryListenerCollision,
     #[error(
-        "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table; to stream telemetry, configure the self-hosted receiver in [collector.fleet_telemetry]."
+        "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table."
     )]
     EdgeDeliveryRetired,
+    #[error(
+        "[collector.fleet_telemetry] is not supported: the Fleet API is used for polling only, with no telemetry push. Remove the table."
+    )]
+    FleetTelemetryNotOffered,
+    #[error(
+        "fleet_command_proxy_url and fleet_command_proxy_root_certificate_path are not supported: the Fleet API is used for polling only and no vehicle command is sent. Remove both keys."
+    )]
+    FleetCommandProxyNotOffered,
     #[error("geocoder endpoint is invalid or unsafe")]
     InvalidGeocoderEndpoint,
     #[error("geocoder language is invalid")]
@@ -2508,6 +2530,8 @@ mod n1_src_runtime_config_rs_display_tests {
                 ConfigError::InvalidFleetTelemetry => (),
                 ConfigError::FleetTelemetryListenerCollision => (),
                 ConfigError::EdgeDeliveryRetired => (),
+                ConfigError::FleetTelemetryNotOffered => (),
+                ConfigError::FleetCommandProxyNotOffered => (),
                 ConfigError::InvalidGeocoderEndpoint => (),
                 ConfigError::InvalidGeocoderLanguage => (),
                 ConfigError::InvalidGeocoderTimeout => (),
@@ -2543,6 +2567,8 @@ mod n1_src_runtime_config_rs_display_tests {
         check_config_error(ConfigError::InvalidFleetTelemetry);
         check_config_error(ConfigError::FleetTelemetryListenerCollision);
         check_config_error(ConfigError::EdgeDeliveryRetired);
+        check_config_error(ConfigError::FleetTelemetryNotOffered);
+        check_config_error(ConfigError::FleetCommandProxyNotOffered);
         check_config_error(ConfigError::InvalidGeocoderEndpoint);
         check_config_error(ConfigError::InvalidGeocoderLanguage);
         check_config_error(ConfigError::InvalidGeocoderTimeout);

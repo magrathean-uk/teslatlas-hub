@@ -159,6 +159,9 @@ where
         let collection_loop = async {
             startup_result?;
             if config.collector.fleet_telemetry.is_some() {
+                // Polling only (M09-T19 ruling 2): the maintenance loop never
+                // starts; configuration admission refuses the table first.
+                refuse_fleet_telemetry()?;
                 return run_fleet_telemetry_maintenance_loop(
                     store,
                     config,

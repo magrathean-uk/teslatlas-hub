@@ -633,12 +633,43 @@ fn fleet_redeem_input(code: &str) -> String {
     serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT, "clientSecret": FLEET_SECRET, "region": "eu"}).to_string()
 }
 
+/// The redeem input with the binding its begin answered (M09-T19 ruling 5).
+fn fleet_redeem_input_for(code: &str, binding: &FleetSignInBinding) -> String {
+    serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT, "clientSecret": FLEET_SECRET, "region": "eu", "binding": binding.id().to_string()}).to_string()
+}
+
+/// A synthetic Fleet access token: a JWT shape whose claims carry `scopes`.
+fn fleet_access(scopes: &[&str]) -> String {
+    use base64::Engine as _;
+    let encode = |text: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(text);
+    format!("{}.{}.c3ludGhldGlj", encode(r#"{"alg":"RS256"}"#), encode(&serde_json::json!({"scp": scopes, "ou_code": "EU"}).to_string()))
+}
+
+/// A Fleet token answer whose access token carries `scopes`.
+fn fleet_answer(scopes: &[&str]) -> String {
+    serde_json::json!({"access_token": fleet_access(scopes), "refresh_token": REFRESH, "id_token": ID_TOKEN, "expires_in": 28800, "token_type": "Bearer"}).to_string()
+}
+
+/// A Fleet answer with every scope the collector needs.
+fn fleet_valid_answer() -> String { fleet_answer(&["openid", "offline_access", "vehicle_device_data", "vehicle_location"]) }
+
 fn fleet_begin(entry: &CredentialVaultEntry, stub: &Stub) -> Result<FleetSignInBinding, CredentialCommandError> {
     fleet_begin_at(entry, fleet_begin_input("eu").as_bytes(), Some(&Url::parse(&stub.url).expect("stub URL")))
 }
 
+/// Redeems `input` against the held `binding`. An input object without a
+/// `binding` key is given the held one's, so each test checks only its own
+/// defect.
 async fn fleet_redeem(entry: &CredentialVaultEntry, binding: FleetSignInBinding, input: &str, stub: &Stub) -> Result<OwnerSignIn, CredentialCommandError> {
-    fleet_exchange_at(entry, binding, input.as_bytes(), Some(Url::parse(&stub.url).expect("stub URL"))).await
+    let input = match serde_json::from_str::<serde_json::Value>(input) {
+        Ok(serde_json::Value::Object(mut object)) if !object.contains_key("binding") && !object.keys().any(|key| key.to_ascii_lowercase().contains("token")) => {
+            object.insert("binding".to_owned(), binding.id().to_string().into());
+            serde_json::Value::Object(object).to_string()
+        }
+        _ => input.to_owned(),
+    };
+    let mut held = Some(binding);
+    fleet_exchange_at(entry, &mut held, input.as_bytes(), Some(Url::parse(&stub.url).expect("stub URL"))).await
 }
 
 /// No secret of a Fleet attempt appears in a refusal.
@@ -701,7 +732,7 @@ async fn fleet_sign_in_begin_needs_an_open_window() {
 #[tokio::test]
 async fn fleet_sign_in_redeem_exchanges_and_stores_through_the_hub_grant() {
     let (root, _store, entry) = fixture();
-    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let stub = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
     let window = TestWindow::open(600);
     let _route = window.route(&stub.url);
     let binding = fleet_begin(&entry, &stub).expect("begin");
@@ -720,17 +751,17 @@ async fn fleet_sign_in_redeem_exchanges_and_stores_through_the_hub_grant() {
     ].map(|(key, value)| (key.to_owned(), value.to_owned())));
     let pair = entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("own Fleet pair");
     assert_eq!((pair.origin, pair.refresh_owner, pair.access.as_str(), pair.refresh.as_str()),
-        (Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub, ACCESS, REFRESH));
+        (Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub, fleet_access(&["openid", "offline_access", "vehicle_device_data", "vehicle_location"]).as_str(), REFRESH));
     assert_eq!((pair.client_id.as_deref(), pair.region.as_deref()), (Some(FLEET_CLIENT), Some("eu")));
     assert!(entry.vault().credential_pair_presence(CredentialSlot::OwnerApi).expect("presence").is_none(), "nothing else stored");
     assert_eq!(binding_count(root.path()), 0, "the binding was consumed");
 }
 
-/// The redeem reads exactly code, redirectUri, clientId, clientSecret and
-/// region; any other shape is refused locally with no connection and
-/// nothing stored.
+/// The redeem reads exactly code, redirectUri, clientId, clientSecret,
+/// region and binding; any other shape is refused locally with no
+/// connection and nothing stored.
 #[tokio::test]
-async fn fleet_sign_in_redeem_reads_exactly_its_five_keys() {
+async fn fleet_sign_in_redeem_reads_exactly_its_six_keys() {
     let (root, _store, entry) = fixture();
     let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
     let window = TestWindow::open(600);
@@ -839,7 +870,7 @@ async fn fleet_sign_in_exchange_is_window_gated() {
 fn fleet_sign_in_client_secret_is_zeroised_and_never_stored() {
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime");
     let (root, _store, entry) = fixture();
-    let stub = runtime.block_on(Stub::spawn(Reply::Json(200, valid_answer())));
+    let stub = runtime.block_on(Stub::spawn(Reply::Json(200, fleet_valid_answer())));
     let window = TestWindow::open(600);
     let _route = window.route(&stub.url);
     let binding = fleet_begin(&entry, &stub).expect("begin");
@@ -917,6 +948,7 @@ async fn fleet_sign_in_discovery_refuses_before_any_send() {
     use crate::{auth::credential_vault::fixtures::fixture_admission, collection::collector::OwnerCarSelection, config::HubConfig};
     let (root, store, entry) = fixture();
     let admission = fixture_admission(&store, root.path());
+    let valid_answer = fleet_valid_answer;
     let config = |provider: &str| HubConfig::from_exact_bytes(format!(
         "data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\nprovider = {provider:?}\n", root.path()).as_bytes())
         .expect("configuration").0;
@@ -938,4 +970,108 @@ async fn fleet_sign_in_discovery_refuses_before_any_send() {
     assert_eq!(discover(config("fleet"), OwnerCarSelection::All).await, Err(WINDOW_CLOSED));
     assert!(store.configured_tesla_vehicles().expect("cars").is_empty(), "no car configured");
     assert!(entry.vault().load(CredentialSlot::FleetApi).expect("read").is_some(), "the stored pair stays");
+}
+
+/// M09-T19 ruling 5: the redeem carries the binding its begin answered and
+/// is refused, with the sign-in kept and nothing sent, when that is not the
+/// newest one held; a failure proven to come before the send keeps the
+/// sign-in and leaves the code unused, so the same code then succeeds.
+#[tokio::test]
+async fn fleet_sign_in_redeem_binding_and_unsent_failures_keep_the_attempt() {
+    let (_root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
+    let url = || Some(Url::parse(&stub.url).expect("stub URL"));
+    let window = TestWindow::open(600);
+    let route = window.route(&stub.url);
+    let older = fleet_begin(&entry, &stub).expect("begin A");
+    let older_input = fleet_redeem_input_for("code-fleet-binding-0101", &older);
+    abandon_fleet_sign_in(&entry, older);
+    let newest = fleet_begin(&entry, &stub).expect("begin B");
+    let newest_id = newest.id();
+    let mut held = Some(newest);
+    // A's binding with B held: refused locally, B kept, nothing sent.
+    let error = fleet_exchange_at(&entry, &mut held, older_input.as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_BINDING_INVALID);
+    assert_eq!(held.as_ref().map(FleetSignInBinding::id), Some(newest_id), "the newest sign-in is kept");
+    // No binding key at all: the input is refused as a shape.
+    let error = fleet_exchange_at(&entry, &mut held, fleet_redeem_input("code-fleet-binding-0102").as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), "sign_in_settings_invalid");
+    assert!(held.is_some());
+    // The window closes before the send: refused, B kept, the code unused.
+    let input = fleet_redeem_input_for("code-fleet-binding-0103", held.as_ref().expect("held"));
+    window.close();
+    let error = fleet_exchange_at(&entry, &mut held, input.as_bytes(), url()).await.unwrap_err();
+    assert_eq!(error.code(), WINDOW_CLOSED);
+    assert_eq!(held.as_ref().map(FleetSignInBinding::id), Some(newest_id), "a refusal before the send keeps the sign-in");
+    assert_eq!(stub.accepted(), 0, "nothing sent");
+    // Reopened: the same code and binding now redeem.
+    drop(route);
+    let reopened = TestWindow::open(600);
+    let _reopened_route = reopened.route(&stub.url);
+    let signed_in = fleet_exchange_at(&entry, &mut held, input.as_bytes(), url()).await.expect("the unsent code is still usable");
+    assert_eq!(signed_in, OwnerSignIn::Complete);
+    assert!(held.is_none(), "a sent redeem uses the sign-in up");
+    assert_eq!(stub.accepted(), 1);
+}
+
+/// M09-T19 ruling 5: a refused connection is proven to have sent nothing:
+/// the sign-in stays and the code is not recorded as used. The used-code
+/// record is per issuer, application and slot: the same text redeemed for
+/// another application is not "reused".
+#[tokio::test]
+async fn fleet_sign_in_unsent_connection_and_code_namespaces() {
+    let (_root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    // A loopback port with nothing listening: the connection is refused.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").expect("port");
+    let dead = format!("http://{}/oauth2/v3/token", closed.local_addr().expect("address"));
+    drop(closed);
+    let _dead_route = window.route(&dead);
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    let id = binding.id();
+    let input = fleet_redeem_input_for("code-fleet-namespace-0201", &binding);
+    let mut held = Some(binding);
+    let error = fleet_exchange_at(&entry, &mut held, input.as_bytes(), Some(Url::parse(&dead).expect("URL"))).await.unwrap_err();
+    assert_eq!(error.code(), "sign_in_unavailable");
+    assert_eq!(held.as_ref().map(FleetSignInBinding::id), Some(id), "a refused connection keeps the sign-in");
+    fleet_exchange_at(&entry, &mut held, input.as_bytes(), Some(Url::parse(&stub.url).expect("URL"))).await.expect("the code was not spent");
+    // Another application's code with the same text is its own code.
+    let other_client = "fleet-client-0099";
+    let begin = serde_json::json!({"clientId": other_client, "region": "eu", "redirectUri": FLEET_REDIRECT}).to_string();
+    let other = fleet_begin_at(&entry, begin.as_bytes(), Some(&Url::parse(&stub.url).expect("URL"))).expect("begin");
+    let input = serde_json::json!({"code": "code-fleet-namespace-0201", "redirectUri": FLEET_REDIRECT, "clientId": other_client,
+        "clientSecret": FLEET_SECRET, "region": "eu", "binding": other.id().to_string()}).to_string();
+    let mut held = Some(other);
+    fleet_exchange_at(&entry, &mut held, input.as_bytes(), Some(Url::parse(&stub.url).expect("URL"))).await
+        .expect("the same text for another application is not a reused code");
+}
+
+/// M09-T19 ruling 6: a grant without a scope the collector needs, or with
+/// claims it cannot read, is refused with a fixed code naming what is
+/// missing, and the stored login stays exactly as it was.
+#[tokio::test]
+async fn fleet_sign_in_grant_without_collection_scopes_keeps_the_stored_login() {
+    let (_root, _store, entry) = fixture();
+    let window = TestWindow::open(600);
+    let good = Stub::spawn(Reply::Json(200, fleet_valid_answer())).await;
+    let _good_route = window.route(&good.url);
+    let binding = fleet_begin(&entry, &good).expect("begin");
+    fleet_redeem(&entry, binding, &fleet_redeem_input("code-fleet-scope-0300"), &good).await.expect("the first login");
+    let stored = entry.vault().stored_generation(CredentialSlot::FleetApi).expect("read").expect("stored");
+    for (index, (answer, code)) in [
+        (fleet_answer(&["openid", "offline_access", "vehicle_device_data"]), FLEET_SCOPE_MISSING_VEHICLE_LOCATION),
+        (fleet_answer(&["openid", "offline_access", "vehicle_location"]), FLEET_SCOPE_MISSING_VEHICLE_DEVICE_DATA),
+        (fleet_answer(&["openid", "offline_access", "vehicle_cmds"]), FLEET_SCOPES_MISSING),
+        (valid_answer(), FLEET_TOKEN_CLAIMS_INVALID),
+    ].into_iter().enumerate() {
+        let stub = Stub::spawn(Reply::Json(200, answer)).await;
+        let _route = window.route(&stub.url);
+        let binding = fleet_begin(&entry, &stub).expect("begin");
+        let error = fleet_redeem(&entry, binding, &fleet_redeem_input(&format!("code-fleet-scope-03{index:02}x")), &stub).await.unwrap_err();
+        assert_eq!(error.code(), code);
+        assert!(error.to_string().contains("stored login was kept"), "{error}");
+        assert_eq!(entry.vault().stored_generation(CredentialSlot::FleetApi).expect("read"), Some(stored), "the stored login stays");
+    }
 }

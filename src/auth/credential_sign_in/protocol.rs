@@ -16,8 +16,16 @@ fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError:
 fn wiped_copy(text: &str) -> Zeroizing<String> { Zeroizing::new(text.to_owned()) }
 
 /// Encodes into the wiping destination without an intermediate form string.
-pub(super) fn parameter(body: &mut Vec<u8>, key: &str, value: &str) {
+/// The destination is first grown, if it must be, to the whole encoded
+/// length through a wiping reallocation, so no push below reallocates and no
+/// earlier member (a client secret, a code) is left in a freed block.
+pub(super) fn parameter(body: &mut SecretBuffer, key: &str, value: &str) {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let encoded = |text: &str| text.bytes().map(|byte| match byte {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b' ' => 1,
+        _ => 3,
+    }).sum::<usize>();
+    body.reserve_wiping(usize::from(!body.is_empty()) + key.len() + 1 + encoded(value));
     if !body.is_empty() { body.push(b'&'); }
     body.extend_from_slice(key.as_bytes());
     body.push(b'=');
@@ -79,15 +87,17 @@ fn redirect_is_valid(text: &str) -> bool {
 /// The keys of `setup-fleet begin`'s input: the owner's own application, no
 /// secret (M09-T09).
 const FLEET_BEGIN_KEYS: [&str; 3] = ["clientId", "region", "redirectUri"];
-/// The keys of the `setup-fleet` redeem input, exactly these five.
-const FLEET_REDEEM_KEYS: [&str; 5] = ["code", "redirectUri", "clientId", "clientSecret", "region"];
+/// The keys of the `setup-fleet` redeem input, exactly these six: the
+/// `binding` is the identifier its begin answered (M09-T19 ruling 5).
+const FLEET_REDEEM_KEYS: [&str; 6] = ["code", "redirectUri", "clientId", "clientSecret", "region", "binding"];
 
 /// The step of a Fleet sign-in whose standard input is checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FleetSignInStep {
     /// `setup-fleet begin`: `clientId`, `region` and `redirectUri`.
     Begin,
-    /// `setup-fleet`: `code`, `redirectUri`, `clientId`, `clientSecret` and `region`.
+    /// `setup-fleet`: `code`, `redirectUri`, `clientId`, `clientSecret`,
+    /// `region` and `binding`.
     Redeem,
 }
 
@@ -156,14 +166,16 @@ impl SignInSettings {
     }
 
     /// The `setup-fleet` redeem: exactly `code`, `redirectUri`, `clientId`,
-    /// `clientSecret` and `region`. Returns the settings, which hold the
-    /// client secret, and the authorisation code.
-    pub(super) fn fleet_redeem(line: &[u8]) -> Result<(Self, WireSecret), CredentialCommandError> {
+    /// `clientSecret`, `region` and `binding`. Returns the settings, which
+    /// hold the client secret, the authorisation code and the binding its
+    /// begin answered (a UUID).
+    pub(super) fn fleet_redeem(line: &[u8]) -> Result<(Self, WireSecret, uuid::Uuid), CredentialCommandError> {
         refuse_token_keys(line)?;
         let values = secret_object(line, &FLEET_REDEEM_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
-        let [code, redirect_uri, client_id, client_secret, region]: [WireSecret; 5] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
+        let [code, redirect_uri, client_id, client_secret, region, binding]: [WireSecret; 6] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
         if client_secret.as_str().is_empty() { return Err(failure(SignInError::SettingsInvalid)); }
-        Ok((Self::fleet_from(&client_id, &region, &redirect_uri, Some(client_secret))?, code))
+        let binding = uuid::Uuid::try_parse(binding.as_str()).map_err(|_| failure(SignInError::SettingsInvalid))?;
+        Ok((Self::fleet_from(&client_id, &region, &redirect_uri, Some(client_secret))?, code, binding))
     }
 
     /// Whether `other` names the same application, region and redirect as
@@ -195,7 +207,9 @@ impl SignInSettings {
             parameter(&mut query, "code_challenge", &challenge);
             parameter(&mut query, "code_challenge_method", "S256");
         }
-        let mut address = SecretText::copy("authorization_url", self.authorization.as_str());
+        // Sized in full before the copy: the state is never in a freed block.
+        let mut address = SecretText::new("authorization_url", self.authorization.as_str().len() + 1 + query.len());
+        address.buffer_mut().push_str(self.authorization.as_str());
         address.buffer_mut().push('?');
         address.buffer_mut().push_str(std::str::from_utf8(&query).expect("ASCII form"));
         address

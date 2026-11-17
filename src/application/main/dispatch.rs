@@ -315,29 +315,102 @@ fn partner_refusal(refusal: tesatlas_hub::auth::fleet_credentials::FleetPartnerR
     OperatorRefusal::new(refusal.code, refusal.message)
 }
 
-/// Writes the Hub's Fleet public key, as the service answered it, to the
-/// path the user named: a new file beside it, then renamed over the path, so
-/// a reader never sees half a key and a link at the path is replaced, not
-/// followed. The file is public (0644).
+/// The Hub's own folders and files a public-key export must never write
+/// into (M09-T19 ruling 7): the data folder (with its secrets folder and the
+/// key files), the configuration file and its folder, and the log folder.
+/// A configuration folder that is the home folder or holds it (a source run
+/// with its configuration there) protects only the configuration file.
 #[cfg(unix)]
-fn write_fleet_public_key(path: &Path, pem: &str) -> Result<(), OperatorRefusal> {
-    use std::{io::Write as _, os::unix::fs::OpenOptionsExt as _};
+fn fleet_export_protected(config: &HubConfig, config_path: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut folders = vec![config.data_dir.clone(), config.data_dir.join("secrets")];
+    let mut files = Vec::new();
+    let home = operator_home().ok();
+    if let Ok(config_path) = absolute_path(config_path) {
+        if let Some(folder) = config_path.parent().filter(|folder| !folder.as_os_str().is_empty()) {
+            let holds_home = home.as_deref().is_some_and(|home| {
+                let canonical = |path: &Path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                canonical(home).starts_with(canonical(folder))
+            });
+            if !holds_home {
+                folders.push(folder.to_path_buf());
+            }
+        }
+        files.push(config_path);
+    }
+    if let Some(home) = home {
+        folders.push(home.join(tesatlas_hub::platform::name_migration::hand_over::LOG_FOLDER));
+    }
+    (folders, files)
+}
+
+/// Whether writing `path` would write into one of `folders` (through any
+/// linked parent: the parent is resolved and each of its ancestors compared
+/// by device and inode) or replace one of `files`.
+#[cfg(unix)]
+fn fleet_export_target_protected(path: &Path, folders: &[PathBuf], files: &[PathBuf]) -> Result<bool, OperatorRefusal> {
+    use std::os::unix::fs::MetadataExt as _;
+    let unwritable = || OperatorRefusal::new("fleet_public_key_unwritable", "the public key file cannot be written at that path");
+    let identity = |path: &Path| fs::metadata(path).ok().map(|metadata| (metadata.dev(), metadata.ino()));
+    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).ok_or_else(unwritable)?;
+    let parent = fs::canonicalize(parent).map_err(|_| unwritable())?;
+    let protected: Vec<(u64, u64)> = folders.iter().filter_map(|folder| identity(folder)).collect();
+    if parent.ancestors().any(|ancestor| identity(ancestor).is_some_and(|id| protected.contains(&id))) {
+        return Ok(true);
+    }
+    // A protected path that does not exist yet is compared by its text.
+    if folders.iter().any(|folder| path.starts_with(folder) || fs::canonicalize(folder).is_ok_and(|folder| parent.starts_with(folder))) {
+        return Ok(true);
+    }
+    let target = parent.join(path.file_name().ok_or_else(unwritable)?);
+    let target_identity = fs::symlink_metadata(&target).ok().map(|metadata| (metadata.dev(), metadata.ino()));
+    Ok(files.iter().any(|file| {
+        file == path || file == &target || fs::canonicalize(file).is_ok_and(|file| file == target)
+            || target_identity.is_some_and(|id| fs::symlink_metadata(file).is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == id))
+    }))
+}
+
+/// Writes the Hub's Fleet public key, as the service answered it, to the
+/// path the user named: a new file beside it with a name no other run uses,
+/// then renamed over the path, so a reader never sees half a key and a link
+/// at the path is replaced, not followed. The file is public (0644). A path
+/// inside the Hub's own folders is refused before anything is written
+/// (M09-T19 ruling 7); a failed write removes only the staging file this
+/// run created, and only while it is still that file.
+#[cfg(unix)]
+fn write_fleet_public_key(path: &Path, pem: &str, folders: &[PathBuf], files: &[PathBuf]) -> Result<(), OperatorRefusal> {
+    use std::{io::Write as _, os::unix::fs::{MetadataExt as _, OpenOptionsExt as _}};
     let unwritable = || OperatorRefusal::new("fleet_public_key_unwritable", "the public key file cannot be written at that path");
     if !pem.starts_with("-----BEGIN PUBLIC KEY-----") || pem.len() > 4096 {
         return Err(OperatorRefusal::new("fleet_partner_unavailable", "the service did not answer a public key"));
     }
+    if fleet_export_target_protected(path, folders, files)? {
+        return Err(OperatorRefusal::new(
+            "fleet_public_key_path_protected",
+            "the public key cannot be saved inside the Hub's own data, secrets, configuration or log folders; choose another folder",
+        ));
+    }
     let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else { return Err(unwritable()) };
-    let mut temporary = name.to_owned();
-    temporary.push(format!(".{}.partial", std::process::id()));
+    let mut temporary = std::ffi::OsString::from(".");
+    temporary.push(name);
+    temporary.push(format!(".{}.partial", uuid::Uuid::new_v4()));
     let temporary = directory.join(temporary);
+    let mut created = None;
     let written = (|| {
         let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o644).open(&temporary)?;
+        let metadata = file.metadata()?;
+        created = Some((metadata.dev(), metadata.ino()));
         file.write_all(pem.as_bytes())?;
         file.sync_all()?;
         fs::rename(&temporary, path)
     })();
     if written.is_err() {
-        let _ = fs::remove_file(&temporary);
+        // Only the staging file this run created, and only while the name
+        // still holds it, is removed.
+        if let Some(created) = created
+            && fs::symlink_metadata(&temporary).is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == created)
+        {
+            let _ = fs::remove_file(&temporary);
+        }
         return Err(unwritable());
     }
     Ok(())
@@ -412,8 +485,16 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
             // registration's input is checked as the service will read it.
             if let Some(FleetSetupStep::PublicKey { output }) = step {
                 let output = absolute_path(output)?;
+                let (folders, files) = fleet_export_protected(&config, config_path);
+                if fleet_export_target_protected(&output, &folders, &files)? {
+                    return Err(OperatorRefusal::new(
+                        "fleet_public_key_path_protected",
+                        "the public key cannot be saved inside the Hub's own data, secrets, configuration or log folders; choose another folder",
+                    )
+                    .into());
+                }
                 let result = operator::channel::exchange(stream, &OperatorRequest::FleetPublicKey, FORWARD_TIMEOUT)?;
-                write_fleet_public_key(&output, result["publicKeyPem"].as_str().unwrap_or_default())?;
+                write_fleet_public_key(&output, result["publicKeyPem"].as_str().unwrap_or_default(), &folders, &files)?;
                 let report = serde_json::json!({
                     "status": "public_key_saved",
                     "path": output,
@@ -421,6 +502,24 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
                 });
                 println!("{}", serde_json::to_string(&report)?);
                 return Ok(());
+            }
+            // M09-T19: the discovery again and the activation read no input.
+            match step {
+                Some(FleetSetupStep::Discover { vehicle_id, all_vehicles }) => {
+                    let result = operator::channel::exchange(
+                        stream,
+                        &OperatorRequest::FleetDiscover { vehicle_id: *vehicle_id, all_vehicles: *all_vehicles },
+                        FORWARD_TIMEOUT,
+                    )?;
+                    println!("{}", serde_json::to_string(&result)?);
+                    return Ok(());
+                }
+                Some(FleetSetupStep::Activate) => {
+                    let result = operator::channel::exchange(stream, &OperatorRequest::FleetActivate, FORWARD_TIMEOUT)?;
+                    println!("{}", serde_json::to_string(&result)?);
+                    return Ok(());
+                }
+                _ => {}
             }
             let bytes = read_bounded_migration_secret(std::io::stdin(), SETUP_INPUT_MAX_BYTES)
                 .map_err(|_| setup_input_invalid("setup-fleet input is unreadable or larger than 4 KiB"))?;
@@ -805,14 +904,17 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
     /// earlier and not redeemed is abandoned.
     fn fleet_sign_in_begin(&self, input: FleetSignInInput) -> Result<serde_json::Value, OperatorRefusal> {
         use tesatlas_hub::auth::credential_sign_in as sign_in;
-        let earlier = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take();
+        // The earlier sign-in is replaced only once this one holds custody:
+        // a begin refused before then leaves it redeemable.
         let binding = with_vault_custody(
             &self.custody,
             &*self.kick,
             || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
             |entry| {
+                let binding = sign_in::begin_fleet_sign_in(entry, input.0.as_bytes())?;
+                let earlier = self.fleet_sign_in.lock().map_err(|_| sign_in::sign_in_unavailable())?.take();
                 if let Some(earlier) = earlier { sign_in::abandon_fleet_sign_in(entry, earlier); }
-                sign_in::begin_fleet_sign_in(entry, input.0.as_bytes())
+                Ok(binding)
             },
         );
         drop(input);
@@ -876,27 +978,97 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         // sent and the begun sign-in kept.
         let selection = sign_in::owner_car_selection(vehicle_id, all_vehicles).map_err(setup_refusal)?;
         sign_in::check_fleet_sign_in_input(sign_in::FleetSignInStep::Redeem, input.0.as_bytes()).map_err(setup_refusal)?;
-        let binding = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take()
-            .ok_or_else(|| setup_refusal(fleet_binding_invalid()))?;
+        // The held sign-in is taken out for the redeem and put back unless
+        // the redeem used it up (M09-T19 ruling 5): a refusal proven to come
+        // before the send keeps it, so the same code may be tried again.
+        let mut held = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take();
+        if held.is_none() {
+            return Err(setup_refusal(fleet_binding_invalid()));
+        }
         let report = fleet_setup(
             &self.custody,
             &*self.kick,
             || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
-            |entry| run_owner_exchange(|| sign_in::exchange_fleet_code(entry, binding, input.0.as_bytes())),
+            |entry| run_owner_exchange(|| sign_in::exchange_fleet_code(entry, &mut held, input.0.as_bytes())),
             |entry| run_owner_exchange(|| fleet_credentials::discover_fleet_cars(
                 entry, &self.store, &self.config, &self.admission, selection)),
         );
         drop(input);
-        let mut report = report?;
+        if let Some(binding) = held
+            && let Ok(mut slot) = self.fleet_sign_in.lock()
+            && slot.is_none()
+        {
+            *slot = Some(binding);
+        }
+        let report = report?;
+        // The Hub's own Fleet login is stored: this Hub is set up. A
+        // successful redeem never switches collection on: that is
+        // `setup-fleet activate`, after the owner's consent (M09-T19 ruling 4).
         let installation = self.store.installation_id().map_err(|error| {
             OperatorRefusal::new("setup_marker_unavailable", error.to_string())
         })?;
         tesatlas_hub::storage::setup_marker::record(&self.data_dir, installation)
             .map_err(|error| OperatorRefusal::new("setup_marker_unavailable", error.to_string()))?;
-        if self.admitted_idle && report["vehicleDiscovery"] == "configured" {
-            report["collectionIntervalSeconds"] = self.complete_fresh_install()?.into();
-        }
         Ok(report)
+    }
+
+    /// `setup-fleet discover` (M09-T19 ruling 3): the car discovery again,
+    /// with the stored own Fleet login and no code exchange, in custody and
+    /// inside the Open window, as the redeem runs it. Collection stays as it
+    /// is: a Hub awaiting activation still needs `setup-fleet activate`.
+    fn fleet_discover(&self, vehicle_id: Option<i64>, all_vehicles: bool) -> Result<serde_json::Value, OperatorRefusal> {
+        use tesatlas_hub::auth::{credential_sign_in as sign_in, fleet_credentials};
+        let selection = sign_in::owner_car_selection(vehicle_id, all_vehicles).map_err(setup_refusal)?;
+        let configured = with_vault_custody(
+            &self.custody,
+            &*self.kick,
+            || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
+            |entry| run_owner_exchange(|| fleet_credentials::discover_fleet_cars(
+                entry, &self.store, &self.config, &self.admission, selection)),
+        )?;
+        Ok(serde_json::json!({
+            "status": "vehicles_configured",
+            "slot": "fleet_api",
+            "vehiclesConfigured": configured,
+        }))
+    }
+
+    /// `setup-fleet activate` (M09-T19 ruling 4): the step the Mac app calls
+    /// after its consent page. A Fleet Hub with its own stored login and at
+    /// least one configured car gets the supported collection interval when
+    /// its interval is 0, and its collector is reloaded; the collector then
+    /// starts inside the Open window, and only there. Nothing is sent.
+    fn fleet_activate(&self) -> Result<serde_json::Value, OperatorRefusal> {
+        if self.config.collector.provider != CollectorProvider::Fleet {
+            return Err(OperatorRefusal::new("fleet_activation_unavailable", "this Hub does not collect with the Fleet API"));
+        }
+        // Read from the configuration as it is now on disk: the admission's
+        // own rule says what is missing.
+        #[cfg(target_os = "macos")]
+        {
+        use tesatlas_hub::macos_launch_agent::{FleetSetupPending, hub_awaits_fleet_setup};
+        let current = HubConfig::load(&self.config_path)
+            .map_err(|error| OperatorRefusal::new("fleet_activation_unavailable", format!("the configuration cannot be read: {error}")))?;
+        match hub_awaits_fleet_setup(&current)
+            .map_err(|error| OperatorRefusal::new("fleet_activation_unavailable", error.to_string()))?
+        {
+            Some(FleetSetupPending::SignIn) => return Err(OperatorRefusal::new(
+                "fleet_sign_in_required",
+                "sign in with your Fleet application (setup-fleet begin, then setup-fleet) before collection is switched on",
+            )),
+            Some(FleetSetupPending::Vehicles) => return Err(OperatorRefusal::new(
+                "fleet_vehicles_required",
+                "no car is configured; find the cars (setup-fleet discover) before collection is switched on",
+            )),
+            Some(FleetSetupPending::Activation) | None => {}
+        }
+        }
+        let seconds = self.complete_fresh_install()?;
+        Ok(serde_json::json!({
+            "status": "collection_activated",
+            "provider": "fleet",
+            "collectionIntervalSeconds": seconds,
+        }))
     }
 
     fn recovery_export(
@@ -1562,6 +1734,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::json!({
                         "status": "ready",
                         "state": "awaiting_sign_in",
+                        "version": tesatlas_hub::BUILD_VERSION,
+                        "provider": config.collector.provider,
+                        "collectorEnabled": false,
+                    })
+                );
+                return Ok(());
+            }
+            // An unfinished Fleet set-up starts for the owner's next step,
+            // the serve admission's same rule (M09-T19 ruling 3).
+            #[cfg(target_os = "macos")]
+            if let Some(pending) = tesatlas_hub::macos_launch_agent::hub_awaits_fleet_setup(&config)? {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "ready",
+                        "state": pending.state(),
                         "version": tesatlas_hub::BUILD_VERSION,
                         "provider": config.collector.provider,
                         "collectorEnabled": false,

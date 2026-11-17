@@ -313,15 +313,18 @@ impl std::fmt::Display for FleetPartnerRefusal {
 
 impl std::error::Error for FleetPartnerRefusal {}
 
-/// `setup-fleet register`'s standard input: exactly these four keys. The
-/// strings are wiped on drop; the secret moves into a wiping buffer.
-#[derive(serde::Deserialize, Zeroize, ZeroizeOnDrop)]
+/// `setup-fleet register`'s standard input: exactly these four keys. Each
+/// value is a wiping string from the moment it is decoded (M09-T19 ruling
+/// 8), so a parse that fails part-way (a bad region, a missing, duplicate or
+/// unknown key, a malformed tail) wipes the values already decoded; the
+/// secret moves into a wiping buffer.
+#[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct PartnerInput {
-    client_id: String,
-    client_secret: String,
-    domain: String,
-    region: String,
+    client_id: crate::fleet_api::WireSecret,
+    client_secret: crate::fleet_api::WireSecret,
+    domain: crate::fleet_api::WireSecret,
+    region: crate::fleet_api::WireSecret,
 }
 
 /// The checked registration input, holding the client secret until the
@@ -348,10 +351,10 @@ pub fn read_fleet_partner_input(line: &[u8]) -> Result<FleetPartnerSettings, Fle
     use crate::fleet_api::partner::{PartnerCredentials, validate_domain};
     refuse_token_keys(line).map_err(|error| FleetPartnerRefusal::new(error.code(), SOURCE_CREDENTIAL_DISABLED_TEXT))?;
     let mut input: PartnerInput = serde_json::from_slice(line).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
-    let region = FleetRegion::from_storage_code(&input.region).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
-    let client_id = FleetClientId::parse(&input.client_id).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
-    let domain = validate_domain(&input.domain).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
-    let secret = Zeroizing::new(std::mem::take(&mut input.client_secret));
+    let region = FleetRegion::from_storage_code(input.region.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let client_id = FleetClientId::parse(input.client_id.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let domain = validate_domain(input.domain.as_str()).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
+    let secret = input.client_secret.take();
     let credentials = PartnerCredentials::new(client_id, secret).map_err(|_| FleetPartnerRefusal::settings_invalid())?;
     Ok(FleetPartnerSettings { region, domain, credentials })
 }
@@ -439,6 +442,25 @@ pub fn inspect_stored_fleet_credentials(store: &HubStore, data_dir: &Path) -> Re
     crate::auth::credential_keys::check_keyring(&secrets)
         .map_err(|_| FleetCredentialError::UnsafeKeyMaterial)?.ok_or(FleetCredentialError::KeyMissing)?;
     Ok(FleetCredentialInspection { unresolved_refresh: store.unresolved_fleet_refresh_status()? })
+}
+
+/// Why a new Fleet grant cannot replace a login (M09-T19 ruling 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FleetGrantScopeRefusal {
+    /// The access token's claims are not readable as the collector reads them.
+    ClaimsInvalid,
+    /// A scope the collector needs is missing; `true` names each missing one.
+    Missing { vehicle_device_data: bool, vehicle_location: bool },
+}
+
+/// The check the Fleet collector's start makes of a stored login
+/// ([`FleetAuthManager::from_store_for_supervised_start`]), made of a new
+/// grant before it is stored, so a grant the collector would refuse never
+/// replaces one it accepts.
+pub(crate) fn check_fleet_grant_scopes(access_token: &str) -> Result<(), FleetGrantScopeRefusal> {
+    let summary = fleet_scope_summary(access_token).map_err(|_| FleetGrantScopeRefusal::ClaimsInvalid)?;
+    if summary.collection_ready() { return Ok(()); }
+    Err(FleetGrantScopeRefusal::Missing { vehicle_device_data: !summary.vehicle_device_data, vehicle_location: !summary.vehicle_location })
 }
 
 pub fn stored_fleet_scope_summary(entry: &crate::CredentialVaultEntry, _data_dir: &Path) -> Result<Option<FleetScopeSummary>, FleetCredentialError> {

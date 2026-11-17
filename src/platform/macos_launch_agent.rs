@@ -171,6 +171,86 @@ pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result
     Ok(true)
 }
 
+/// Where an unfinished Fleet set-up stands (M09-T19 ruling 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FleetSetupPending {
+    /// No Fleet login is stored (never signed in, or signed out): the owner
+    /// signs in (`setup-fleet begin`, then `setup-fleet`).
+    SignIn,
+    /// The Hub's own Fleet login is stored and no car is configured (the
+    /// discovery failed or was cut off): `setup-fleet discover`.
+    Vehicles,
+    /// The login and a car are stored and the collection interval is 0: the
+    /// owner's consent switches collection on (`setup-fleet activate`).
+    Activation,
+}
+
+impl FleetSetupPending {
+    /// The fixed `state` value `preflight` prints.
+    pub const fn state(self) -> &'static str {
+        match self {
+            Self::SignIn => "awaiting_sign_in",
+            Self::Vehicles => "awaiting_vehicles",
+            Self::Activation => "awaiting_activation",
+        }
+    }
+}
+
+/// Whether this Fleet Hub's set-up is unfinished, so it serves for the
+/// owner's next step with the collector off (M09-T19 ruling 3): the Fleet
+/// counterpart of [`hub_awaits_owner_sign_in`]. Admitted only in production
+/// for provider `fleet` with no Fleet Telemetry, a Hub database whose
+/// credential store is converted and whose Fleet slot is neither pending nor
+/// blocked, and one of:
+/// - no Fleet pair ([`FleetSetupPending::SignIn`]); an absent key store stays
+///   admitted (the sign-in creates it), an unusable one is refused with the
+///   vault's own refusal;
+/// - the Hub's own Fleet pair, sound as the provider preflight reads it, and
+///   no configured car ([`FleetSetupPending::Vehicles`]);
+/// - that pair, a configured car and interval 0
+///   ([`FleetSetupPending::Activation`]).
+///
+/// The collector cannot start in any of these (it needs a cadence, a car and
+/// the Hub's own pair) and nothing is sent to Tesla until the owner acts. A
+/// Hub with the pair, a car and a cadence keeps today's admission (`None`); a
+/// never-configured data folder is the idle admission's, checked first.
+pub fn hub_awaits_fleet_setup(config: &crate::config::HubConfig) -> io::Result<Option<FleetSetupPending>> {
+    if config.collector.provider != crate::config::CollectorProvider::Fleet || config.collector.fleet_telemetry.is_some() {
+        return Ok(None);
+    }
+    match fs::symlink_metadata(config.data_dir.join("hub.sqlite")) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+        Ok(_) => {}
+    }
+    let unavailable =
+        |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
+    let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
+    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    let cars = !store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty();
+    let Some(format) = store.credential_format_state().map_err(|error| unavailable(&error))? else {
+        return Ok(None);
+    };
+    if format.fleet_api_state == crate::db::CredentialSlotFormatState::Pending || format.fleet_api_blocked.is_some() {
+        return Ok(None);
+    }
+    let present = store
+        .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "credential presence unavailable"))?
+        .is_some();
+    if !present {
+        owner_sign_in_keyring_usable(&config.data_dir)?;
+        return Ok(Some(FleetSetupPending::SignIn));
+    }
+    if cars && config.collector.interval_seconds > 0 {
+        return Ok(None);
+    }
+    // The stored pair must be the Hub's own usable login, as the provider
+    // preflight reads it: any other is refused with that preflight's text.
+    provider_credentials_are_usable(&store, &config.data_dir, crate::config::CollectorProvider::Fleet)?;
+    Ok(Some(if cars { FleetSetupPending::Activation } else { FleetSetupPending::Vehicles }))
+}
+
 /// The key store the sign-in's vault would load: absent is usable (the vault
 /// creates it); an existing directory or key file that the vault would refuse
 /// fails with that refusal's code and owner text. Non-mutating: nothing is
@@ -256,6 +336,12 @@ pub fn preflight_hub_for_serve(
         // owner's sign-in, collecting nothing until then (M09-T16, B2).
         if hub_awaits_owner_sign_in(config)? {
             tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
+            return Ok(());
+        }
+        // An unfinished Fleet set-up serves for the owner's next step,
+        // collecting nothing until then (M09-T19 ruling 3).
+        if let Some(pending) = hub_awaits_fleet_setup(config)? {
+            tracing::info!(state = pending.state(), "the Fleet set-up is unfinished: Hub serves for the owner's next step with the collector off");
             return Ok(());
         }
         return preflight_hub_for_config(config);

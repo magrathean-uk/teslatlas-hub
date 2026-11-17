@@ -393,10 +393,12 @@ pub enum Command {
     /// (polling only). `setup-fleet begin` reads one bounded
     /// {"clientId","region","redirectUri"} JSON object from stdin and prints the
     /// regional authorise URL and its binding; `setup-fleet` then reads
-    /// {"code","redirectUri","clientId","clientSecret","region"}. Both are
-    /// forwarded to the running service, which exchanges the code and discovers
-    /// the vehicles inside an open collection window. The client secret is used
-    /// for the exchange only and never stored. Never accepts tokens.
+    /// {"code","redirectUri","clientId","clientSecret","region","binding"}. Both
+    /// are forwarded to the running service, which exchanges the code and
+    /// discovers the vehicles inside an open collection window; collection
+    /// stays off until `setup-fleet activate`. `setup-fleet discover` finds the
+    /// vehicles again with the stored login. The client secret is used for the
+    /// exchange only and never stored. Never accepts tokens.
     /// `setup-fleet public-key --output PATH` saves the Hub's Fleet public key
     /// (made on first use) as PEM for the domain's key file; `setup-fleet
     /// register` reads {"clientId","clientSecret","domain","region"} and
@@ -735,6 +737,21 @@ pub enum FleetSetupStep {
     /// {"clientId","clientSecret","domain","region"} JSON object from stdin;
     /// the client secret is used once and never stored.
     Register,
+    /// Find the vehicles again with the stored Fleet login, without another
+    /// sign-in, inside an open collection window (after a discovery that
+    /// failed or was cut off).
+    Discover {
+        /// Tesla vehicle id. Required only when discovery finds multiple vehicles.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
+        vehicle_id: Option<i64>,
+        /// Configure every vehicle returned by the Tesla account.
+        #[arg(long)]
+        all_vehicles: bool,
+    },
+    /// Switch collection on after the owner's consent: sets the collection
+    /// interval when it is 0. Needs a stored Fleet login and a configured
+    /// vehicle; sends nothing to Tesla.
+    Activate,
 }
 
 /// Collection-window verbs (docs/operations/collection-windows.md).

@@ -88,6 +88,19 @@ impl SecretBuffer {
     pub(crate) fn copy(kind: &'static str, bytes: &[u8]) -> Self {
         let mut value = Self::new(kind, bytes.len()); value.value.extend_from_slice(bytes); value
     }
+
+    /// Makes room for `additional` more bytes without leaving a copy behind:
+    /// when the allocation must grow, the bytes move into a new allocation of
+    /// the full size and the old one is wiped before it is freed (M09-T19
+    /// ruling 8). A push within the reserved room never reallocates.
+    pub(crate) fn reserve_wiping(&mut self, additional: usize) {
+        let needed = self.value.len().saturating_add(additional);
+        if needed <= self.value.capacity() { return; }
+        let mut grown = Zeroizing::new(Vec::with_capacity(needed.max(self.value.capacity().saturating_mul(2))));
+        grown.extend_from_slice(&self.value);
+        // The old allocation is wiped in full by its own drop.
+        drop(std::mem::replace(&mut self.value, grown));
+    }
 }
 impl Deref for SecretBuffer { type Target = Vec<u8>; fn deref(&self) -> &Vec<u8> { &self.value } }
 impl DerefMut for SecretBuffer { fn deref_mut(&mut self) -> &mut Vec<u8> { &mut self.value } }

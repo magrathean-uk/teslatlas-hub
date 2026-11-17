@@ -519,7 +519,7 @@ fn fleet_telemetry_debug_redacts_secret_path() {
 
 #[test]
 fn retired_edge_table_fails_with_the_retirement_error() {
-    const EXPECTED: &str = "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table; to stream telemetry, configure the self-hosted receiver in [collector.fleet_telemetry].";
+    const EXPECTED: &str = "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table.";
     let base = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n";
     // The configuration without the retired key loads.
     HubConfig::from_exact_bytes(

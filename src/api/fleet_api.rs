@@ -1492,6 +1492,10 @@ pub(crate) struct WireSecret(Zeroizing<String>, Option<crate::auth::credential_s
 
 impl WireSecret {
     pub(crate) fn as_str(&self) -> &str { &self.0 }
+
+    /// Moves the text out into a wiping string without a copy, leaving this
+    /// one empty.
+    pub(crate) fn take(&mut self) -> Zeroizing<String> { Zeroizing::new(std::mem::take(&mut *self.0)) }
 }
 
 impl Zeroize for WireSecret {

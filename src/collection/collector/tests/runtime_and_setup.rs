@@ -434,8 +434,9 @@ async fn resident_control_socket_is_private_bounded_and_service_owned() {
         LegacyVehicleAction::Wake,
     )
     .await
-    .expect_err("unconfigured vehicle rejected locally");
-    assert!(matches!(error, ResidentVehicleActionError::VehicleMissing));
+    .expect_err("every vehicle command is refused locally");
+    // M09-T19 ruling 1: refused before the car is even looked up.
+    assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered));
 
     task.abort();
     let _ = (&mut task).await;

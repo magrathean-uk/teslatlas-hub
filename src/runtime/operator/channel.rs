@@ -99,10 +99,44 @@ impl Drop for SetupMaterial {
 /// One Fleet sign-in step's standard input (M09-T09), forwarded as the
 /// operator command read and checked it: the service parses it again. It
 /// may hold the code and the client secret, so it is cleared on drop and
-/// never printed.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(transparent)]
+/// never printed. On the channel it travels base64-encoded (M09-T19 ruling
+/// 8): the text has no JSON escape, so the request's decoder copies it once
+/// into an allocation of its exact size and keeps no scratch copy, and the
+/// decoded bytes go into a wiping buffer allocated in full first.
+#[derive(Clone, PartialEq, Eq)]
 pub struct FleetSignInInput(pub String);
+
+impl Serialize for FleetSignInInput {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use base64::Engine as _;
+        let engine = &base64::engine::general_purpose::STANDARD;
+        let mut encoded = zeroize::Zeroizing::new(String::with_capacity(base64::encoded_len(self.0.len(), true).unwrap_or(0)));
+        engine.encode_string(self.0.as_bytes(), &mut encoded);
+        serializer.serialize_str(&encoded)
+    }
+}
+
+impl<'de> Deserialize<'de> for FleetSignInInput {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Encoded;
+        impl serde::de::Visitor<'_> for Encoded {
+            type Value = FleetSignInInput;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("a base64 input") }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<FleetSignInInput, E> {
+                use base64::Engine as _;
+                let mut bytes = zeroize::Zeroizing::new(vec![0_u8; base64::decoded_len_estimate(value.len())]);
+                let length = base64::engine::general_purpose::STANDARD
+                    .decode_slice(value.as_bytes(), &mut bytes[..])
+                    .map_err(|_| E::custom("input is not base64"))?;
+                let text = std::str::from_utf8(&bytes[..length]).map_err(|_| E::custom("input is not UTF-8"))?;
+                let mut owned = String::with_capacity(text.len());
+                owned.push_str(text);
+                Ok(FleetSignInInput(owned))
+            }
+        }
+        deserializer.deserialize_str(Encoded)
+    }
+}
 
 impl fmt::Debug for FleetSignInInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -143,6 +177,15 @@ pub enum OperatorRequest {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     },
+    /// `setup-fleet discover` (M09-T19): the car discovery again, with the
+    /// stored Fleet login.
+    FleetDiscover {
+        vehicle_id: Option<i64>,
+        all_vehicles: bool,
+    },
+    /// `setup-fleet activate` (M09-T19): collection switched on after the
+    /// owner's consent. Nothing is sent to Tesla.
+    FleetActivate,
     /// `setup-fleet public-key` (M09-T18): the Hub's Fleet public key, made
     /// on first use. Nothing secret travels either way.
     FleetPublicKey,
@@ -427,16 +470,19 @@ pub fn exchange(
     request: &OperatorRequest,
     timeout: Duration,
 ) -> Result<serde_json::Value, OperatorRefusal> {
-    let mut bytes = serde_json::to_vec(request).map_err(|_| failed("request is not encodable"))?;
-    if bytes.len() > REQUEST_MAX_BYTES {
-        bytes.zeroize();
-        return Err(failed("request is too large"));
+    // Allocated in full before anything secret is written (M09-T19 ruling
+    // 8): a request that would outgrow it is refused, so it never
+    // reallocates and leaves no copy in a freed block.
+    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(REQUEST_MAX_BYTES + 1));
+    let encoded = serde_json::to_writer(BoundedWriter(&mut bytes, REQUEST_MAX_BYTES), request);
+    if encoded.is_err() {
+        return Err(failed("request is not encodable or too large"));
     }
     bytes.push(b'\n');
     let _ = stream.set_write_timeout(Some(timeout));
     let _ = stream.set_read_timeout(Some(timeout));
     let written = stream.write_all(&bytes);
-    bytes.zeroize();
+    drop(bytes);
     written.map_err(|_| failed("request could not be sent"))?;
     let _ = stream.shutdown(std::net::Shutdown::Write);
     let mut answer = Vec::new();
@@ -456,6 +502,23 @@ pub fn exchange(
             response.code.as_deref().unwrap_or(CHANNEL_FAILED),
             response.message.unwrap_or_default(),
         ))
+    }
+}
+
+/// A writer into a buffer allocated in full that refuses to grow it.
+struct BoundedWriter<'a>(&'a mut Vec<u8>, usize);
+
+impl Write for BoundedWriter<'_> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if self.0.len().saturating_add(data.len()) > self.1 {
+            return Err(std::io::Error::other("request is too large"));
+        }
+        self.0.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -546,8 +609,10 @@ impl Active {
 /// Reads one request, refusing it once `deadline` passes however the bytes
 /// trickle in.
 fn read_request(stream: &mut UnixStream, deadline: Instant) -> Result<OperatorRequest, OperatorRefusal> {
-    let mut bytes = Vec::new();
     let mut chunk = [0_u8; 1024];
+    // Room for the largest request and one more chunk, allocated in full
+    // before the first byte arrives (M09-T19 ruling 8): it never grows.
+    let mut bytes = Vec::with_capacity(REQUEST_MAX_BYTES + chunk.len());
     let result = loop {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {

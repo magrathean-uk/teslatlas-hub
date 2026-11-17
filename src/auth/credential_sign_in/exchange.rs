@@ -132,21 +132,40 @@ fn check_material(code: &str, code_verifier: &str, redirect_uri: &str) -> Result
 /// The digests of the codes this process has used. Only a digest is kept.
 static USED_CODES: Mutex<VecDeque<[u8; 32]>> = Mutex::new(VecDeque::new());
 
-fn code_digest(code: &str) -> [u8; 32] {
+/// Whose code a used-code record is (M09-T19 ruling 5): the issuer's token
+/// endpoint, the application and the credential slot. The same opaque text
+/// for another application, region or slot is another code.
+struct CodeNamespace<'a> { slot: CredentialSlot, issuer: &'a str, client_id: &'a str }
+
+fn code_digest(namespace: &CodeNamespace<'_>, code: &str) -> [u8; 32] {
     let mut hash = Sha256::new();
-    hash.update(b"teslatlas-hub/owner-code/v1\0"); // rename:keep
+    hash.update(b"teslatlas-hub/sign-in-code/v2\0"); // rename:keep
+    hash.update(match namespace.slot { CredentialSlot::OwnerApi => b"owner_api\0".as_slice(), CredentialSlot::FleetApi => b"fleet_api\0".as_slice() });
+    hash.update(namespace.issuer.as_bytes());
+    hash.update(b"\0");
+    hash.update(namespace.client_id.as_bytes());
+    hash.update(b"\0");
     hash.update(code.as_bytes());
     hash.finalize().into()
 }
 
 /// Records `code` as used, or refuses it when it already was.
-fn spend_code(code: &str) -> Result<(), CredentialCommandError> {
-    let digest = code_digest(code);
+fn spend_code(namespace: &CodeNamespace<'_>, code: &str) -> Result<(), CredentialCommandError> {
+    let digest = code_digest(namespace, code);
     let mut used = USED_CODES.lock().map_err(|_| CredentialCommandError::new(SIGN_IN_CODE_REUSED))?;
     if used.contains(&digest) { return Err(CredentialCommandError::new(SIGN_IN_CODE_REUSED)); }
     if used.len() >= USED_CODES_KEPT { used.pop_front(); }
     used.push_back(digest);
     Ok(())
+}
+
+/// Forgets a code [`spend_code`] recorded whose request is proven never to
+/// have been sent (M09-T19 ruling 5), so the same code may be tried again.
+fn release_code(namespace: &CodeNamespace<'_>, code: &str) {
+    let digest = code_digest(namespace, code);
+    if let Ok(mut used) = USED_CODES.lock() && let Some(index) = used.iter().rposition(|candidate| *candidate == digest) {
+        used.remove(index);
+    }
 }
 
 /// How long a stored sign-in may be resumed by a repeat `setup` with the same
@@ -210,7 +229,10 @@ fn request_body(code: &str, code_verifier: &str) -> Result<Zeroizing<Vec<u8>>, C
     let request = ExchangeRequest {
         grant_type: "authorization_code", client_id: OWNER_CLIENT_ID, code, code_verifier, redirect_uri: OWNER_REDIRECT_URI,
     };
-    let mut body = Zeroizing::new(Vec::with_capacity(512));
+    // Sized in full before anything is written (M09-T19 ruling 8): a JSON
+    // escape at most doubles a checked code or verifier, so the buffer never
+    // grows and no freed block keeps a copy.
+    let mut body = Zeroizing::new(Vec::with_capacity(256 + 2 * (code.len() + code_verifier.len())));
     serde_json::to_writer(&mut *body, &request).map_err(|_| CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID))?;
     Ok(body)
 }
@@ -298,7 +320,7 @@ fn stub_endpoint(stub: &str) -> Result<Url, CredentialCommandError> {
 
 async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, endpoint: Url, loopback: bool) -> Result<OwnerSignIn, CredentialCommandError> {
     check_material(code, code_verifier, redirect_uri)?;
-    spend_code(code)?;
+    spend_code(&CodeNamespace { slot: CredentialSlot::OwnerApi, issuer: endpoint.as_str(), client_id: OWNER_CLIENT_ID }, code)?;
     let mut body = request_body(code, code_verifier)?;
     crate::crypto::install_default_provider();
     let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| failure(SignInError::Unavailable))?;
@@ -447,7 +469,10 @@ fn fleet_request_body(settings: &SignInSettings, code: &str) -> Result<reqwest::
     let (Some(secret), Some(region)) = (settings.client_secret(), settings.region()) else {
         return Err(failure(SignInError::SettingsInvalid));
     };
-    let mut body = SecretBuffer::new("request_body", 1024);
+    // At most three bytes per encoded byte: allocated in full before the
+    // secret is copied in, so the buffer never grows (M09-T19 ruling 8).
+    let bounded = 128 + 3 * (settings.client_id().len() + secret.len() + code.len() + settings.redirect_uri().len() + region.base_url().len());
+    let mut body = SecretBuffer::new("request_body", bounded);
     parameter(&mut body, "grant_type", "authorization_code");
     parameter(&mut body, "client_id", settings.client_id());
     parameter(&mut body, "client_secret", secret);
@@ -457,59 +482,103 @@ fn fleet_request_body(settings: &SignInSettings, code: &str) -> Result<reqwest::
     Ok(reqwest::Body::from(axum::body::Bytes::from_owner(body)))
 }
 
-/// `setup-fleet` (M09-T09): redeems the code of the sign-in `binding`
-/// began. Reads exactly `code`, `redirectUri`, `clientId`, `clientSecret` and
-/// `region` (`SignInSettings::fleet`'s values plus the code); the
-/// application, region and redirect must be the begin's. Order, so that a
-/// refusal opens no connection and writes nothing:
-/// 1. the input and the binding are checked locally;
-/// 2. the code is recorded as used in this process;
-/// 3. the window's egress gate is asked for a Fleet token-exchange permit
-///    (`window_closed` unless a window is Open), immediately before the send;
+/// `setup-fleet` (M09-T09, M09-T19): redeems the code of the sign-in held
+/// in `held`, the newest one begun. Reads exactly `code`, `redirectUri`,
+/// `clientId`, `clientSecret`, `region` and `binding`; the binding must be the
+/// held one's and the application, region and redirect its begin's. Order, so
+/// that a refusal opens no connection and writes nothing:
+/// 1. the input and the binding are checked locally; a refusal here keeps the
+///    held sign-in and leaves the code unused;
+/// 2. the code is recorded as used in this process, for this issuer,
+///    application and slot;
+/// 3. the request is built and the window's egress gate is asked for a Fleet
+///    token-exchange permit (`window_closed` unless a window is Open),
+///    immediately before the send; a failure up to and including a refused
+///    connection is proven to have sent nothing, so the code is forgotten
+///    again and the held sign-in kept;
 /// 4. one form POST to the regional Fleet token endpoint, bounded by the
 ///    permit, with no redirect followed and the answer read to at most
-///    [`ANSWER_CAP`] bytes; the client secret is wiped once the body is built
-///    and is never stored;
-/// 5. only a complete, validated answer is stored, through the vault's one
-///    grant path (`store_hub_grant`): origin `fleet_oauth`, refresh owner the
-///    Hub, the client id and region, under the permit's write fence.
-pub async fn exchange_fleet_code(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8]) -> Result<OwnerSignIn, CredentialCommandError> {
-    fleet_exchange_at(entry, binding, line, None).await
+///    [`ANSWER_CAP`] bytes; from here the sign-in is used up whatever the
+///    outcome, and the client secret is wiped once the body is built;
+/// 5. the answer's tokens must have the grammar and the claims and scopes
+///    the Fleet collector needs (`vehicle_device_data` and
+///    `vehicle_location`); a refusal here keeps the stored login as it was;
+/// 6. only then is it stored, through the vault's one grant path
+///    (`store_hub_grant`): origin `fleet_oauth`, refresh owner the Hub, the
+///    client id and region, under the permit's write fence.
+pub async fn exchange_fleet_code(entry: &CredentialVaultEntry, held: &mut Option<FleetSignInBinding>, line: &[u8]) -> Result<OwnerSignIn, CredentialCommandError> {
+    fleet_exchange_at(entry, held, line, None).await
 }
 
 /// [`exchange_fleet_code`] against a loopback stub token endpoint, for the
 /// binary's tests. It still asks the process-wide egress gate.
 #[cfg(debug_assertions)]
 #[doc(hidden)]
-pub async fn exchange_fleet_code_with_stub_for_test(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8], stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
+pub async fn exchange_fleet_code_with_stub_for_test(entry: &CredentialVaultEntry, held: &mut Option<FleetSignInBinding>, line: &[u8], stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
     let endpoint = stub_endpoint(stub)?;
-    fleet_exchange_at(entry, binding, line, Some(endpoint)).await
+    fleet_exchange_at(entry, held, line, Some(endpoint)).await
 }
 
-async fn fleet_exchange_at(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8], stub: Option<Url>) -> Result<OwnerSignIn, CredentialCommandError> {
-    let FleetSignInBinding { settings: begun, session } = binding;
-    let (settings, code) = SignInSettings::fleet_redeem(line)?;
-    if !begun.same_application(&settings) { return Err(CredentialCommandError::new(SIGN_IN_BINDING_INVALID)); }
+/// The refusal of a Fleet grant whose access token's claims cannot be read.
+pub const FLEET_TOKEN_CLAIMS_INVALID: &str = "fleet_token_claims_invalid";
+/// The refusals of a Fleet grant without a scope the collector needs.
+pub const FLEET_SCOPE_MISSING_VEHICLE_DEVICE_DATA: &str = "fleet_scope_missing_vehicle_device_data";
+pub const FLEET_SCOPE_MISSING_VEHICLE_LOCATION: &str = "fleet_scope_missing_vehicle_location";
+pub const FLEET_SCOPES_MISSING: &str = "fleet_scopes_missing";
+
+/// The scope check of a new Fleet grant (M09-T19 ruling 6), before it may
+/// replace a login: the same claims the collector's start reads.
+fn fleet_grant_scopes(access: &str) -> Result<(), CredentialCommandError> {
+    use crate::auth::fleet_credentials::{FleetGrantScopeRefusal, check_fleet_grant_scopes};
+    check_fleet_grant_scopes(access).map_err(|refusal| CredentialCommandError::new(match refusal {
+        FleetGrantScopeRefusal::ClaimsInvalid => FLEET_TOKEN_CLAIMS_INVALID,
+        FleetGrantScopeRefusal::Missing { vehicle_device_data: true, vehicle_location: true } => FLEET_SCOPES_MISSING,
+        FleetGrantScopeRefusal::Missing { vehicle_device_data: true, .. } => FLEET_SCOPE_MISSING_VEHICLE_DEVICE_DATA,
+        FleetGrantScopeRefusal::Missing { .. } => FLEET_SCOPE_MISSING_VEHICLE_LOCATION,
+    }))
+}
+
+async fn fleet_exchange_at(entry: &CredentialVaultEntry, held: &mut Option<FleetSignInBinding>, line: &[u8], stub: Option<Url>) -> Result<OwnerSignIn, CredentialCommandError> {
+    let (settings, code, binding_id) = SignInSettings::fleet_redeem(line)?;
+    let Some(begun) = held.as_ref() else { return Err(fleet_sign_in_not_begun()) };
+    // Only the newest unused binding, for the same application, is redeemed.
+    if begun.id() != binding_id || !begun.settings.same_application(&settings) {
+        return Err(CredentialCommandError::new(SIGN_IN_BINDING_INVALID));
+    }
     if !code_is_valid(code.as_str()) { return Err(CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID)); }
     // A binding past its expiry could not store the answer: the code is not
-    // sent, so it is not spent at Tesla either.
-    if session.expires_at_ms() <= now_s()?.saturating_mul(1000) { return Err(failure(SignInError::Expired)); }
-    spend_code(code.as_str())?;
+    // sent, so it is not spent at Tesla either; the binding is gone.
+    if begun.session.expires_at_ms() <= now_s()?.saturating_mul(1000) {
+        *held = None;
+        return Err(failure(SignInError::Expired));
+    }
     let loopback = stub.is_some();
     let endpoint = stub.unwrap_or_else(|| settings.token_endpoint().clone());
-    let body = fleet_request_body(&settings, code.as_str())?;
-    // Exchange only: the client secret is not needed again and is wiped now.
+    let issuer = settings.token_endpoint().as_str().to_owned();
     let (client_id, region) = (settings.client_id().to_owned(), settings.region());
+    let namespace = CodeNamespace { slot: CredentialSlot::FleetApi, issuer: &issuer, client_id: &client_id };
+    spend_code(&namespace, code.as_str())?;
+    // Until the send, a failure is proven to have sent nothing: the code is
+    // forgotten again and the held sign-in stays for another try.
+    let unsent = |error: CredentialCommandError| { release_code(&namespace, code.as_str()); error };
+    let body = fleet_request_body(&settings, code.as_str()).map_err(unsent)?;
+    // Exchange only: the client secret is not needed again and is wiped now.
     drop(settings);
-    drop(code);
     crate::crypto::install_default_provider();
-    let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| failure(SignInError::Unavailable))?;
+    let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| unsent(failure(SignInError::Unavailable)))?;
     let permit = egress::ask(endpoint.as_str(), Provider::Fleet, PermitKind::TokenExchange)
-        .map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
-    let sent_at_s = now_s()?;
-    let answer = match permit.bound(send(&client, endpoint, body, "application/x-www-form-urlencoded")).await {
+        .map_err(|_| unsent(CredentialCommandError::new(WINDOW_CLOSED)))?;
+    let sent_at_s = now_s().map_err(unsent)?;
+    let answer = permit.bound(send(&client, endpoint, body, "application/x-www-form-urlencoded")).await;
+    // A request that never left (no connection, or never built) sent nothing.
+    if let Ok(Err(error)) = &answer && (error.is_connect() || error.is_builder()) {
+        return Err(unsent(failure(SignInError::Unavailable)));
+    }
+    // Sent, or possibly sent: the sign-in is used up and the code stays spent.
+    let FleetSignInBinding { settings: _, session } = held.take().expect("the held sign-in was checked above");
+    drop(code);
+    let answer = match answer {
         Ok(Ok(answer)) => answer,
-        Ok(Err(error)) if error.is_connect() || error.is_builder() => return Err(failure(SignInError::Unavailable)),
         Ok(Err(_)) | Err(_) => return Err(failure(SignInError::AnswerInvalid)),
     };
     let bytes = match answer {
@@ -527,6 +596,9 @@ async fn fleet_exchange_at(entry: &CredentialVaultEntry, binding: FleetSignInBin
     {
         return Err(failure(SignInError::AnswerInvalid));
     }
+    // The claims and scopes the collector needs, before anything replaces
+    // the stored login (M09-T19 ruling 6).
+    fleet_grant_scopes(tokens.access.as_str())?;
     permit.check().map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
     let live = || permit.check().is_ok();
     let authority = WriteAuthority::of(&live);

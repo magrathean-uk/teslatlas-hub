@@ -251,6 +251,20 @@ pub trait ServiceBackend: Send + Sync {
             "this service has no Fleet sign-in",
         ))
     }
+    /// `setup-fleet discover` (M09-T19). Called only while the window is Open.
+    fn fleet_discover(&self, _vehicle_id: Option<i64>, _all_vehicles: bool) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_sign_in_unavailable",
+            "this service has no Fleet sign-in",
+        ))
+    }
+    /// `setup-fleet activate` (M09-T19): no send, so no window needed.
+    fn fleet_activate(&self) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_sign_in_unavailable",
+            "this service has no Fleet sign-in",
+        ))
+    }
     /// `setup-fleet public-key` (M09-T18): no send, so no window needed.
     fn fleet_public_key(&self) -> Result<Value, OperatorRefusal> {
         Err(OperatorRefusal::new(
@@ -469,6 +483,17 @@ impl OperatorHandler for OperatorService {
             // The Fleet partner verbs (M09-T18): the key export sends
             // nothing; the registration needs an Open window and each of its
             // sends asks the egress gate again.
+            // M09-T19: the discovery again with the stored login sends, so
+            // it needs an Open window; the activation writes configuration
+            // only.
+            OperatorRequest::FleetDiscover {
+                vehicle_id,
+                all_vehicles,
+            } => {
+                self.require_open_window()?;
+                self.backend.fleet_discover(vehicle_id, all_vehicles)
+            }
+            OperatorRequest::FleetActivate => self.backend.fleet_activate(),
             OperatorRequest::FleetPublicKey => self.backend.fleet_public_key(),
             OperatorRequest::FleetPartnerRegister { input } => {
                 self.require_open_window()?;

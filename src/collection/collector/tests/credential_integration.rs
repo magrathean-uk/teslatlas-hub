@@ -1619,6 +1619,15 @@ impl Drop for ResidentRig {
     }
 }
 
+/// M09-T19 ruling 1: with no other refusal standing, the executor and the
+/// control socket still refuse the command (`CommandsNotOffered`), and only
+/// the library's fused request, which no production path calls, succeeds.
+fn assert_commands_refused_by_the_service(outcomes: &[Result<(), String>; 3]) {
+    assert!(outcomes[0].as_ref().is_err_and(|error| error.contains("CommandsNotOffered")), "executor: {outcomes:?}");
+    assert!(outcomes[1].is_ok(), "fused library request: {outcomes:?}");
+    assert!(outcomes[2].as_ref().is_err_and(|error| error.contains("CommandsNotOffered")), "socket: {outcomes:?}");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cs_p3_resident_action_respects_live_c3_refusal() {
     use crate::legacy_auth::AuthMode;
@@ -1670,9 +1679,12 @@ async fn cs_p3_resident_action_respects_live_c3_refusal() {
                     .expect("catalogue")
                     .execute("UPDATE collector_account_state SET state = 'collecting'", [])
                     .expect("retry");
+                // M09-T19 ruling 1: the executor and the socket refuse every
+                // vehicle command before anything is sent; only the bare
+                // library request (no production caller) still reaches the wire.
                 let outcomes = rig.try_each_path().await;
-                assert!(outcomes.iter().all(Result::is_ok), "{mode:?}: {outcomes:?}");
-                assert_eq!(rig.fake.action_requests(), 3, "{mode:?}: one per path");
+                assert_commands_refused_by_the_service(&outcomes);
+                assert_eq!(rig.fake.action_requests(), 1, "{mode:?}: the library request only");
             }
         })
         .await;
@@ -1733,16 +1745,16 @@ async fn cs_p3_resident_action_rechecks_after_external_pair_write() {
             assert!(started.refusal_reset);
             rig.manager.lock().await.apply_collector_start(&started.credential_view());
             let outcomes = rig.try_each_path().await;
-            assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
-            assert_eq!(rig.fake.action_requests(), 3);
+            assert_commands_refused_by_the_service(&outcomes);
+            assert_eq!(rig.fake.action_requests(), 1);
 
             // The control: a refusal C3 holds for another mode is not this unit's, so
             // the action goes out.
             let other = ResidentRig::new(AuthMode::Tesla).await;
             p3_seed_c3(&other.store, "provider", &"b".repeat(64), "provider_refused");
             let outcomes = other.try_each_path().await;
-            assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
-            assert_eq!(other.fake.action_requests(), 3);
+            assert_commands_refused_by_the_service(&outcomes);
+            assert_eq!(other.fake.action_requests(), 1);
         })
         .await;
 }
