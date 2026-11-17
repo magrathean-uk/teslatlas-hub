@@ -228,3 +228,75 @@ async fn http_resource_limits_bound_handlers_and_wait_time() {
     .expect("timeout response");
     assert_eq!(timed.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+async fn pack_stream_stops_when_its_bearer_loses_access() {
+    for transition in ["revoke", "expire", "rotate_twice"] {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let key = CursorKey::from_bytes([83; 32]);
+        let (vehicle_id, old_digest, old_path) = seed_v2_lineage(&store, &key);
+        let bytes: Vec<u8> = (0..512 * 1024).map(|n| (n % 251) as u8).collect();
+        let digest = Sha256Digest::of_bytes(&bytes);
+        let path = old_path.with_file_name(format!("{digest}.sqlite.zst"));
+        fs::write(&path, &bytes).expect("synthetic pack");
+        let connection = store.open().expect("catalogue");
+        let raw: Vec<u8> = connection.query_row(
+            "SELECT manifest_json FROM sync_manifests WHERE vehicle_id = ?1",
+            [vehicle_id.to_string()], |row| row.get(0),
+        ).expect("manifest");
+        let mut manifest: SyncManifest = serde_json::from_slice(&raw).expect("decode manifest");
+        manifest.chunks[0].sha256 = digest;
+        manifest.chunks[0].relative_path = TransportPack::canonical_relative_path(digest);
+        manifest.chunks[0].compressed_bytes = bytes.len() as u64;
+        manifest.chunks[0].uncompressed_bytes = bytes.len() as u64;
+        manifest.total_compressed_bytes = bytes.len() as u64;
+        manifest.total_uncompressed_bytes = bytes.len() as u64;
+        manifest.validate().expect("valid manifest");
+        connection.execute(
+            "UPDATE sync_manifests SET manifest_json = ?1 WHERE vehicle_id = ?2",
+            rusqlite::params![serde_json::to_vec(&manifest).expect("encode manifest"), vehicle_id.to_string()],
+        ).expect("update manifest");
+        connection.execute(
+            "UPDATE sync_packs SET sha256 = ?1, relative_path = ?2,
+                    compressed_bytes = ?3, uncompressed_bytes = ?3 WHERE sha256 = ?4",
+            rusqlite::params![digest.to_string(), manifest.chunks[0].relative_path,
+                              bytes.len() as i64, old_digest.to_string()],
+        ).expect("update pack catalogue");
+        drop(connection);
+        let now = current_epoch_ms().expect("clock");
+        let invitation = store.create_pairing("stream fixture", now - 1, now + 60_000)
+            .expect("invitation");
+        let access = store.claim_pairing(invitation.pairing_id, invitation.secret(), "fixture phone", now)
+            .expect("paired device");
+        let app = paired_router(store.clone(), &key);
+        let response = app.clone().oneshot(Request::builder()
+            .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+            .header(header::AUTHORIZATION, format!("Bearer {}", access.access_token.as_bearer()))
+            .body(Body::empty()).unwrap()).await.expect("pack response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body();
+        let first = body.frame().await.expect("first frame").expect("authorised frame")
+            .into_data().expect("data frame");
+        assert!(!first.is_empty());
+        assert!(first.len() < bytes.len());
+        match transition {
+            "revoke" => store.revoke_device(access.device_id).expect("owner revokes device"),
+            "expire" => {
+                store.open().expect("catalogue").execute(
+                    "UPDATE paired_devices SET expires_at_ms = ?1 WHERE device_id = ?2",
+                    rusqlite::params![now - 1, access.device_id.to_string()],
+                ).expect("expire device");
+            }
+            "rotate_twice" => {
+                let successor = store.rotate_device(access.access_token.as_bearer(), now).expect("rotate");
+                store.rotate_device(successor.access_token.as_bearer(), now).expect("rotate again");
+            }
+            _ => unreachable!(),
+        }
+        assert!(store.authenticate_device(access.access_token.as_bearer()).expect("authentication").is_none());
+        let next = body.frame().await;
+        assert!(matches!(next, None | Some(Err(_))),
+            "{transition}: the existing response still sends history after its bearer is refused");
+    }
+}
