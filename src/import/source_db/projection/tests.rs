@@ -1043,7 +1043,8 @@ fn broken_drive_terminal_candidate_retains_its_sample_without_guessing_an_end() 
 fn broken_drive_policy_does_not_classify_in_progress_or_completed_short_drives() {
     let mut source = history();
     source.drives[0].distance_km = None;
-    source.drives[1].start_date_ms = source.drives[0].start_date_ms - 5_000;
+    source.drives[0].duration_min = None;
+    assert!(source.drives[0].start_date_ms < source.drives[1].start_date_ms);
     let mut second = source.positions[1].clone();
     second.id = 22;
     second.date_ms += 5_000;
@@ -1082,4 +1083,38 @@ fn broken_drive_shape_counts_tied_starts_and_the_whole_terminal_run() {
     assert_eq!(projected.report.broken_drives, 4);
     assert_eq!(projected.report.detached_positions, 4);
     assert!(projected.snapshot.drives.is_empty());
+}
+
+#[test]
+fn broken_drive_tracker_filters_both_cars_and_their_observations() {
+    let mut source = history();
+    let mut other_drive = source.drives[1].clone();
+    other_drive.id = 12;
+    other_drive.car_id = 2;
+    source.drives.push(other_drive);
+    let mut other_position = source.positions[1].clone();
+    other_position.id = 22;
+    other_position.car_id = 2;
+    other_position.drive_id = Some(12);
+    source.positions.push(other_position.clone());
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 1);
+    assert_eq!(projected.report.held_open_session_positions, 1);
+    assert_eq!(projected.report.detached_positions, 0);
+    let second = project_vehicle(&source, 2).unwrap();
+    assert_eq!(second.report.broken_drives, 1);
+    assert_eq!(second.report.held_open_session_positions, 1);
+    assert_eq!(second.report.detached_positions, 0);
+    // The tracker also rejects a foreign-car observation even if its parent
+    // reference collides with a selected-car row in an inconsistent capture.
+    let mut tracker = BrokenDriveTracker::new(&source.drives, 1);
+    for position in &source.positions { tracker.observe(position); }
+    let mut wrong_parent = source.positions[1].clone();
+    wrong_parent.id = 23;
+    wrong_parent.drive_id = Some(12);
+    tracker.observe(&wrong_parent);
+    assert_eq!(tracker.count(), 1, "foreign parent rows must not become candidates");
+    other_position.drive_id = Some(11);
+    tracker.observe(&other_position);
+    assert_eq!(tracker.count(), 1);
 }

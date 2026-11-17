@@ -1104,7 +1104,9 @@ async fn broken_drive_native_import_preserves_all_positions_when_configured() {
     assert_eq!(result.report.completed_drives, drives);
     assert_eq!(result.report.projected_positions, positions);
     assert_eq!(result.report.skipped_unattached_positions, 0);
-    assert!(result.report.detached_positions >= broken);
+    assert_eq!(result.report.detached_positions, broken);
+    assert_eq!(result.report.skipped_open_drives, broken);
+    assert_eq!(result.report.held_open_session_positions, 0);
     println!(
         "broken_drive native import: completed_drives={} broken_drives={} projected_positions={} detached_positions={} skipped_positions={}",
         result.report.completed_drives,
