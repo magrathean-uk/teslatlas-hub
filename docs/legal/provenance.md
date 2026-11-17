@@ -78,7 +78,7 @@ archive SHA-256 is
 The build applies
 `packaging/fleet-telemetry-bridge/0001-tesatlas-http-dispatcher.patch`
 (SHA-256
-`9b0332bd05793c329dac6203ae56905b79508585460c09c5ed40206dde7aff03`)
+`196f33e7e05b880a16540accfcabf6f0abc88e560a61dd42544789f714272a83`)
 to a temporary private source copy. That patch adds the bounded Tesatlas loopback dispatcher and its configuration, and changes the receiver's debug log to record the record type instead of the raw telemetry payload. It forwards decoded `V` and
 connectivity records to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`; vehicle records are

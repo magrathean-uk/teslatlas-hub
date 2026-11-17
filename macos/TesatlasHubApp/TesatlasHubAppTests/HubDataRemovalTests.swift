@@ -52,6 +52,52 @@ final class HubDataRemovalTests: XCTestCase {
                                       "preferences[eu.tesatlas.hub.app]"])
     }
 
+    /// M08-T12 item 6: what an install under the earlier name can leave after the hand-over
+    /// (an earlier folder kept beside a current one, the earlier app's own folders and its
+    /// preferences domain) goes with Delete Hub and Data; left behind, the next start would
+    /// move the earlier data and settings back in.
+    func testEarlierNameLeftoversAreDeletedWithTheCurrentOnes() throws {
+        let earlierName = try XCTUnwrap(HubRenameMigration.earlier("Tesatlas Hub"))
+        let earlierIdentifier = try XCTUnwrap(HubRenameMigration.earlier(HubDataRemovalTargets.bundleIdentifier))
+        let fixture = try makeFixture()
+        try fixture.populate()
+        let support = fixture.library.appendingPathComponent("Application Support/\(earlierName)", isDirectory: true)
+        let logs = fixture.library.appendingPathComponent("Logs/\(earlierName)", isDirectory: true)
+        let caches = fixture.library.appendingPathComponent("Caches/\(earlierIdentifier)", isDirectory: true)
+        let preferences = fixture.library.appendingPathComponent("Preferences/\(earlierIdentifier).plist")
+        for folder in [support.appendingPathComponent("data"), logs, caches] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            chmod(folder.path, 0o700)
+        }
+        chmod(support.path, 0o700)
+        let dataDir = support.appendingPathComponent("data").path
+        try Data("data_dir = \"\(dataDir)\"\n".utf8).write(to: support.appendingPathComponent("config.toml"))
+        try Data("rows".utf8).write(to: support.appendingPathComponent("data/hub.sqlite"))
+        try Data("log".utf8).write(to: logs.appendingPathComponent("hub.log"))
+        try Data("cache".utf8).write(to: caches.appendingPathComponent("tile"))
+        try FileManager.default.createDirectory(at: preferences.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("<plist/>".utf8).write(to: preferences)
+
+        let seams = Seams(fixture: fixture)
+        let remover = seams.remover()
+        let report = remover.delete(try remover.check())
+        for target in [support, logs, caches, fixture.d1, fixture.d2, fixture.d3] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: target.path), target.path)
+        }
+        XCTAssertTrue(report.kept.isEmpty, "\(report.kept)")
+        XCTAssertEqual(report.deleted, ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"])
+        XCTAssertEqual(seams.preferencesDomains, [HubDataRemovalTargets.bundleIdentifier, earlierIdentifier])
+
+        // An earlier folder takes the same checks: a backup in it refuses the whole removal.
+        let guarded = try makeFixture()
+        try guarded.populate()
+        let kept = guarded.library.appendingPathComponent("Application Support/\(earlierName)/backups", isDirectory: true)
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        chmod(kept.deletingLastPathComponent().path, 0o700)
+        try Data("{}".utf8).write(to: kept.appendingPathComponent("backup-v4.json"))
+        try assertRefused(guarded, containing: "looks like a Hub backup. Move it out of the Hub folder first")
+    }
+
     func testNeighboursStayByteIdentical() throws {
         let fixture = try makeFixture()
         try fixture.populate()
@@ -182,6 +228,23 @@ final class HubDataRemovalTests: XCTestCase {
         try fixture.populate()
         try Data(repeating: 0x42, count: 100).write(to: fixture.d1.appendingPathComponent("data/not-a-recovery.bin"))
         XCTAssertNoThrow(try Seams(fixture: fixture).remover().check())
+    }
+
+    /// The one export format that exists is the earlier build's: a file under a managed
+    /// folder that starts with that exact marker, zero byte included, is never deleted.
+    func testEarlierRecoveryExportMarkerIsProtectedFromDeleteHubAndData() throws {
+        let earlier = Array("TESLATLAS-HUB-CREDENTIAL-RECOVERY-V1".utf8) + [0] // rename:keep
+        XCTAssertEqual(HubDataRemovalMarkers.recoveryMagic, earlier)
+        for folder in [\Fixture.d1, \Fixture.d2] {
+            let fixture = try makeFixture()
+            try fixture.populate()
+            var contents = Data(earlier)
+            contents.append(Data(repeating: 0x5A, count: 120 - earlier.count))
+            let export = fixture[keyPath: folder].appendingPathComponent("kept-recovery.bin")
+            try contents.write(to: export)
+            try assertRefused(fixture, containing: "looks like an exported recovery file. Move it out of the Hub folder first")
+            XCTAssertEqual(try Data(contentsOf: export), contents)
+        }
     }
 
     func testExportedDriveIsRefused() throws {

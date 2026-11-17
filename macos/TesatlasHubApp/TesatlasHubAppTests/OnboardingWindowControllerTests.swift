@@ -164,7 +164,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             "th-\(UUID().uuidString)", isDirectory: true
         )
         let legacy = root.appendingPathComponent(
-            "tesatlas-hub-import-\(UUID().uuidString)", isDirectory: true
+            "teslatlas-hub-import-\(UUID().uuidString)", isDirectory: true // rename:keep
         )
         let unrelated = root.appendingPathComponent("th-not-a-uuid", isDirectory: true)
         let outside = root.appendingPathComponent("outside", isDirectory: true)
