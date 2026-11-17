@@ -146,21 +146,32 @@ fn vault_refusal(error: tesatlas_hub::CredentialVaultEntryError) -> OperatorRefu
     OperatorRefusal::new(error.code(), error.to_string())
 }
 
-/// The report of a completed take-over: no token, fingerprint or key.
-pub(crate) fn takeover_report() -> serde_json::Value {
-    serde_json::json!({
-        "status": "taken_over",
-        "origin": "source_token",
-        "firstRefresh": "next_window",
-        // The reader refuses while any other client is connected, so a
-        // completed take-over saw none.
-        "sourceSessionsSeen": 0,
-        "sourceNeverMutated": true,
-    })
+/// The report of a completed take-over: no token, fingerprint or key. A
+/// struct, so the fields print in this order.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TakeoverReport {
+    status: &'static str,
+    origin: &'static str,
+    first_refresh: &'static str,
+    /// The reader refuses while any other client is connected, so a
+    /// completed take-over saw none.
+    source_sessions_seen: u32,
+    source_never_mutated: bool,
+}
+
+pub(crate) fn takeover_report() -> TakeoverReport {
+    TakeoverReport {
+        status: "taken_over",
+        origin: "source_token",
+        first_refresh: "next_window",
+        source_sessions_seen: 0,
+        source_never_mutated: true,
+    }
 }
 
 /// Runs the verb once its import admission is held (see the module notes).
-pub(crate) async fn run_take_over(config_path: &Path, source: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+pub(crate) async fn run_take_over(config_path: &Path, source: &str) -> Result<TakeoverReport, Box<dyn std::error::Error>> {
     let config = HubConfig::load(config_path)?;
     let source = ReadOnlySource::parse(source).map_err(|_| {
         OperatorRefusal::new(SOURCE_URL_INVALID, "the source must be a password-free postgres URL naming one host and one database")
@@ -331,8 +342,8 @@ mod tests {
             assert_eq!(reader_refusal(error).code, error.code());
         }
         assert_eq!(
-            takeover_report(),
-            serde_json::json!({"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true})
+            serde_json::to_string(&takeover_report()).expect("report"),
+            r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}"#
         );
     }
 }

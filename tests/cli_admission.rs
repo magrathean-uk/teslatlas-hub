@@ -572,7 +572,7 @@ mod source_takeover {
         let hub = Hub::new();
         fs::create_dir(hub.data()).expect("data dir");
         fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
-        drop(tesatlas_hub::db::HubStore::initialize(&hub.data()).expect("store"));
+        drop(tesatlas_hub::db::HubStore::initialize(hub.data()).expect("store"));
         (hub, CountingEndpoint::spawn())
     }
 
