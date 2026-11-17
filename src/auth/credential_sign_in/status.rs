@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::Serialize;
 use crate::{
     auth::{credential_envelope::{CredentialSlot, EnvelopeError}, credential_keys, credential_vault::CredentialStoreError},
-    db::{CredentialDurabilityState, CredentialMigrationBlockReason, CredentialPairPresence, CredentialSecretsExclusion, CredentialSlotFormatState, HubStore, StoreError},
+    db::{CredentialDurabilityState, CredentialMigrationBlockReason, CredentialPairPresence, CredentialSecretsExclusion, CredentialSlotFormatState, HubStore, OwnerRefreshProgress, StoreError},
     platform::private_directory::{self, PrivateDirectoryError},
 };
 
@@ -17,6 +17,12 @@ pub struct SlotStatus {
     pub origin: Option<&'static str>,
     pub refresh_owner: Option<&'static str>,
     pub store_state: &'static str,
+    /// Owner API slot only (M09-T16, B5): `refreshProgress` is the refresh
+    /// progress of the stored login (`none_sent`, `attempt_recorded`,
+    /// `completed`, `sign_in_required`) or null without one. The Fleet slot
+    /// carries no such key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_progress: Option<Option<&'static str>>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -93,6 +99,7 @@ fn slot_status(
         origin: presence.as_ref().and_then(|row| row.origin.map(|origin| origin.as_str())),
         refresh_owner: presence.as_ref().map(|row| row.refresh_owner.as_str()),
         store_state,
+        refresh_progress: None,
     }
 }
 
@@ -123,7 +130,7 @@ pub fn credential_status(store: &HubStore, data_dir: &Path, now_ms: i64) -> Resu
     let (keyring, key_age_days, exposure_suspected) = keyring_status(data_dir, owner.is_some() || fleet.is_some(), now_ms);
     let Some(format) = format else {
         return Ok(CredentialStatus {
-            legacy_credentials: slot_status(None, true, false),
+            legacy_credentials: SlotStatus { refresh_progress: Some(None), ..slot_status(None, true, false) },
             fleet_credentials: slot_status(None, true, false),
             credential_store: CredentialStoreStatus {
                 format_state: "pending",
@@ -150,8 +157,13 @@ pub fn credential_status(store: &HubStore, data_dir: &Path, now_ms: i64) -> Resu
             Some(CredentialSecretsExclusion::NotApplicable) | None => None,
         }
     } else { None };
+    // B5: from the durable facts only; null without a stored login.
+    let refresh_progress = if owner.is_some() { store.owner_refresh_progress()?.map(OwnerRefreshProgress::as_str) } else { None };
     Ok(CredentialStatus {
-        legacy_credentials: slot_status(owner, owner_pending, format.owner_api_blocked.is_some()),
+        legacy_credentials: SlotStatus {
+            refresh_progress: Some(refresh_progress),
+            ..slot_status(owner, owner_pending, format.owner_api_blocked.is_some())
+        },
         fleet_credentials: slot_status(fleet, fleet_pending, format.fleet_api_blocked.is_some()),
         credential_store: CredentialStoreStatus {
             format_state,

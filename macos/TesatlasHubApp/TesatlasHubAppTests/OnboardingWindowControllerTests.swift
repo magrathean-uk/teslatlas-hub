@@ -825,7 +825,10 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(alert.messageText, "Tesatlas Hub was not fully deleted", "retained items are never called a deletion")
         XCTAssertFalse(alert.informativeText.contains("were removed from this Mac"))
         XCTAssertTrue(alert.informativeText.contains("These items could not be deleted and are still on this Mac: ~/Library/Application Support/Tesatlas Hub/data (is shared with other users). Delete them in Finder."))
-        XCTAssertTrue(alert.informativeText.contains("Files from an older installer remain in /Library/Application Support/Tesatlas Hub."))
+        // Only the retired installer, under the earlier name, wrote this system folder: the
+        // message names the folder the app checks for, not the renamed one.
+        XCTAssertTrue(alert.informativeText.contains("Files from an older installer remain in /Library/Application Support/Teslatlas Hub.")) // rename:keep
+        XCTAssertFalse(alert.informativeText.contains("older installer remain in /Library/Application Support/Tesatlas Hub"))
         XCTAssertTrue(alert.informativeText.contains("macOS still lists the background service as turned off."))
         let plain = MainWindowController.deleteFinalMessage(report: HubDataRemovalReport(), olderInstallerPresent: false)
         XCTAssertFalse(plain.informativeText.contains("older installer"))

@@ -2345,3 +2345,36 @@ async fn b2_the_owner_supervisor_fences_renewal_on_loss_before_held_cleanup() {
     assert_the_renewal_is_over_before_the_held_cleanup(RenewalEndsFirst::Supervisor).await;
     assert_the_renewal_is_over_before_the_held_cleanup(RenewalEndsFirst::Renewal).await;
 }
+
+/// M04-T11: a polled read is accepted into the tick's batch by the Owner loop's own
+/// result handler, and its intake latency runs from there to the return of the
+/// tick's commit. Every commit here takes at least 30 ms inside its transaction, so
+/// every sample the loop records is at least that long.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn intake_latency_of_the_owner_loop_runs_from_its_own_acceptance_of_a_read() {
+    let recorder: &'static IntakeRecorder = Box::leak(Box::new(IntakeRecorder::new()));
+    let mut bed = DrainBed::start(1, |_, seam| {
+        seam.select_intake(recorder, 5);
+        seam.set_tick_commit_hook(Arc::new(|| {
+            std::thread::sleep(Duration::from_millis(30));
+        }));
+    })
+    .await;
+    let reads = Arc::clone(&bed.wire.reads);
+    bed.wait_for("a polled read measured", || {
+        reads.load(Ordering::SeqCst) >= 2
+            && recorder.figures(5).is_some_and(|figures| figures.count >= 2)
+    })
+    .await;
+    bed.stop().await.expect("an orderly stop");
+    let figures = recorder.figures(5).expect("window 5's figures");
+    let shortest = (0..INTAKE_LATENCY_BUCKETS)
+        .find(|index| figures.buckets[*index] > 0)
+        .map(intake_bucket_top)
+        .expect("a sample");
+    assert!(
+        shortest >= 30_000,
+        "every sample includes its commit: the shortest is at most {shortest} us"
+    );
+    assert_eq!(figures.over_target, 0, "the double answers at once");
+}

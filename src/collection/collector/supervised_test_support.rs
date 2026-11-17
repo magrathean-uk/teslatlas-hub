@@ -172,6 +172,11 @@ impl SupervisedCollectorTestSeam {
         *self.scheduler_clock.lock().expect("scheduler clock") = Some(Arc::clone(clock));
     }
 
+    /// Record the runs' intake latencies into `recorder`, as window `seq`'s.
+    fn select_intake(&self, recorder: &'static IntakeRecorder, seq: u64) {
+        *self.intake.lock().expect("intake") = Some((recorder, seq));
+    }
+
     /// Control the cadence of the loop: its scheduler is built on `clock`, and its
     /// timers and iteration instants follow the controller.
     fn control_cadence(&self, clock: &Arc<ManualClock>) -> Arc<CadenceControl> {
@@ -180,6 +185,38 @@ impl SupervisedCollectorTestSeam {
         *self.cadence.lock().expect("cadence") = Some(Arc::clone(&control));
         control
     }
+}
+
+/// The intake latency recorder of a run (M04-T11): the process's, or the one a
+/// test selected.
+#[cfg(not(test))]
+fn run_intake_recorder() -> &'static IntakeRecorder {
+    IntakeRecorder::process_wide()
+}
+
+#[cfg(test)]
+fn run_intake_recorder() -> &'static IntakeRecorder {
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .try_with(|seam| *seam.intake.lock().expect("intake"))
+        .ok()
+        .flatten()
+        .map_or_else(IntakeRecorder::process_wide, |(recorder, _)| recorder)
+}
+
+/// The grant sequence of the window the window gate was last opened for (M04-T11);
+/// in a test, only the one it selected.
+#[cfg(not(test))]
+fn intake_window_seq() -> Option<u64> {
+    crate::collection::window::EgressGate::process_wide().window_seq()
+}
+
+#[cfg(test)]
+fn intake_window_seq() -> Option<u64> {
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .try_with(|seam| *seam.intake.lock().expect("intake"))
+        .ok()
+        .flatten()
+        .map(|(_, seq)| seq)
 }
 
 /// The clock the loops' scheduler is built on when a test selected one.
