@@ -32,7 +32,11 @@ database, do not import it with this release.
    to bypass a failed check.
 4. For migration, stop the source application and its dashboards and leave
    it stopped. Keep PostgreSQL running so Hub can read it. Disable any
-   automatic restart that would bring the source application back. Hub will take over its
+   automatic restart that would bring the source application back. Stopped means its
+   application containers are not running, not merely that its web page is closed
+   or collection is paused. Its dashboards and other database clients must also
+   disconnect. Leave the stopped containers in place: the app discovers an
+   already stopped deployment. Hub will take over its
    Tesla login and become its only refresher. For a new installation without
    migration, choose Fleet or Legacy and sign in instead.
 
@@ -58,16 +62,17 @@ database, do not import it with this release.
    and never keeps it in settings, a file or logs. It is not your Tesla
    password or a token.
 5. Select **Import Data**. History imports first, without reading credentials.
+   The import sets up the selected car on Hub before take-over.
    The next step shows **Taking over the Tesla login…**. Hub reads and decrypts
    the source application's stored access and refresh pair, checks it, and stores the pair
    encrypted in its own credential vault as origin `source_token`, with the
-   Hub as refresh owner. The owner slot must be empty. This step sends nothing
+   Hub as refresh owner. On the first run the owner slot must be empty. This step sends nothing
    to Tesla and changes nothing in the source application's database.
 6. Complete the Hub checks and finish page. Acknowledge that you will keep
    the source application stopped, then choose **Start Hub**. Hub now holds the login, but
-   its first refresh waits for a collection window. Your cars appear once
-   the first collection window opens, without another Tesla sign-in. Check
-   the intended cars, imported journeys and charges, diagnostics and subsequent
+   its first refresh waits for a collection window. The imported car is already
+   set up; no new sign-in or later car discovery is needed for take-over. Check
+   the selected car, imported journeys and charges, diagnostics and subsequent
    collection. Keep the original data until you are satisfied with the result.
 
 ### If the take-over cannot finish
@@ -76,34 +81,54 @@ A wrong encryption key gives `source_token_key_mismatch`: the key does not
 open the stored login. The app shows **History imported; Tesla login not taken
 over**. Check the deployment's key, paste it again and choose **Retry**. The
 field was cleared, so each attempt needs the key again. History stays imported.
-You can choose **Sign in with Tesla Instead** to use the Hub's sign-in page
-after starting it; the sign-in itself needs an open collection window.
+If take-over fails or you decline it, **Sign in with Tesla Instead** leads to
+ordinary Tesla sign-in. With the imported car and no stored login, Hub starts
+with collection off and sends nothing to Tesla while it waits. Sign-in needs
+an open collection window. Once the login is stored, Hub collects inside that
+window without a restart.
 
 A running source application blocks the app's stop check. The Hub also checks database
 sessions before reading the token row: `source_still_running` means another
 client is connected, which can be a dashboard or another database tool even
 if the source application itself is stopped. Stop those clients and retry. Keep PostgreSQL
 running. `source_token_invalid` means the stored login is not a usable Tesla
-Owner login; sign in with Tesla in the Hub instead. `slot_occupied` means Hub
-already holds a login; sign out first if you intend to replace it by take-over.
-These refusals leave the existing login and the source database untouched.
+Owner login; sign in with Tesla in the Hub instead. Repeating take-over for
+the same login reports `already_taken_over` and writes nothing, including
+when Hub has already refreshed that login. A different login in the owner
+slot is refused as `slot_occupied`; it is never overwritten. These refusals
+leave the existing login and the source database untouched.
+
+### Resuming after an interruption
+
+After an app restart or a dropped server connection, the take-over step resumes
+without importing the history again. Reconnect to the server and pass the stop
+check again; enter the encryption key again if another take-over attempt is
+needed. If you use a password to sign in to the server, the app asks for it
+again and does not keep it. Hub checks its stored login after an interrupted
+attempt, so losing the completion reply does not mean take-over failed.
 
 ### Going back to the source application
 
-- Before the Hub's first refresh: sign out in Hub, then start the source application. Its
-  stored login still works because take-over has not spent its refresh token.
-- After the first refresh: sign out in Hub, start the source application and sign in again
-  through the source application's own sign-in page. Its old stored login no longer works.
-  Running both on that login can lock you out.
+The account and finish pages use Hub's stored refresh status, not elapsed time:
 
-Hub never writes a replacement login into the source application's database and never
-exports a token. If you cannot tell whether the first refresh happened, use
-the source application's own sign-in again after signing out in Hub.
+| Status | What the app says and what to do |
+| --- | --- |
+| `none_sent` | Taken over; first refresh at the next window. The source login is untouched. To go back now, sign out in Hub before starting the source application; its stored login has not been spent. |
+| `attempt_recorded` | Hub is refreshing the login now. Keep the source application stopped until the outcome is known. A refresh has been recorded but has no settled outcome; do not assume the source copy still works. Returning to it needs a new Tesla sign-in there. |
+| `completed` | Hub now holds the login; the source application's copy no longer works. To go back, sign out in Hub, start the source application and sign in again there. |
+| `sign_in_required` | A refresh may have been sent. Sign in again in Hub; returning to the source application also needs a new sign-in. Sign out in Hub before going back. |
+
+Keep the source application stopped while Hub owns the login, including between
+windows. Hub never writes a replacement login into the source database or
+exports a token. If refresh progress is unavailable, keep the source stopped
+until you can establish the outcome; do not infer that no refresh was sent.
 
 ### Command-line take-over
 
 `take-over-source-token --source <password-free PostgreSQL URL>
---accept-source-stopped` is separate from `migrate`. Stop the Hub service too;
+--accept-source-stopped` is separate from `migrate`. Import history first to
+set up the car. With no car, the command refuses with `history_import_required`
+and tells you to import history first; it writes nothing. Stop the Hub service too;
 the window must be Closed with its handback recorded. Standard input takes
 one JSON object with exactly `postgresPassword` and `encryptionKey`. Pass it
 directly through a protected input pipe, never through shell arguments,
@@ -111,8 +136,12 @@ environment variables or a saved JSON file. Do not paste a token. A successful
 run prints only:
 
 ```json
-{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}
+{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}
 ```
+
+A repeat for the same login reports `already_taken_over`, with no writes. Its
+`firstRefresh` is `next_window` only while `refreshProgress` is `none_sent`;
+otherwise it is null. A different login in the slot is refused.
 
 The [security model](../architecture/security-model.md#source-login-take-over)
 describes the read-only connection and remaining refusals. The
