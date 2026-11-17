@@ -752,7 +752,7 @@ fn projects_only_completed_selected_vehicle_history() {
         Some(GeofenceBillingType::PerKwh)
     );
     assert_eq!(projected.snapshot.drives[0].descent, Some(30));
-    assert_eq!(projected.snapshot.positions.len(), 1);
+    assert_eq!(projected.snapshot.positions.len(), 2);
     assert_eq!(projected.snapshot.positions[0].battery_heater, Some(true));
     assert_eq!(
         projected.snapshot.positions[0].battery_heater_on,
@@ -792,8 +792,10 @@ fn projects_only_completed_selected_vehicle_history() {
         ProjectionReport {
             completed_drives: 1,
             skipped_open_drives: 1,
-            skipped_unattached_positions: 1,
-            projected_positions: 1,
+            broken_drives: 0,
+            detached_positions: 1,
+            skipped_unattached_positions: 0,
+            projected_positions: 2,
             projected_charges: 1,
             projected_charge_samples: 1,
             projected_states: 0,
@@ -970,5 +972,76 @@ fn mapped_history_is_accepted_by_the_typed_pack_gate() {
     let built = ProjectionPackWriter::new(temporary.path())
         .write_full_snapshot(&request)
         .unwrap();
-    assert_eq!(built.metadata.row_count, 5);
+    assert_eq!(built.metadata.row_count, 6);
+}
+
+#[test]
+fn broken_drive_run_keeps_positions_without_inventing_journeys() {
+    let mut source = history();
+    source.drives.retain(|d| d.id == 10);
+    source.positions.retain(|p| p.id == 20);
+    for id in 1..=3 {
+        let mut drive = source.drives[0].clone();
+        drive.id = id;
+        drive.start_date_ms -= (4 - id) * 5_000;
+        drive.end_date_ms = None;
+        drive.distance_km = None;
+        drive.duration_min = None;
+        drive.start_position_id = Some(100 + id);
+        drive.end_position_id = None;
+        let mut position = source.positions[0].clone();
+        position.id = 100 + id;
+        position.drive_id = Some(id);
+        position.date_ms = drive.start_date_ms;
+        source.drives.push(drive);
+        source.positions.push(position);
+    }
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.snapshot.drives.len(), 1);
+    assert_eq!(projected.snapshot.positions.len(), 4);
+    assert_eq!(projected.report.broken_drives, 3);
+    assert_eq!(projected.report.detached_positions, 3);
+    assert!(
+        projected
+            .snapshot
+            .positions
+            .iter()
+            .filter(|p| p.id > 100)
+            .all(|p| p.drive_id.is_none())
+    );
+}
+
+#[test]
+fn broken_drive_terminal_candidate_retains_its_sample_without_guessing_an_end() {
+    let mut source = history();
+    source.drives.retain(|d| d.id == 11);
+    source.positions.retain(|p| p.id == 21);
+    source.charging_processes.clear();
+    source.charges.clear();
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert!(projected.snapshot.drives.is_empty());
+    assert_eq!(projected.snapshot.positions.len(), 1);
+    assert_eq!(projected.snapshot.positions[0].drive_id, None);
+    assert_eq!(projected.report.skipped_open_drives, 1);
+    // No later evidence: it may be a just-started drive, not proven abandoned.
+    assert_eq!(projected.report.broken_drives, 0);
+    assert_eq!(source.drives[0].end_date_ms, None);
+    assert_eq!(source.positions[0].drive_id, Some(11));
+}
+
+#[test]
+fn broken_drive_policy_does_not_classify_in_progress_or_completed_short_drives() {
+    let mut source = history();
+    source.drives[0].distance_km = None;
+    source.drives[1].start_date_ms = source.drives[0].start_date_ms - 5_000;
+    let mut second = source.positions[1].clone();
+    second.id = 22;
+    second.date_ms += 5_000;
+    source.positions.push(second);
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 0);
+    assert_eq!(projected.report.completed_drives, 1);
+    assert_eq!(projected.report.projected_positions, 3);
+    assert_eq!(projected.report.detached_positions, 2);
+    assert_eq!(projected.snapshot.drives[0].distance_km, None);
 }

@@ -5,8 +5,8 @@
 //! A PostgreSQL reader will decode only the fixed schema-contract projections
 //! into these source values. This module then makes the lossy boundaries
 //! explicit: only completed drives are included, while standalone positions
-//! remain valid history and an in-progress drive remains for the next
-//! snapshot rather than being fabricated as finished history.
+//! remain valid history. Samples of omitted open drives are retained unattached;
+//! an in-progress drive is never fabricated as finished history.
 
 use std::collections::{HashMap, HashSet};
 
@@ -956,6 +956,10 @@ pub fn project_update(
 pub struct ProjectionReport {
     pub completed_drives: u64,
     pub skipped_open_drives: u64,
+    /// Confirmed abandoned one-position fragments, a subset of skipped_open_drives.
+    pub broken_drives: u64,
+    /// Retained samples whose parent did not project. Included in projected_positions.
+    pub detached_positions: u64,
     pub skipped_unattached_positions: u64,
     pub projected_positions: u64,
     pub projected_charges: u64,
@@ -963,6 +967,58 @@ pub struct ProjectionReport {
     pub projected_states: u64,
     pub projected_updates: u64,
     pub skipped_incomplete_updates: u64,
+}
+
+/// Bounded by source drive rows, never by the number of history positions.
+/// A terminal fragment has the same shape as a just-started drive. Only a
+/// strictly later drive of this car supplies evidence that it was abandoned.
+pub(crate) struct BrokenDriveTracker {
+    car_id: i64,
+    candidate_position_counts: HashMap<i64, u8>,
+}
+
+impl BrokenDriveTracker {
+    pub(crate) fn new(drives: &[SourceDbDrive], car_id: i64) -> Self {
+        let latest_start = drives
+            .iter()
+            .filter(|d| d.car_id == car_id)
+            .map(|d| d.start_date_ms)
+            .max();
+        let candidate_position_counts = drives
+            .iter()
+            .filter(|d| {
+                d.car_id == car_id
+                    && d.end_date_ms.is_none()
+                    && d.distance_km.is_none()
+                    && d.duration_min.is_none()
+                    && latest_start.is_some_and(|latest| d.start_date_ms < latest)
+            })
+            .map(|d| (d.id, 0))
+            .collect();
+        Self {
+            car_id,
+            candidate_position_counts,
+        }
+    }
+
+    pub(crate) fn observe(&mut self, position: &SourceDbPosition) {
+        if position.car_id != self.car_id {
+            return;
+        }
+        if let Some(count) = position
+            .drive_id
+            .and_then(|id| self.candidate_position_counts.get_mut(&id))
+        {
+            *count = count.saturating_add(1).min(2);
+        }
+    }
+
+    pub(crate) fn count(&self) -> u64 {
+        self.candidate_position_counts
+            .values()
+            .filter(|&&count| count == 1)
+            .count() as u64
+    }
 }
 
 impl ProjectionReport {
@@ -1156,20 +1212,17 @@ pub fn project_drive(
 }
 
 /// Map a position from the selected car. Standalone positions are valid
-/// history and retain a NULL drive_id. A non-NULL drive_id must belong to a
-/// completed drive selected by the caller.
+/// history and retain a NULL drive_id. If its parent is omitted, retain the
+/// sample as unattached history without inventing a completed journey.
 pub fn project_position(
     position: &SourceDbPosition,
     selected_car_id: i64,
     drive_is_included: bool,
 ) -> Result<Option<ProjectionPosition>, SourceDbProjectionError> {
     require_selected_car("position", position.id, position.car_id, selected_car_id)?;
-    if position.drive_id.is_some() && !drive_is_included {
-        return Ok(None);
-    }
     Ok(Some(ProjectionPosition {
         id: position.id,
-        drive_id: position.drive_id,
+        drive_id: position.drive_id.filter(|_| drive_is_included),
         car_id: selected_car_id,
         date_ms: position.date_ms,
         latitude: position.latitude,
@@ -1370,6 +1423,7 @@ pub fn project_vehicle(
     }
     let projected_car = project_car(car, latest_firmware(&updates))?;
 
+    let mut broken_drives = BrokenDriveTracker::new(&source.drives, selected_car_id);
     let mut included_drive_ids = HashSet::new();
     let mut drives = Vec::new();
     for drive in source
@@ -1431,6 +1485,7 @@ pub fn project_vehicle(
         .iter()
         .filter(|position| position.car_id == selected_car_id)
     {
+        broken_drives.observe(position);
         let included = position
             .drive_id
             .is_none_or(|drive_id| included_drive_ids.contains(&drive_id));
@@ -1439,9 +1494,14 @@ pub fn project_vehicle(
             report.skipped_unattached_positions += 1;
             continue;
         };
+        if position.drive_id.is_some() && projected.drive_id.is_none() {
+            report.detached_positions += 1;
+        }
         positions.push(projected);
         report.projected_positions += 1;
     }
+
+    report.broken_drives = broken_drives.count();
 
     let mut samples_by_process = HashMap::<i64, Vec<&SourceDbCharge>>::new();
     for sample in &source.charges {

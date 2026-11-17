@@ -1323,3 +1323,96 @@ fn staged_full_snapshot_uses_schema_2_1_with_an_empty_update_table() {
         .validate_terminal_cursor(&key)
         .expect("empty update schema-2.1 manifest remains signed and valid");
 }
+
+#[test]
+fn broken_drive_staged_import_preserves_run_and_terminal_samples_in_valid_packs() {
+    let (_base_directory, base) = stage();
+    let drive = base
+        .get::<SourceDbDrive>(SourceDbStageTable::Drives, 10)
+        .unwrap()
+        .unwrap();
+    let position = base
+        .get::<SourceDbPosition>(SourceDbStageTable::Positions, 20)
+        .unwrap()
+        .unwrap();
+    let (_stage_directory, mut stage) = stage_with_sealed(false);
+    for id in [1, 2, 3, 11] {
+        let mut fragment = drive.clone();
+        fragment.id = id;
+        fragment.start_date_ms += (id - 10) * 5_000;
+        fragment.end_date_ms = None;
+        fragment.distance_km = None;
+        fragment.duration_min = None;
+        fragment.start_position_id = Some(100 + id);
+        fragment.end_position_id = None;
+        let mut sample = position.clone();
+        sample.id = 100 + id;
+        sample.drive_id = Some(id);
+        sample.date_ms = fragment.start_date_ms;
+        stage
+            .insert(SourceDbStageTable::Drives, id, &fragment)
+            .unwrap();
+        stage
+            .insert(SourceDbStageTable::Positions, sample.id, &sample)
+            .unwrap();
+    }
+    stage.seal().unwrap();
+    let packs = crate::private_tempdir().unwrap();
+    let built = write_staged_full_snapshot_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(packs.path()),
+        binding(),
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        SourceDbFragmentLimits {
+            max_rows_per_fragment: 3,
+            max_projected_json_bytes: 1024 * 1024,
+        },
+    )
+    .unwrap();
+    assert_eq!(built.report.completed_drives, 1);
+    assert_eq!(built.report.skipped_open_drives, 4);
+    assert_eq!(built.report.broken_drives, 3);
+    assert_eq!(built.report.projected_positions, 5);
+    assert_eq!(built.report.detached_positions, 4);
+    assert_eq!(built.report.skipped_unattached_positions, 0);
+    let mut samples = std::collections::BTreeMap::new();
+    for (index, chunk) in built.chunks.iter().enumerate() {
+        let bytes = zstd::stream::decode_all(File::open(&chunk.path).unwrap()).unwrap();
+        let path = packs.path().join(format!("inspection-{index}.sqlite"));
+        std::fs::write(&path, bytes).unwrap();
+        let connection = Connection::open(path).unwrap();
+        let fragments: i64 = connection
+            .query_row("SELECT count(*) FROM drives WHERE id != 10", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(fragments, 0);
+        let mut statement = connection
+            .prepare("SELECT id, drive_id FROM positions")
+            .unwrap();
+        for row in statement
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?))
+            })
+            .unwrap()
+        {
+            let (id, parent) = row.unwrap();
+            assert!(samples.insert(id, parent).is_none());
+        }
+    }
+    assert_eq!(
+        samples,
+        [
+            (20, Some(10)),
+            (101, None),
+            (102, None),
+            (103, None),
+            (111, None)
+        ]
+        .into()
+    );
+}
