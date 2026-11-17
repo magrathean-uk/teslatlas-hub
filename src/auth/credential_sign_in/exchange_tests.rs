@@ -661,11 +661,12 @@ fn fleet_begin(entry: &CredentialVaultEntry, stub: &Stub) -> Result<FleetSignInB
 /// `binding` key is given the held one's, so each test checks only its own
 /// defect.
 async fn fleet_redeem(entry: &CredentialVaultEntry, binding: FleetSignInBinding, input: &str, stub: &Stub) -> Result<OwnerSignIn, CredentialCommandError> {
+    // Inserted as text, so a duplicate or malformed member stays as written.
     let input = match serde_json::from_str::<serde_json::Value>(input) {
-        Ok(serde_json::Value::Object(mut object)) if !object.contains_key("binding") && !object.keys().any(|key| key.to_ascii_lowercase().contains("token")) => {
-            object.insert("binding".to_owned(), binding.id().to_string().into());
-            serde_json::Value::Object(object).to_string()
-        }
+        Ok(serde_json::Value::Object(object)) if !object.contains_key("binding") && !object.keys().any(|key| key.to_ascii_lowercase().contains("token")) =>
+            format!("{{\"binding\":\"{}\"{}{}", binding.id(), if object.is_empty() { "" } else { "," }, &input.trim_start()[1..]),
+        _ if input.trim_start().starts_with('{') && !input.contains("\"binding\"") && !input.to_ascii_lowercase().contains("token") =>
+            format!("{{\"binding\":\"{}\",{}", binding.id(), &input.trim_start()[1..]),
         _ => input.to_owned(),
     };
     let mut held = Some(binding);
@@ -1074,4 +1075,28 @@ async fn fleet_sign_in_grant_without_collection_scopes_keeps_the_stored_login() 
         assert!(error.to_string().contains("stored login was kept"), "{error}");
         assert_eq!(entry.vault().stored_generation(CredentialSlot::FleetApi).expect("read"), Some(stored), "the stored login stays");
     }
+}
+
+/// M09-T19 ruling 8: the Fleet form is allocated at its full bounded size
+/// before the client secret is copied in, so a short secret followed by the
+/// longest code never reallocates it (no freed block keeps the secret).
+#[test]
+fn fleet_request_form_never_grows_past_its_first_allocation() {
+    let code = "c".repeat(MAX_OWNER_CODE_BYTES);
+    for secret in ["s", "a-much-longer-synthetic-secret-0001"] {
+        let input = serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT, "clientSecret": secret, "region": "eu",
+            "binding": uuid::Uuid::new_v4().to_string()}).to_string();
+        let (settings, code, _binding) = SignInSettings::fleet_redeem(input.as_bytes()).expect("input");
+        let (form, bounded) = fleet_request_form(&settings, code.as_str()).expect("form");
+        assert_eq!(form.capacity(), bounded, "{secret}: the form never grew");
+        assert!(form.len() <= bounded);
+    }
+    // The growth that remains possible elsewhere wipes what it replaces: the
+    // bytes move, nothing is lost and later pushes fit the reserved room.
+    let mut buffer = SecretBuffer::new("growth", 4);
+    super::super::protocol::parameter(&mut buffer, "client_secret", FLEET_SECRET);
+    let after_reserve = buffer.capacity();
+    super::super::protocol::parameter(&mut buffer, "code", "c");
+    assert!(buffer.starts_with(format!("client_secret={FLEET_SECRET}").as_bytes()));
+    assert!(after_reserve >= format!("client_secret={FLEET_SECRET}").len());
 }

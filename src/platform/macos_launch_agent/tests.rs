@@ -269,8 +269,16 @@ fn provider_preflight_accepts_only_the_selected_usable_credentials() {
 /// The Fleet-only hub of the install fixtures, with an identified unresolved
 /// refresh: a started token receipt bound to the stored pair, with its input fence.
 fn seed_fleet_unresolved_hub(data_dir: &Path) -> (HubStore, uuid::Uuid) {
-    seed_fleet_ready_hub(data_dir);
-    let store = HubStore::initialize(data_dir).expect("store");
+    // Since the Fleet admission (M09-T08) only the Hub's own grant is a
+    // usable Fleet pair: the fixture signs in through the grant path.
+    let store = seed_selected_car(data_dir);
+    load_or_create_cursor_key(data_dir).expect("cursor key");
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("runtime")
+        .block_on(m09_t19_fleet_sign_in(&store, data_dir));
     let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), data_dir);
     let slot = crate::auth::credential_envelope::CredentialSlot::FleetApi;
     let generation = vault.stored_generation(slot).expect("generation read").expect("Fleet pair");
@@ -1199,7 +1207,9 @@ fn awaiting_sign_in_keeps_every_other_refusal() {
     refused(&config, "Legacy refresh disabled");
     let mut config = collecting();
     config.collector.provider = CollectorProvider::Fleet;
-    refused(&config, "Fleet provider");
+    // A Fleet Hub is not the Legacy state's: it has its own (M09-T19 ruling 3).
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "Fleet provider: not the Legacy state");
+    assert_eq!(hub_awaits_fleet_setup(&config).expect("readable"), Some(FleetSetupPending::SignIn), "Fleet provider: the Fleet state");
 
     // No configured car.
     let temporary = crate::private_tempdir().expect("temporary directory");
@@ -1249,5 +1259,96 @@ fn awaiting_sign_in_refuses_an_existing_unusable_key_store() {
         fs::set_permissions(&keyring, fs::Permissions::from_mode(0o600)).expect("restore mode");
         fs::remove_file(&keyring).expect("reset");
     }
+    drop(store);
+}
+
+/// Signs the Hub in to the Fleet API through the real grant path: begin, then
+/// the redeem against a loopback token double, inside an Open window. The
+/// login is the Hub's own (`fleet_oauth`), as the collector loads it.
+async fn m09_t19_fleet_sign_in(store: &HubStore, data: &Path) {
+    use std::sync::Arc;
+    crate::crypto::install_default_provider();
+    const ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.sig";
+    let router = axum::Router::new().route("/oauth2/v3/token", axum::routing::post(|| async {
+        serde_json::json!({"access_token": ACCESS, "refresh_token": "m09-t19-refresh", "expires_in": 28_800, "token_type": "Bearer"}).to_string()
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let token = format!("http://{}/oauth2/v3/token", listener.local_addr().expect("address"));
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("token double") });
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+    let _route = window.route(&token);
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), data);
+    let entry = crate::CredentialVaultEntry::for_test(Arc::clone(&vault));
+    let begin = serde_json::json!({"clientId": "m09-t19-client", "region": "eu", "redirectUri": "https://owner.example/fleet/callback"}).to_string();
+    let binding = crate::auth::credential_sign_in::begin_fleet_sign_in_with_stub_for_test(&entry, begin.as_bytes(), &token).expect("begin");
+    let redeem = serde_json::json!({"code": format!("m09-t19-{}", uuid::Uuid::new_v4()), "redirectUri": "https://owner.example/fleet/callback",
+        "clientId": "m09-t19-client", "clientSecret": "m09-t19-secret", "region": "eu", "binding": binding.id().to_string()}).to_string();
+    let mut held = Some(binding);
+    crate::auth::credential_sign_in::exchange_fleet_code_with_stub_for_test(&entry, &mut held, redeem.as_bytes(), &token)
+        .await
+        .expect("the Hub's own Fleet login");
+    drop(entry);
+    drop(vault);
+    server.abort();
+}
+
+/// M09-T19 ruling 3: an unfinished Fleet set-up is admitted for production
+/// serve, collector off, at each step (no login; a login and no car; a
+/// login, a car and interval 0), and a signed-out Fleet Hub likewise; the
+/// login, a car and a cadence pass the full admission; the state survives a
+/// restart because it is read from the store each time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_setup_admits_each_unfinished_step() {
+    let fleet = |data: &Path, interval: u64| {
+        let mut config = idle_start_config(data);
+        config.collector.provider = CollectorProvider::Fleet;
+        config.collector.interval_seconds = interval;
+        config
+    };
+    let admitted = |config: &HubConfig, expected: FleetSetupPending, label: &str| {
+        assert_eq!(hub_awaits_fleet_setup(config).expect("readable"), Some(expected), "{label}");
+        assert!(!hub_awaits_owner_sign_in(config).expect("readable"), "{label}: not the Legacy state");
+        preflight_hub_for_serve(config, None).unwrap_or_else(|error| panic!("{label}: served: {error}"));
+        assert!(preflight_hub_for_config(config).is_err(), "{label}: the full admission is unchanged");
+    };
+
+    // A set-up that stopped after the sign-in: the login, no car.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = HubStore::initialize(&data).expect("store");
+    load_or_create_cursor_key(&data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, &data));
+    crate::storage::setup_marker::record(&data, store.installation_id().expect("installation")).expect("marker");
+    assert!(!hub_is_never_configured(&fleet(&data, 0)).expect("readable"), "set up before");
+    admitted(&fleet(&data, 0), FleetSetupPending::SignIn, "no login");
+    assert_eq!(FleetSetupPending::SignIn.state(), "awaiting_sign_in");
+    m09_t19_fleet_sign_in(&store, &data).await;
+    admitted(&fleet(&data, 0), FleetSetupPending::Vehicles, "a login and no car");
+    admitted(&fleet(&data, 300), FleetSetupPending::Vehicles, "a login, no car, a cadence");
+    assert_eq!(FleetSetupPending::Vehicles.state(), "awaiting_vehicles");
+    drop(store);
+
+    // A set-up that found its car: the consent step remains.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    m09_t19_fleet_sign_in(&store, &data).await;
+    admitted(&fleet(&data, 0), FleetSetupPending::Activation, "a login, a car, interval 0");
+    assert_eq!(FleetSetupPending::Activation.state(), "awaiting_activation");
+    // Activated: the full admission.
+    let active = fleet(&data, 300);
+    assert_eq!(hub_awaits_fleet_setup(&active).expect("readable"), None);
+    preflight_hub_for_config(&active).expect("the full admission passes");
+    preflight_hub_for_serve(&active, None).expect("served collecting");
+    // Signed out: the login is cleared; the car and cadence stay.
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), &data);
+    vault.clear_credential_pair(crate::auth::credential_envelope::CredentialSlot::FleetApi).expect("signed out");
+    drop(vault);
+    admitted(&active, FleetSetupPending::SignIn, "signed out");
+    // Not a Fleet set-up: a Legacy provider keeps the Legacy rules.
+    let mut legacy = fleet(&data, 300);
+    legacy.collector.provider = CollectorProvider::Legacy;
+    assert_eq!(hub_awaits_fleet_setup(&legacy).expect("readable"), None);
     drop(store);
 }

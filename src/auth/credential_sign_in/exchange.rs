@@ -466,6 +466,13 @@ pub fn abandon_fleet_sign_in(entry: &CredentialVaultEntry, binding: FleetSignInB
 /// buffer that the transport owns and wipes once sent. The client secret is
 /// copied only here.
 fn fleet_request_body(settings: &SignInSettings, code: &str) -> Result<reqwest::Body, CredentialCommandError> {
+    let (body, _bounded) = fleet_request_form(settings, code)?;
+    Ok(reqwest::Body::from(axum::body::Bytes::from_owner(body)))
+}
+
+/// The Fleet form in its wiping buffer, and the full size it was allocated
+/// at before anything was copied in.
+fn fleet_request_form(settings: &SignInSettings, code: &str) -> Result<(SecretBuffer, usize), CredentialCommandError> {
     let (Some(secret), Some(region)) = (settings.client_secret(), settings.region()) else {
         return Err(failure(SignInError::SettingsInvalid));
     };
@@ -479,7 +486,7 @@ fn fleet_request_body(settings: &SignInSettings, code: &str) -> Result<reqwest::
     parameter(&mut body, "code", code);
     parameter(&mut body, "audience", region.base_url().trim_end_matches('/'));
     parameter(&mut body, "redirect_uri", settings.redirect_uri());
-    Ok(reqwest::Body::from(axum::body::Bytes::from_owner(body)))
+    Ok((body, bounded))
 }
 
 /// `setup-fleet` (M09-T09, M09-T19): redeems the code of the sign-in held
@@ -554,7 +561,7 @@ async fn fleet_exchange_at(entry: &CredentialVaultEntry, held: &mut Option<Fleet
     }
     let loopback = stub.is_some();
     let endpoint = stub.unwrap_or_else(|| settings.token_endpoint().clone());
-    let issuer = settings.token_endpoint().as_str().to_owned();
+    let issuer = endpoint.as_str().to_owned();
     let (client_id, region) = (settings.client_id().to_owned(), settings.region());
     let namespace = CodeNamespace { slot: CredentialSlot::FleetApi, issuer: &issuer, client_id: &client_id };
     spend_code(&namespace, code.as_str())?;

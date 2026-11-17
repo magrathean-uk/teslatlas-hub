@@ -463,19 +463,41 @@ pub fn connect(data_dir: &Path) -> Result<UnixStream, OperatorRefusal> {
     Ok(stream)
 }
 
+/// [`exchange`] for a request that may hold a secret: the request is
+/// dropped (and its secret wiped) as soon as it has been written, before the
+/// service's answer is awaited.
+pub fn exchange_owned(
+    stream: UnixStream,
+    request: OperatorRequest,
+    timeout: Duration,
+) -> Result<serde_json::Value, OperatorRefusal> {
+    exchange_with(stream, timeout, move |bytes| {
+        let encoded = serde_json::to_writer(BoundedWriter(bytes, REQUEST_MAX_BYTES), &request);
+        drop(request);
+        encoded
+    })
+}
+
 /// Sends one request on a connected stream and returns the service's result
 /// or its refusal.
 pub fn exchange(
-    mut stream: UnixStream,
+    stream: UnixStream,
     request: &OperatorRequest,
     timeout: Duration,
+) -> Result<serde_json::Value, OperatorRefusal> {
+    exchange_with(stream, timeout, |bytes| serde_json::to_writer(BoundedWriter(bytes, REQUEST_MAX_BYTES), request))
+}
+
+fn exchange_with(
+    mut stream: UnixStream,
+    timeout: Duration,
+    encode: impl FnOnce(&mut Vec<u8>) -> serde_json::Result<()>,
 ) -> Result<serde_json::Value, OperatorRefusal> {
     // Allocated in full before anything secret is written (M09-T19 ruling
     // 8): a request that would outgrow it is refused, so it never
     // reallocates and leaves no copy in a freed block.
     let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(REQUEST_MAX_BYTES + 1));
-    let encoded = serde_json::to_writer(BoundedWriter(&mut bytes, REQUEST_MAX_BYTES), request);
-    if encoded.is_err() {
+    if encode(&mut bytes).is_err() {
         return Err(failed("request is not encodable or too large"));
     }
     bytes.push(b'\n');

@@ -536,7 +536,8 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
                     .map_err(|_| setup_input_invalid("setup-fleet input is not UTF-8"))?
                     .to_owned(),
             );
-            if register {
+            drop(bytes);
+            let request = if register {
                 OperatorRequest::FleetPartnerRegister { input }
             } else if begin {
                 OperatorRequest::FleetSignInBegin { input }
@@ -546,7 +547,12 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
                     vehicle_id: *vehicle_id,
                     all_vehicles: *all_vehicles,
                 }
-            }
+            };
+            // The request, with the client secret, is wiped once it is
+            // written, not when the service's answer arrives (review N5).
+            let result = operator::channel::exchange_owned(stream, request, FORWARD_TIMEOUT)?;
+            println!("{}", serde_json::to_string(&result)?);
+            return Ok(());
         }
         Command::Window { command } => match command {
             WindowCommand::Status => OperatorRequest::WindowStatus,
@@ -985,15 +991,21 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         if held.is_none() {
             return Err(setup_refusal(fleet_binding_invalid()));
         }
+        let held_attempt = &mut held;
         let report = fleet_setup(
             &self.custody,
             &*self.kick,
             || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
-            |entry| run_owner_exchange(|| sign_in::exchange_fleet_code(entry, &mut held, input.0.as_bytes())),
+            // The input, with the client secret, is wiped as soon as the
+            // exchange returns, before the discovery runs (review N5).
+            move |entry| {
+                let signed_in = run_owner_exchange(|| sign_in::exchange_fleet_code(entry, held_attempt, input.0.as_bytes()));
+                drop(input);
+                signed_in
+            },
             |entry| run_owner_exchange(|| fleet_credentials::discover_fleet_cars(
                 entry, &self.store, &self.config, &self.admission, selection)),
         );
-        drop(input);
         if let Some(binding) = held
             && let Ok(mut slot) = self.fleet_sign_in.lock()
             && slot.is_none()

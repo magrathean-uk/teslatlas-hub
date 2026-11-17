@@ -1424,3 +1424,40 @@ mod fleet_partner_service_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod m09_t19_partner_input {
+    use std::sync::{Arc, Mutex};
+
+    const SECRET: &str = "synthetic-partner-secret-0001";
+
+    /// M09-T19 ruling 8 (review B5.1): every value of the registration input
+    /// is a wiping string from the moment it is decoded, so a parse that fails
+    /// part-way (a bad region, a missing, duplicate or unknown key, a
+    /// malformed tail) wipes the secret it had already decoded.
+    #[test]
+    fn a_partial_parse_wipes_the_decoded_secret() {
+        let inputs = [
+            format!(r#"{{"clientSecret":"{SECRET}","clientId":"app","domain":"example.com","region":null}}"#),
+            format!(r#"{{"clientSecret":"{SECRET}","clientId":"app","domain":"example.com"}}"#),
+            format!(r#"{{"clientSecret":"{SECRET}","clientSecret":"{SECRET}","clientId":"app","domain":"example.com","region":"eu"}}"#),
+            format!(r#"{{"clientSecret":"{SECRET}","clientId":"app","domain":"example.com","region":"eu","extra":1}}"#),
+            format!(r#"{{"clientSecret":"{SECRET}","clientId":"app","domain":"example.com","region":"eu"}} tail"#),
+            format!(r#"{{"clientSecret":"{SECRET}","clientId":"app","domain":"example.com","region":"xx"}}"#),
+        ];
+        let drops = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&drops);
+        crate::auth::credential_sign_in::observe_sign_in_secret_drops(move |event| record.lock().expect("drops").push(event), || {
+            for input in &inputs {
+                let refusal = super::read_fleet_partner_input(input.as_bytes()).expect_err(input);
+                assert_eq!(refusal.code, "fleet_partner_settings_invalid", "{input}");
+                assert!(!refusal.to_string().contains(SECRET));
+            }
+        });
+        let drops = drops.lock().expect("drops");
+        let secrets: Vec<_> = drops.iter().filter(|event| event.kind == "wire_secret" && event.before == SECRET.len()).collect();
+        assert!(secrets.len() >= inputs.len(), "each input decoded its secret: {}", secrets.len());
+        assert!(secrets.iter().all(|event| event.zeroised && event.after == 0), "every decoded secret was wiped");
+        assert!(drops.iter().filter(|event| event.kind == "wire_secret").all(|event| event.zeroised), "every decoded value was wiped");
+    }
+}

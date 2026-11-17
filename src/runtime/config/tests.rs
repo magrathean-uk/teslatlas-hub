@@ -412,95 +412,49 @@ fn collector_debug_redacts_owner_and_stream_endpoint_values() {
     }
 }
 
+/// M09-T19 ruling 2: the Fleet API is used for polling only. A configuration
+/// carrying `[collector.fleet_telemetry]` is refused at admission with its
+/// fixed text, for any provider and bind, as is a Fleet configuration with
+/// either command-proxy key; a Legacy configuration with the proxy keys keeps
+/// loading (Legacy never reads them).
 #[test]
-fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
-    let valid = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
+fn polling_only_admission_refuses_telemetry_and_the_command_proxy() {
+    let telemetry = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
                  [collector]\nprovider = 'fleet'\n\
-                 fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
                  [collector.fleet_telemetry]\n\
                  hostname = 'telemetry.example.test'\n\
                  ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
                  ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
-    HubConfig::from_exact_bytes(valid.as_bytes()).expect("valid Fleet Telemetry config");
-
-    for invalid in [
-        valid.replace("provider = 'fleet'\n", ""),
-        valid.replace("fleet_command_proxy_url = 'https://127.0.0.1:4443'\n", ""),
-        valid.replace("127.0.0.1:8080", "127.0.0.1:8081"),
-        valid.replace("127.0.0.1:8080", "[::1]:8080"),
-        valid.replace("telemetry.example.test", "https://telemetry.example.test"),
-        valid.replace(
-            "/var/lib/tesatlas-hub/secrets/telemetry-token",
-            "relative-token",
-        ),
+    let tls = "[tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
+               private_key_path = '/etc/tesatlas/tls/key.pem'\n\
+               public_url = 'https://hub.example.test'\n";
+    for config in [
+        telemetry.to_owned(),
+        telemetry.replace("provider = 'fleet'\n", "provider = 'legacy'\n"),
+        telemetry.replace("[collector]\n", "[collector]\nfleet_command_proxy_url = 'https://127.0.0.1:4443'\n"),
+        format!("{}{tls}", telemetry.replace("127.0.0.1:8080", "0.0.0.0:8443")),
     ] {
-        assert!(matches!(
-            HubConfig::from_exact_bytes(invalid.as_bytes()),
-            Err(ConfigError::InvalidFleetTelemetry)
-        ));
-    }
-}
-
-#[test]
-fn fleet_telemetry_accepts_public_tls_with_a_private_loopback_ingress() {
-    let loopback = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
-                 [collector]\nprovider = 'fleet'\n\
-                 fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
-                 [collector.fleet_telemetry]\n\
-                 hostname = 'telemetry.example.test'\n\
-                 ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
-                 ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
-
-    for bind in ["127.0.0.1:8443", "0.0.0.0:8443", "192.0.2.10:8080"] {
-        let config = format!(
-            "{}[tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
-             private_key_path = '/etc/tesatlas/tls/key.pem'\n\
-             public_url = 'https://hub.example.test'\n",
-            loopback.replace("127.0.0.1:8080", bind)
+        let error = HubConfig::from_exact_bytes(config.as_bytes()).unwrap_err();
+        assert!(matches!(error, ConfigError::FleetTelemetryNotOffered), "{config}: {error:?}");
+        assert_eq!(
+            error.to_string(),
+            "[collector.fleet_telemetry] is not supported: the Fleet API is used for polling only, with no telemetry push. Remove the table."
         );
-        HubConfig::from_exact_bytes(config.as_bytes()).unwrap_or_else(|error| {
-            panic!("public TLS Fleet bind {bind} must be accepted: {error}")
-        });
     }
-}
-
-#[test]
-fn fleet_telemetry_rejects_a_public_tls_listener_collision_with_private_ingress() {
-    let loopback = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n\
-                 [collector]\nprovider = 'fleet'\n\
-                 fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
-                 [collector.fleet_telemetry]\n\
-                 hostname = 'telemetry.example.test'\n\
-                 ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
-                 ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
-
-    for bind in ["127.0.0.1:8080", "0.0.0.0:8080", "[::]:8080"] {
-        let config = format!(
-            "{}[tls]\ncertificate_path = '/etc/tesatlas/tls/cert.pem'\n\
-             private_key_path = '/etc/tesatlas/tls/key.pem'\n\
-             public_url = 'https://hub.example.test'\n",
-            loopback.replace("127.0.0.1:8080", bind)
-        );
-        assert!(matches!(
-            HubConfig::from_exact_bytes(config.as_bytes()),
-            Err(ConfigError::FleetTelemetryListenerCollision)
-        ));
+    let fleet = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n[collector]\nprovider = 'fleet'\n";
+    HubConfig::from_exact_bytes(fleet.as_bytes()).expect("a polling Fleet configuration");
+    for key in [
+        "fleet_command_proxy_url = 'https://127.0.0.1:4443'\n",
+        "fleet_command_proxy_root_certificate_path = '/etc/tesatlas-hub/command-proxy-cert.pem'\n",
+    ] {
+        let config = format!("{fleet}{key}");
+        let error = HubConfig::from_exact_bytes(config.as_bytes()).unwrap_err();
+        assert!(matches!(error, ConfigError::FleetCommandProxyNotOffered), "{key}: {error:?}");
+        assert!(error.to_string().contains("no vehicle command is sent"), "{error}");
     }
-}
-
-#[test]
-fn fleet_telemetry_still_rejects_public_plaintext() {
-    let config = "data_dir = '/var/lib/tesatlas'\nbind = '0.0.0.0:8443'\n\
-                  [collector]\nprovider = 'fleet'\n\
-                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
-                  [collector.fleet_telemetry]\n\
-                  hostname = 'telemetry.example.test'\n\
-                  ca_certificate_path = '/etc/tesatlas-hub/telemetry/ca.pem'\n\
-                  ingest_token_path = '/var/lib/tesatlas-hub/secrets/telemetry-token'\n";
-    assert!(matches!(
-        HubConfig::from_exact_bytes(config.as_bytes()),
-        Err(ConfigError::NonLoopbackBind)
-    ));
+    let legacy = "data_dir = '/var/lib/tesatlas'\nbind = '127.0.0.1:8080'\n[collector]\nprovider = 'legacy'\n\
+                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n";
+    HubConfig::from_exact_bytes(legacy.as_bytes()).expect("a Legacy configuration never reads the proxy keys");
 }
 
 #[test]

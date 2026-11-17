@@ -309,7 +309,23 @@ fn fleet_sign_in_configured_hub_refuses_vehicle_commands_as_legacy_does() {
             let output = hub.run(&case, b"");
             assert_eq!(output.status.code(), Some(1), "{provider} {case:?}: {}", stderr(&output));
             assert!(stdout(&output).is_empty(), "{provider} {case:?}: nothing reported");
+            // M09-T19 ruling 1: refused as not offered, before anything is read.
+            assert!(
+                stderr(&output).contains("vehicle_commands_not_offered: vehicle commands are not offered"),
+                "{provider} {case:?}: {}",
+                stderr(&output)
+            );
             refusals.push((provider, case.clone(), stderr(&output)));
+        }
+        // Every vehicle action is refused the same way; without --confirm the
+        // command line refuses it as a usage error before that.
+        for action in ["wake", "climate-stop", "charge-start", "charge-stop", "lock", "unlock", "flash-lights", "honk-horn"] {
+            let output = hub.run(&["control", action, "--confirm"], b"");
+            assert_eq!(output.status.code(), Some(1), "{provider} {action}");
+            assert!(stderr(&output).contains("vehicle_commands_not_offered"), "{provider} {action}: {}", stderr(&output));
+            let output = hub.run(&["control", action], b"");
+            assert_ne!(output.status.code(), Some(0), "{provider} {action} without --confirm");
+            assert!(stdout(&output).is_empty(), "{provider} {action} without --confirm");
         }
         assert_eq!(hub.endpoint.connections(), 0, "{provider}: nothing sent");
     }

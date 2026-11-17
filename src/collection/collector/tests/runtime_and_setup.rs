@@ -1762,3 +1762,253 @@ fn active_streams_bound_collection_sleep_below_queue_capacity() {
         assert!(STREAM_EVENT_CHANNEL_CAPACITY > MAX_STREAM_EVENTS_PER_DRAIN);
     }
 }
+
+// ---- M09-T19 rulings 1 and 2: no vehicle command, no telemetry --------------------------------
+
+/// Every vehicle action the wire can carry.
+const M09_T19_EVERY_ACTION: [LegacyVehicleAction; 10] = [
+    LegacyVehicleAction::Wake,
+    LegacyVehicleAction::ClimateStart,
+    LegacyVehicleAction::ClimateStop,
+    LegacyVehicleAction::ChargeStart,
+    LegacyVehicleAction::ChargeStop,
+    LegacyVehicleAction::SetChargeLimit(80),
+    LegacyVehicleAction::Lock,
+    LegacyVehicleAction::Unlock,
+    LegacyVehicleAction::FlashLights,
+    LegacyVehicleAction::HonkHorn,
+];
+
+/// A Fleet Hub signed in through the real grant path (begin, then the
+/// redeem against a loopback token double) inside an Open window, with one
+/// configured car: the admitted own login the collector loads. The double
+/// counts the token exchange and every other request apart.
+struct M09T19FleetRig {
+    temporary: tempfile::TempDir,
+    store: HubStore,
+    admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    manager: Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    base: url::Url,
+    tokens: Arc<AtomicUsize>,
+    others: Arc<AtomicUsize>,
+    server: tokio::task::JoinHandle<()>,
+    window: crate::fleet_api::egress::test_support::TestWindow,
+    _route: crate::fleet_api::egress::test_support::Route,
+}
+
+impl M09T19FleetRig {
+    async fn new() -> Self {
+        crate::crypto::install_default_provider();
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let tokens = Arc::new(AtomicUsize::new(0));
+        let others = Arc::new(AtomicUsize::new(0));
+        let (token_count, other_count) = (Arc::clone(&tokens), Arc::clone(&others));
+        let router = axum::Router::new()
+            .route("/oauth2/v3/token", axum::routing::post(move || {
+                token_count.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    json!({"access_token": CT67_SCOPED_ACCESS, "refresh_token": "m09-t19-refresh",
+                        "expires_in": 28_800, "token_type": "Bearer"}).to_string()
+                }
+            }))
+            .fallback(move || {
+                other_count.fetch_add(1, Ordering::SeqCst);
+                async { axum::http::StatusCode::NOT_FOUND }
+            });
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("Fleet double");
+        });
+        let base = url::Url::parse(&format!("http://{address}/")).expect("base");
+        let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+        let route = window.route(base.as_str());
+        let token_url = base.join("oauth2/v3/token").expect("token URL");
+        let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+        {
+            let entry = crate::CredentialVaultEntry::for_test(Arc::clone(&vault));
+            let begin = json!({"clientId": "m09-t19-client", "region": "eu", "redirectUri": "https://owner.example/fleet/callback"}).to_string();
+            let binding = crate::auth::credential_sign_in::begin_fleet_sign_in_with_stub_for_test(&entry, begin.as_bytes(), token_url.as_str())
+                .expect("begin");
+            let redeem = json!({"code": format!("m09-t19-{}", Uuid::new_v4()), "redirectUri": "https://owner.example/fleet/callback", "clientId": "m09-t19-client",
+                "clientSecret": "m09-t19-secret", "region": "eu", "binding": binding.id().to_string()}).to_string();
+            let mut held = Some(binding);
+            crate::auth::credential_sign_in::exchange_fleet_code_with_stub_for_test(&entry, &mut held, redeem.as_bytes(), token_url.as_str())
+                .await
+                .expect("an admitted own Fleet login");
+        }
+        let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online")],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("the configured car");
+        let admission = crate::auth::credential_vault::fixtures::fixture_admission(&store, temporary.path());
+        let manager = FleetAuthManager::from_vault(vault, false, None).expect("the collector loads the admitted login");
+        assert_eq!(tokens.load(Ordering::SeqCst), 1, "the sign-in's one exchange");
+        Self {
+            temporary,
+            store,
+            admission,
+            manager: Arc::new(tokio::sync::Mutex::new(manager)),
+            base,
+            tokens,
+            others,
+            server,
+            window,
+            _route: route,
+        }
+    }
+
+    fn receipts(&self) -> i64 {
+        self.store
+            .open()
+            .expect("catalogue")
+            .query_row("SELECT COUNT(*) FROM outbound_request_receipts", [], |row| row.get(0))
+            .expect("receipts")
+    }
+
+    fn api(&self) -> (FleetApi, FleetAuthApi) {
+        (
+            FleetApi::for_fake_http(self.base.clone(), Duration::from_secs(2)).expect("Fleet client"),
+            FleetAuthApi::for_fake_http(self.base.join("oauth2/v3/token").expect("token URL"), Duration::from_secs(2))
+                .expect("Fleet auth client"),
+        )
+    }
+}
+
+impl Drop for M09T19FleetRig {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
+
+/// M09-T19 ruling 1, Fleet: the running service's control socket, with the
+/// Hub's own admitted Fleet login inside an Open window, refuses every
+/// vehicle action before any token use, receipt or send.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn m09_t19_the_fleet_service_refuses_every_vehicle_action_inside_an_open_window() {
+    let rig = M09T19FleetRig::new().await;
+    assert_eq!(rig.window.hub.status().phase, crate::collection::window::Phase::Open);
+    let hub_vehicle = rig.store.configured_tesla_vehicles().expect("cars")[0].0;
+    let (api, auth_api) = rig.api();
+    let counter = RequestLedger::standalone(&rig.store, &core_cadence().fleet_policy()).expect("request counter");
+    let socket = ResidentControlSocket::bind(rig.temporary.path()).expect("resident socket");
+    let serving = tokio::spawn(socket.serve_fleet(rig.store.clone(), api, auth_api, None, Arc::clone(&rig.manager), counter.clone()));
+    for action in M09_T19_EVERY_ACTION {
+        let error = request_resident_vehicle_action(rig.temporary.path(), hub_vehicle, action)
+            .await
+            .expect_err("refused");
+        assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered), "{action:?}: {error:?}");
+        assert_eq!(error.to_string(), VEHICLE_COMMANDS_NOT_OFFERED);
+    }
+    serving.abort();
+    assert_eq!(rig.others.load(Ordering::SeqCst), 0, "nothing sent to the Fleet API");
+    assert_eq!(rig.tokens.load(Ordering::SeqCst), 1, "no token refresh");
+    assert_eq!(rig.receipts(), 0, "no audit receipt started");
+    assert_eq!(counter.view().requests[RequestCategory::Command.index()].1, 0, "no command counted");
+}
+
+/// M09-T19 ruling 1, Legacy: the service's control socket, with the Hub's
+/// own Owner login inside an Open window, refuses every vehicle action
+/// before any token use, receipt or send.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn m09_t19_the_legacy_service_refuses_every_vehicle_action_inside_an_open_window() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let rig = ResidentRig::new(crate::legacy_auth::AuthMode::Tesla).await;
+            let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+            let _route = window.route(rig.token_url.as_str());
+            let receipts = rig.receipts();
+            let socket = ResidentControlSocket::bind(&rig.dir).expect("control socket");
+            let serving = tokio::spawn(socket.serve(
+                rig.store.clone(),
+                rig.client.clone(),
+                Arc::clone(&rig.manager),
+                Arc::clone(&rig.fuse),
+                Arc::clone(&rig.refresh),
+            ));
+            for action in M09_T19_EVERY_ACTION {
+                let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                    .await
+                    .expect_err("refused");
+                assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered), "{action:?}: {error:?}");
+            }
+            serving.abort();
+            let _ = serving.await;
+            assert_eq!(rig.fake.action_requests(), 0, "nothing sent");
+            assert_eq!(rig.fake.token_requests(), 0, "no token refresh");
+            assert_eq!(rig.fake.owner_requests(), 0, "no Owner API request");
+            assert_eq!(rig.receipts(), receipts, "no audit receipt started");
+        })
+        .await;
+}
+
+/// M09-T19 ruling 2: a configuration that carries `[collector.fleet_telemetry]`
+/// past admission (built in code, as no file can) still never starts the
+/// telemetry maintenance loop: the supervised Fleet run, with the admitted
+/// own login inside an Open window, ends with the polling-only refusal, and
+/// the configuration send refuses on its own, both with nothing sent.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn m09_t19_the_telemetry_maintenance_loop_never_starts() {
+    let rig = M09T19FleetRig::new().await;
+    let mut config = supervised_restart_test_config(rig.temporary.path());
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.fleet_telemetry = Some(crate::config::FleetTelemetryConfig {
+        hostname: "telemetry.example.test".to_owned(),
+        port: 443,
+        ca_certificate_path: std::path::PathBuf::from("/etc/tesatlas-hub/telemetry/ca.pem"),
+        ingest_token_path: std::path::PathBuf::from("/var/lib/tesatlas-hub/secrets/telemetry-token"),
+    });
+    let counter = RequestLedger::standalone(&rig.store, &core_cadence().fleet_policy()).expect("request counter");
+    let (_api, auth_api) = rig.api();
+    let refused = apply_fleet_telemetry_configuration(
+        &rig.store,
+        &config,
+        &mut *rig.manager.lock().await,
+        &auth_api,
+        &rig.admission,
+        &counter,
+    )
+    .await
+    .expect_err("the configuration send is refused");
+    assert!(matches!(refused, CollectorError::Config(ConfigError::FleetTelemetryNotOffered)), "{refused:?}");
+
+    let (api, auth_api) = rig.api();
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(rig.temporary.path()).expect("cursor key");
+    let (ready_tx, _ready_rx) = oneshot::channel();
+    let run = tokio::time::timeout(
+        Duration::from_secs(30),
+        SUPERVISED_COLLECTOR_TEST_SEAM.scope(Arc::new(SupervisedCollectorTestSeam::default()), run_fleet_supervised_with_access(
+            &rig.store,
+            &config,
+            supervised_restart_test_cadence(),
+            api,
+            auth_api,
+            None,
+            Arc::clone(&rig.manager),
+            cursor_key,
+            ready_tx,
+            RunWriteGuard::for_run(Some(Arc::clone(&rig.admission))),
+            true,
+            std::future::pending::<()>(),
+        )),
+    )
+    .await
+    .expect("the run ends at once");
+    assert!(
+        matches!(run, Err(CollectorError::Config(ConfigError::FleetTelemetryNotOffered))),
+        "{run:?}"
+    );
+    assert_eq!(rig.others.load(Ordering::SeqCst), 0, "nothing sent to the Fleet API");
+    assert_eq!(rig.tokens.load(Ordering::SeqCst), 1, "no token refresh");
+}

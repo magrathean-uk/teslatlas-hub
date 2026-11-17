@@ -116,6 +116,16 @@ impl ServiceBackend for FakeBackend {
         self.0.push(&format!("fleet_partner_register:{}", input.0.len()));
         Ok(json!({ "status": "partner_registered" }))
     }
+
+    fn fleet_discover(&self, vehicle_id: Option<i64>, all_vehicles: bool) -> Result<Value, OperatorRefusal> {
+        self.0.push(&format!("fleet_discover:{vehicle_id:?}:{all_vehicles}"));
+        Ok(json!({ "status": "vehicles_configured" }))
+    }
+
+    fn fleet_activate(&self) -> Result<Value, OperatorRefusal> {
+        self.0.push("fleet_activate");
+        Ok(json!({ "status": "collection_activated" }))
+    }
 }
 
 /// The owner at the Hub Mac: answers the trust confirmation as told and
@@ -377,6 +387,44 @@ fn fleet_sign_in_operator_channel_needs_an_open_window() {
         rig.forward(request).expect("forwarded inside the window");
     }
     assert_eq!(rig.calls.all(), vec!["fleet_begin:36".to_owned(), "fleet_redeem:36:Some(7):false".to_owned()]);
+}
+
+/// M09-T19 rulings 3 and 4: the discovery again with the stored login sends,
+/// so it is refused `window_closed` outside an Open window before the
+/// backend is asked; the activation sends nothing and needs no window.
+#[test]
+fn fleet_discover_needs_an_open_window_and_activate_does_not() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let discover = OperatorRequest::FleetDiscover { vehicle_id: Some(7), all_vehicles: false };
+    assert_eq!(rig.forward(&discover).unwrap_err().code, "window_closed");
+    rig.forward(&OperatorRequest::FleetActivate).expect("activation outside a window");
+    assert_eq!(rig.calls.all(), vec!["fleet_activate".to_owned()]);
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(3_600)),
+    })
+    .expect("open");
+    rig.forward(&discover).expect("forwarded inside the window");
+    assert_eq!(rig.calls.all(), vec!["fleet_activate".to_owned(), "fleet_discover:Some(7):false".to_owned()]);
+}
+
+/// M09-T19 ruling 8: a Fleet input travels base64-encoded, so the request's
+/// JSON carries no escape for its decoder to copy into a scratch buffer, and
+/// it arrives exactly as sent, quotes and backslashes included.
+#[test]
+fn fleet_sign_in_input_travels_without_json_escapes() {
+    let text = r#"{"clientSecret":"a"b\c","code":"x"}"#;
+    let request = OperatorRequest::FleetSignInBegin { input: FleetSignInInput(text.to_owned()) };
+    let wire = serde_json::to_string(&request).expect("encoded");
+    assert!(!wire.contains('\\'), "no JSON escape on the wire: {wire}");
+    assert!(!wire.contains("clientSecret"), "the input is not readable as text on the wire");
+    let OperatorRequest::FleetSignInBegin { input } = serde_json::from_str(&wire).expect("decoded") else { panic!("the same request") };
+    assert_eq!(input.0, text);
 }
 
 /// The Fleet partner verbs (M09-T18): the public key export sends nothing

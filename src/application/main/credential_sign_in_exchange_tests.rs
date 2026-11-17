@@ -374,3 +374,96 @@ fn fleet_sign_in_setup_discovers_only_after_a_stored_sign_in() {
     assert!(after.is_running(), "the collector started again once custody ended");
     after.stop();
 }
+
+/// M09-T19 ruling 7 (review B4): the public-key export refuses a path inside
+/// the Hub's data folder (its secrets and key files), its configuration
+/// folder or file, or its log folder, also through a linked parent, before
+/// anything is written; an ordinary folder is written and an existing file
+/// there replaced.
+#[cfg(unix)]
+#[test]
+fn fleet_public_key_export_refuses_the_hubs_own_folders() {
+    const PEM: &str = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----\n";
+    let root = tempfile::tempdir().expect("root");
+    let data = root.path().join("data");
+    let secrets = data.join("secrets");
+    let configuration = root.path().join("configuration");
+    let logs = root.path().join("logs");
+    let elsewhere = root.path().join("elsewhere");
+    for folder in [&secrets, &configuration, &logs, &elsewhere] {
+        fs::create_dir_all(folder).expect("folder");
+    }
+    let key = secrets.join("fleet-command-key.pem");
+    let keyring = secrets.join("credential-keys");
+    fs::write(&key, "private").expect("private key");
+    fs::write(&keyring, "keyring").expect("keyring");
+    let config_file = configuration.join("config.toml");
+    fs::write(&config_file, "config").expect("config");
+    std::os::unix::fs::symlink(&secrets, elsewhere.join("linked-secrets")).expect("link");
+    std::os::unix::fs::symlink(&data, root.path().join("linked-data")).expect("link");
+    let folders = vec![data.clone(), secrets.clone(), configuration.clone(), logs.clone()];
+    let files = vec![config_file.clone()];
+    for path in [
+        key.clone(),
+        keyring.clone(),
+        data.join("public.pem"),
+        configuration.join("public.pem"),
+        config_file.clone(),
+        logs.join("public.pem"),
+        elsewhere.join("linked-secrets").join("fleet-command-key.pem"),
+        root.path().join("linked-data").join("secrets").join("credential-keys"),
+    ] {
+        let refusal = write_fleet_public_key(&path, PEM, &folders, &files).expect_err("protected");
+        assert_eq!(refusal.code, "fleet_public_key_path_protected", "{path:?}");
+    }
+    assert_eq!(fs::read_to_string(&key).expect("key"), "private", "the private key is untouched");
+    assert_eq!(fs::read_to_string(&keyring).expect("keyring"), "keyring", "the keyring is untouched");
+    assert_eq!(fs::read_to_string(&config_file).expect("config"), "config");
+    let ordinary = elsewhere.join("public.pem");
+    fs::write(&ordinary, "old").expect("existing export");
+    write_fleet_public_key(&ordinary, PEM, &folders, &files).expect("an ordinary folder");
+    assert_eq!(fs::read_to_string(&ordinary).expect("export"), PEM, "an existing export is replaced");
+}
+
+/// M09-T19 ruling 7 (review S3): the staging file has a name no other run
+/// uses, and a failed export removes only the staging file it created: a
+/// file another run left beside the path stays.
+#[cfg(unix)]
+#[test]
+fn fleet_public_key_export_removes_only_its_own_staging_file() {
+    const PEM: &str = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----\n";
+    let root = tempfile::tempdir().expect("root");
+    // A leftover with the old predictable name stays untouched.
+    let leftover = root.path().join(format!("public.pem.{}.partial", std::process::id()));
+    fs::write(&leftover, "another run's file").expect("leftover");
+    // The rename fails: the path is a non-empty folder.
+    let target = root.path().join("public.pem");
+    fs::create_dir(&target).expect("folder at the path");
+    fs::write(target.join("inside"), "x").expect("content");
+    let refusal = write_fleet_public_key(&target, PEM, &[], &[]).expect_err("unwritable");
+    assert_eq!(refusal.code, "fleet_public_key_unwritable");
+    assert_eq!(fs::read_to_string(&leftover).expect("leftover"), "another run's file", "not this run's file");
+    let staged: Vec<_> = fs::read_dir(root.path()).expect("listing")
+        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".public.pem.") && name.ends_with(".partial"))
+        .collect();
+    assert!(staged.is_empty(), "this run's staging file was removed: {staged:?}");
+}
+
+/// M09-T19 rulings 3 and 4: `setup-fleet discover` (with its own car
+/// choice) and `setup-fleet activate` parse and are forwarded to the service.
+#[cfg(target_os = "macos")]
+#[test]
+fn fleet_setup_discover_and_activate_parse() {
+    use tesatlas_hub::runtime::operator::{admission::{Route, route}, cli::FleetSetupStep};
+    let parse = |args: &[&str]| Cli::try_parse_from([&["tesatlas-hub"][..], args].concat()).map(|cli| cli.command);
+    let discover = parse(&["setup-fleet", "discover", "--vehicle-id", "7"]).expect("discover");
+    assert!(matches!(discover, Command::SetupFleet { step: Some(FleetSetupStep::Discover { vehicle_id: Some(7), all_vehicles: false }), .. }));
+    assert!(matches!(route(&discover), Route::Service));
+    assert!(matches!(parse(&["setup-fleet", "discover", "--all-vehicles"]).expect("discover all"),
+        Command::SetupFleet { step: Some(FleetSetupStep::Discover { vehicle_id: None, all_vehicles: true }), .. }));
+    assert!(parse(&["setup-fleet", "discover", "--vehicle-id", "7", "--all-vehicles"]).is_err(), "one car choice");
+    let activate = parse(&["setup-fleet", "activate"]).expect("activate");
+    assert!(matches!(activate, Command::SetupFleet { step: Some(FleetSetupStep::Activate), .. }));
+    assert!(matches!(route(&activate), Route::Service));
+}
