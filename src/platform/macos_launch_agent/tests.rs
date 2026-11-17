@@ -1588,3 +1588,34 @@ fn production_start_admission_decides_as_the_whole_store_form() {
     config.collector.interval_seconds = 300;
     assert_eq!(same(&config, "no configured car"), Ok(false));
 }
+
+/// M08-T22 with M09-T19 ruling 3: a production start decides the Fleet waiting
+/// states on the same bounded read as the Legacy one. A Fleet Hub with imported
+/// history and no Fleet login is served awaiting its sign-in with unreadable
+/// packs and a damaged page in a table no admission reads, while the
+/// command-line form (the whole-store check) refuses the same store.
+#[test]
+fn production_start_fleet_admission_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let mut config = seed_awaiting_hub(&data);
+    config.collector.provider = CollectorProvider::Fleet;
+    assert_eq!(hub_awaits_fleet_setup(&config).expect("healthy store"), Some(FleetSetupPending::SignIn));
+    assert_eq!(
+        awaits_fleet_setup(&config, AdmissionStoreCheck::Bounded).expect("bounded read"),
+        Some(FleetSetupPending::SignIn),
+        "the bounded form decides alike on a healthy store"
+    );
+
+    let packs = make_packs_unreadable(&data);
+    assert!(hub_awaits_fleet_setup(&config).is_err(), "the command-line form keeps the whole-store check");
+    assert_eq!(awaits_fleet_setup(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), Some(FleetSetupPending::SignIn));
+    preflight_hub_for_serve(&config, None).expect("served awaiting the Fleet sign-in without opening a pack");
+
+    break_unread_table(&data, "raw_observations");
+    assert_eq!(awaits_fleet_setup(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), Some(FleetSetupPending::SignIn));
+    preflight_hub_for_serve(&config, None).expect("served awaiting the Fleet sign-in without the whole-store check");
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}

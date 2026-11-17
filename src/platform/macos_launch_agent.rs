@@ -244,7 +244,19 @@ impl FleetSetupPending {
 /// the Hub's own pair) and nothing is sent to Tesla until the owner acts. A
 /// Hub with the pair, a car and a cadence keeps today's admission (`None`); a
 /// never-configured data folder is the idle admission's, checked first.
+///
+/// This is the command-line form (`preflight`, `setup-fleet activate`): the
+/// catalogue must pass the whole-store `catalogue_check`. The production serve
+/// admission decides by the same rule on the bounded read of
+/// `AdmissionStoreCheck::Bounded` (M08-T22).
 pub fn hub_awaits_fleet_setup(config: &crate::config::HubConfig) -> io::Result<Option<FleetSetupPending>> {
+    awaits_fleet_setup(config, AdmissionStoreCheck::WholeStore)
+}
+
+fn awaits_fleet_setup(
+    config: &crate::config::HubConfig,
+    check: AdmissionStoreCheck,
+) -> io::Result<Option<FleetSetupPending>> {
     if config.collector.provider != crate::config::CollectorProvider::Fleet || config.collector.fleet_telemetry.is_some() {
         return Ok(None);
     }
@@ -256,7 +268,11 @@ pub fn hub_awaits_fleet_setup(config: &crate::config::HubConfig) -> io::Result<O
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    match check {
+        AdmissionStoreCheck::WholeStore => store.catalogue_check(),
+        AdmissionStoreCheck::Bounded => store.readiness_check(),
+    }
+    .map_err(|error| unavailable(&error))?;
     let cars = !store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty();
     let Some(format) = store.credential_format_state().map_err(|error| unavailable(&error))? else {
         return Ok(None);
@@ -372,8 +388,9 @@ pub fn preflight_hub_for_serve(
             return Ok(());
         }
         // An unfinished Fleet set-up serves for the owner's next step,
-        // collecting nothing until then (M09-T19 ruling 3).
-        if let Some(pending) = hub_awaits_fleet_setup(config)? {
+        // collecting nothing until then (M09-T19 ruling 3), decided on the
+        // same bounded read (M08-T22).
+        if let Some(pending) = awaits_fleet_setup(config, AdmissionStoreCheck::Bounded)? {
             tracing::info!(state = pending.state(), "the Fleet set-up is unfinished: Hub serves for the owner's next step with the collector off");
             return Ok(());
         }
