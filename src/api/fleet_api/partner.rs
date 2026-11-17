@@ -11,12 +11,13 @@ use super::{
     FleetAccessToken, FleetClientId, FleetRegion,
     egress::{self, PermitKind, Provider},
 };
+use axum::body::Bytes;
 use futures_util::StreamExt;
 use reqwest::{Client, Request, Response, redirect::Policy};
 use serde::Deserialize;
 use std::{fmt, time::Duration};
 use url::Url;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::Zeroizing;
 
 const MAX_BODY: usize = 16 * 1024;
 const MAX_SECRET: usize = 16 * 1024;
@@ -64,6 +65,16 @@ pub enum PartnerError {
     Transport,
     #[error("fleet_partner_invalid_response")]
     InvalidResponse,
+    #[error("fleet_partner_response_1xx")]
+    Response1xx,
+    #[error("fleet_partner_response_2xx")]
+    Response2xx,
+    #[error("fleet_partner_response_3xx")]
+    Response3xx,
+    #[error("fleet_partner_response_4xx")]
+    Response4xx,
+    #[error("fleet_partner_response_5xx")]
+    Response5xx,
     #[error("fleet_partner_auth_failed")]
     Authentication,
     #[error("fleet_partner_public_key_unreachable")]
@@ -157,49 +168,57 @@ impl PartnerApi {
         expected: &keys::CommandPublicKey,
     ) -> Result<Registration, PartnerError> {
         let domain = validate_domain(domain)?;
-        // The URL form encoder must own its output. Keep that allocation
-        // wiping-owned; reqwest owns the copy until the send ends, as for the
-        // existing Fleet refresh client.
-        let form = Zeroizing::new(
-            url::form_urlencoded::Serializer::new(String::new())
-                .append_pair("grant_type", "client_credentials")
-                .append_pair("client_id", credentials.client_id.as_str())
-                .append_pair("client_secret", &credentials.secret)
-                .append_pair("audience", self.region.base_url().trim_end_matches('/'))
-                .append_pair("scope", "openid vehicle_device_data")
-                .finish(),
-        );
+        // Worst-case percent encoding is three bytes per input byte. Allocate
+        // before copying the secret; no growing serializer or plain body copy.
+        let pairs = [
+            ("grant_type", "client_credentials"),
+            ("client_id", credentials.client_id.as_str()),
+            ("client_secret", credentials.secret.as_str()),
+            ("audience", self.region.base_url().trim_end_matches('/')),
+            ("scope", "openid vehicle_device_data"),
+        ];
+        let capacity = pairs
+            .iter()
+            .map(|(key, value)| 3 * (key.len() + value.len()) + 2)
+            .sum();
+        let mut form = Zeroizing::new(Vec::with_capacity(capacity));
+        for (n, (key, value)) in pairs.iter().enumerate() {
+            if n != 0 {
+                form.push(b'&');
+            }
+            for part in url::form_urlencoded::byte_serialize(key.as_bytes()) {
+                form.extend_from_slice(part.as_bytes());
+            }
+            form.push(b'=');
+            for part in url::form_urlencoded::byte_serialize(value.as_bytes()) {
+                form.extend_from_slice(part.as_bytes());
+            }
+        }
         let request = self
             .client
             .post(self.auth_url.clone())
             .header("accept", "application/json")
             .header("content-type", "application/x-www-form-urlencoded")
-            .body(form.as_bytes().to_vec())
+            .body(Bytes::from_owner(form))
             .build()
             .map_err(|_| PartnerError::InvalidInput)?;
-        let (status, bytes) = self.send(request, PermitKind::TokenExchange).await?;
+        drop(credentials);
+        let (status, bytes) = self.send(request, PermitKind::Request).await?;
         if !(200..300).contains(&status) {
-            return Err(if status == 429 {
-                PartnerError::OverLimit
-            } else {
-                PartnerError::Authentication
+            return Err(match status {
+                400 | 401 => PartnerError::Authentication,
+                408 | 500..=599 => PartnerError::Transport,
+                429 => PartnerError::OverLimit,
+                _ => response_class(status),
             });
         }
-        let mut reply: PartnerToken =
-            serde_json::from_slice(&bytes).map_err(|_| PartnerError::InvalidResponse)?;
-        if !reply.token_type.eq_ignore_ascii_case("Bearer")
-            || reply.expires_in == 0
-            || reply.expires_in > super::MAX_TOKEN_LIFETIME_SECONDS
-        {
-            return Err(PartnerError::InvalidResponse);
-        }
-        let token = FleetAccessToken::new(std::mem::take(&mut reply.access_token))
-            .map_err(|_| PartnerError::InvalidResponse)?;
+        let token = parse_partner_token(&bytes)?;
+        drop(bytes);
         let request = self
             .client
             .post(self.registration_url.clone())
             .header("accept", "application/json")
-            .bearer_auth(token.expose())
+            .header("authorization", bearer_header(&token)?)
             .json(&serde_json::json!({"domain": domain}))
             .build()
             .map_err(|_| PartnerError::InvalidInput)?;
@@ -213,7 +232,7 @@ impl PartnerApi {
             .client
             .get(url)
             .header("accept", "application/json")
-            .bearer_auth(token.expose())
+            .header("authorization", bearer_header(&token)?)
             .build()
             .map_err(|_| PartnerError::InvalidInput)?;
         let (status, bytes) = self.send(request, PermitKind::Request).await?;
@@ -256,7 +275,14 @@ impl PartnerApi {
                         }
                     })?;
                     let status = response.status().as_u16();
-                    Ok((status, read_body(response).await?))
+                    let body = read_body(response).await.map_err(|error| {
+                        if error == PartnerError::InvalidResponse {
+                            response_class(status)
+                        } else {
+                            error
+                        }
+                    })?;
+                    Ok((status, body))
                 })
                 .await
                 .map_err(|_| PartnerError::Timeout)?
@@ -269,11 +295,48 @@ impl PartnerApi {
     }
 }
 
-#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
-struct PartnerToken {
-    access_token: String,
-    token_type: String,
+// Borrow directly from the wiping response body. Escaped JSON strings are
+// refused before serde runs, so its scratch buffer never decodes a secret.
+#[derive(Deserialize)]
+struct PartnerToken<'a> {
+    access_token: &'a str,
+    token_type: &'a str,
     expires_in: u64,
+}
+
+fn parse_partner_token(bytes: &[u8]) -> Result<FleetAccessToken, PartnerError> {
+    if bytes.contains(&b'\\') {
+        return Err(PartnerError::Response2xx);
+    }
+    let reply: PartnerToken<'_> =
+        serde_json::from_slice(bytes).map_err(|_| PartnerError::Response2xx)?;
+    if !reply.token_type.eq_ignore_ascii_case("Bearer")
+        || reply.expires_in == 0
+        || reply.expires_in > super::MAX_TOKEN_LIFETIME_SECONDS
+    {
+        return Err(PartnerError::Response2xx);
+    }
+    FleetAccessToken::new(reply.access_token.to_owned()).map_err(|_| PartnerError::Response2xx)
+}
+
+fn bearer_header(token: &FleetAccessToken) -> Result<http::HeaderValue, PartnerError> {
+    let mut bytes = Zeroizing::new(Vec::with_capacity(7 + token.expose().len()));
+    bytes.extend_from_slice(b"Bearer ");
+    bytes.extend_from_slice(token.expose().as_bytes());
+    let mut header = http::HeaderValue::from_maybe_shared(Bytes::from_owner(bytes))
+        .map_err(|_| PartnerError::InvalidInput)?;
+    header.set_sensitive(true);
+    Ok(header)
+}
+
+fn response_class(status: u16) -> PartnerError {
+    match status {
+        100..=199 => PartnerError::Response1xx,
+        200..=299 => PartnerError::Response2xx,
+        300..=399 => PartnerError::Response3xx,
+        400..=499 => PartnerError::Response4xx,
+        _ => PartnerError::Response5xx,
+    }
 }
 
 /// The domain as it is registered: a lowercase host name, no scheme, port,
@@ -305,7 +368,7 @@ async fn read_body(response: Response) -> Result<Zeroizing<Vec<u8>>, PartnerErro
     {
         return Err(PartnerError::InvalidResponse);
     }
-    let mut body = Zeroizing::new(Vec::new());
+    let mut body = Zeroizing::new(Vec::with_capacity(MAX_BODY));
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| {
@@ -323,30 +386,27 @@ async fn read_body(response: Response) -> Result<Zeroizing<Vec<u8>>, PartnerErro
     Ok(body)
 }
 
-/// Tesla's answer to the registered key: `{"response":{"public_key":"04.."}}`
-/// with the uncompressed point in hex. A domain with no key is unreachable;
-/// a different key is a mismatch.
+/// The supported key answer is {"response":{"public_key":"04.."}}.
+/// Every other shape fails with its status class. No provider prose or
+/// undocumented error code establishes registration or diagnoses a cause.
 fn registered_key_result(
     status: u16,
     bytes: &[u8],
     expected: &keys::CommandPublicKey,
 ) -> Result<(), PartnerError> {
-    match status {
-        200..=299 => {}
-        404 => return Err(PartnerError::PublicKeyUnreachable),
-        401 | 403 => return Err(PartnerError::Authentication),
-        402 | 429 => return Err(PartnerError::OverLimit),
-        _ => return Err(PartnerError::Registration),
+    if !(200..300).contains(&status) {
+        return Err(response_class(status));
     }
     let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|_| PartnerError::InvalidResponse)?;
+        serde_json::from_slice(bytes).map_err(|_| response_class(status))?;
     let held = value
         .get("response")
         .and_then(|response| response.get("public_key"))
         .and_then(serde_json::Value::as_str)
-        .ok_or(PartnerError::InvalidResponse)?;
-    if held.is_empty() || !held.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(PartnerError::InvalidResponse);
+        .ok_or_else(|| response_class(status))?;
+    if held.len() != 130 || !held.starts_with("04") || !held.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(response_class(status));
     }
     if !held.eq_ignore_ascii_case(&expected.public_point_hex()) {
         return Err(PartnerError::PublicKeyMismatch);
@@ -359,61 +419,25 @@ fn registration_result(
     bytes: &[u8],
     domain: &str,
 ) -> Result<Registration, PartnerError> {
-    if status == 429 || status == 402 {
+    // 429 is an HTTP rate-limit refusal. All other non-success answers remain
+    // plain failures: no documented already-registration wire shape is known.
+    if status == 429 {
         return Err(PartnerError::OverLimit);
     }
-    if status == 401 || status == 403 {
-        return Err(PartnerError::Authentication);
+    if !(200..300).contains(&status) {
+        return Err(response_class(status));
     }
     let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|_| PartnerError::InvalidResponse)?;
-    if (200..300).contains(&status) {
-        let response = value
-            .get("response")
-            .and_then(serde_json::Value::as_object)
-            .ok_or(PartnerError::InvalidResponse)?;
-        if response
-            .get("domain")
-            .and_then(serde_json::Value::as_str)
-            .is_none_or(|registered| !registered.eq_ignore_ascii_case(domain))
-        {
-            return Err(PartnerError::InvalidResponse);
-        }
-        return Ok(Registration::Registered);
-    }
-    // Only recognise fixed provider codes or documented message fragments;
-    // never carry uncontrolled provider text into an error or its Debug.
-    let error = value
-        .get("error")
+        serde_json::from_slice(bytes).map_err(|_| response_class(status))?;
+    let registered = value
+        .get("response")
+        .and_then(|response| response.get("domain"))
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let description = value
-        .get("error_description")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let combined = format!("{error} {description}").to_ascii_lowercase();
-    if matches!(status, 400 | 409 | 422)
-        && (matches!(
-            error,
-            "already_registered" | "domain_already_registered" | "partner_account_already_exists"
-        ) || combined.contains("domain is already registered")
-            || combined.contains("domain already registered"))
-    {
-        return Ok(Registration::AlreadyRegistered);
+        .ok_or_else(|| response_class(status))?;
+    if !registered.eq_ignore_ascii_case(domain) {
+        return Err(response_class(status));
     }
-    if matches!(error, "public_key_not_found" | "public_key_unreachable")
-        || (combined.contains("public key")
-            && (combined.contains("not found") || combined.contains("not reachable")))
-    {
-        return Err(PartnerError::PublicKeyUnreachable);
-    }
-    if matches!(
-        error,
-        "rate_limited" | "over_limit" | "limit_exceeded" | "payment_required"
-    ) {
-        return Err(PartnerError::OverLimit);
-    }
-    Err(PartnerError::Registration)
+    Ok(Registration::Registered)
 }
 
 #[cfg(test)]
@@ -555,85 +579,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fleet_partner_accepts_only_explicit_already_registered_errors() {
+    async fn fleet_partner_never_guesses_success_or_cause_from_provider_prose() {
         for (status, body, expected) in [
             (
                 409,
                 r#"{"error":"already_registered"}"#,
-                Ok(Registration::AlreadyRegistered),
+                PartnerError::Response4xx,
             ),
             (
                 400,
-                r#"{"error":"invalid_request","error_description":"Domain is already registered"}"#,
-                Ok(Registration::AlreadyRegistered),
+                r#"{"error_description":"Domain already registered to another account"}"#,
+                PartnerError::Response4xx,
             ),
             (
-                409,
-                r#"{"error":"unrelated_conflict"}"#,
-                Err(PartnerError::Registration),
+                422,
+                r#"{"error":"public_key_not_found"}"#,
+                PartnerError::Response4xx,
             ),
             (
-                500,
-                r#"{"error":"already_registered"}"#,
-                Err(PartnerError::Registration),
+                400,
+                r#"{"error":"limit_exceeded"}"#,
+                PartnerError::Response4xx,
             ),
+            (
+                402,
+                "unrecognised billing answer",
+                PartnerError::Response4xx,
+            ),
+            (401, "unrecognised refusal", PartnerError::Response4xx),
+            (
+                429,
+                "unrecognised rate-limit answer",
+                PartnerError::OverLimit,
+            ),
+            (503, "unrecognised failure", PartnerError::Response5xx),
+            (302, "redirect", PartnerError::Response3xx),
+            (200, "unknown success shape", PartnerError::Response2xx),
         ] {
             let (client, count) = scripted(200, TOKEN, status, body);
-            let sends = if expected.is_ok() { 3 } else { 2 };
             assert_eq!(
                 client
                     .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
-                expected
+                Err(expected)
             );
-            assert_eq!(count.load(Ordering::SeqCst), sends);
+            assert_eq!(count.load(Ordering::SeqCst), 2);
         }
     }
 
-    #[tokio::test]
-    async fn fleet_partner_maps_key_limit_auth_and_unknown_errors_without_provider_text() {
-        for (status, body, expected) in [
+    #[test]
+    fn fleet_partner_regional_endpoints_are_the_production_addresses() {
+        for (region, base, auth) in [
             (
-                400,
-                r#"{"error":"public_key_not_found","error_description":"synthetic-sensitive-echo"}"#,
-                PartnerError::PublicKeyUnreachable,
+                FleetRegion::NorthAmericaAndAsiaPacific,
+                "https://fleet-api.prd.na.vn.cloud.tesla.com",
+                "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
             ),
             (
-                422,
-                r#"{"error":"invalid_request","error_description":"Public key not found at synthetic.example.test"}"#,
-                PartnerError::PublicKeyUnreachable,
-            ),
-            (429, "synthetic-sensitive-echo", PartnerError::OverLimit),
-            (402, "synthetic-sensitive-echo", PartnerError::OverLimit),
-            (
-                400,
-                r#"{"error":"limit_exceeded"}"#,
-                PartnerError::OverLimit,
+                FleetRegion::EuropeMiddleEastAndAfrica,
+                "https://fleet-api.prd.eu.vn.cloud.tesla.com",
+                "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
             ),
             (
-                401,
-                "synthetic-sensitive-echo",
-                PartnerError::Authentication,
-            ),
-            (
-                403,
-                "synthetic-sensitive-echo",
-                PartnerError::Authentication,
-            ),
-            (
-                503,
-                r#"{"error":"synthetic-sensitive-echo"}"#,
-                PartnerError::Registration,
+                FleetRegion::China,
+                "https://fleet-api.prd.cn.vn.cloud.tesla.cn",
+                "https://auth.tesla.cn/oauth2/v3/token",
             ),
         ] {
-            let (client, _) = scripted(200, TOKEN, status, body);
-            let error = client
-                .register("synthetic.example.test", credentials(), &hub_key())
-                .await
-                .unwrap_err();
-            assert_eq!(error, expected);
-            assert!(!format!("{error:?} {error}").contains("synthetic-sensitive-echo"));
+            let api = PartnerApi::new(region, Duration::from_secs(1)).unwrap();
+            assert_eq!(api.auth_url.as_str(), auth);
+            assert_eq!(
+                api.registration_url.as_str(),
+                format!("{base}{REGISTER_PATH}")
+            );
+            assert_eq!(
+                api.public_key_url.as_str(),
+                format!("{base}{PUBLIC_KEY_PATH}")
+            );
         }
+    }
+
+    #[test]
+    fn fleet_partner_real_secret_holders_and_header_debug_are_redacted() {
+        let credentials = credentials();
+        assert_eq!(format!("{credentials:?}"), "PartnerCredentials([redacted])");
+        assert!(!format!("{credentials:?}").contains(credentials.secret.as_str()));
+        let token = parse_partner_token(TOKEN.as_bytes()).unwrap();
+        assert!(!format!("{token:?}").contains(token.expose()));
+        let header = bearer_header(&token).unwrap();
+        assert!(header.is_sensitive());
+        assert!(!format!("{header:?}").contains(token.expose()));
+        assert_eq!(header.as_bytes(), b"Bearer synthetic-partner-bearer");
     }
 
     #[tokio::test]
@@ -645,26 +681,31 @@ mod tests {
                 PartnerError::Authentication,
             ),
             (429, "synthetic-sensitive-echo", PartnerError::OverLimit),
-            (200, "not-json", PartnerError::InvalidResponse),
+            (400, "bad request", PartnerError::Authentication),
+            (408, "request timeout", PartnerError::Transport),
+            (500, "internal error", PartnerError::Transport),
+            (503, "unavailable", PartnerError::Transport),
+            (403, "unknown forbidden answer", PartnerError::Response4xx),
+            (200, "not-json", PartnerError::Response2xx),
             (
                 200,
                 r#"{"access_token":"synthetic","token_type":"Basic","expires_in":30}"#,
-                PartnerError::InvalidResponse,
+                PartnerError::Response2xx,
             ),
             (
                 200,
                 r#"{"access_token":"synthetic","token_type":"Bearer","expires_in":0}"#,
-                PartnerError::InvalidResponse,
+                PartnerError::Response2xx,
             ),
             (
                 200,
                 r#"{"access_token":"synthetic\ninvalid","token_type":"Bearer","expires_in":30}"#,
-                PartnerError::InvalidResponse,
+                PartnerError::Response2xx,
             ),
             (
                 200,
                 r#"{"access_token":"synthetic"}"#,
-                PartnerError::InvalidResponse,
+                PartnerError::Response2xx,
             ),
         ] {
             let (client, count) = scripted(status, body, 200, REGISTERED);
@@ -742,7 +783,7 @@ mod tests {
                 client
                     .register("synthetic.example.test", credentials(), &hub_key())
                     .await,
-                Err(PartnerError::InvalidResponse)
+                Err(PartnerError::Response2xx)
             );
             assert_eq!(count.load(Ordering::SeqCst), if auth { 1 } else { 2 });
         }
@@ -831,58 +872,125 @@ mod tests {
         }
     }
 
-    /// The key Tesla holds for the domain must be the Hub's own: a missing
-    /// key file is unreachable, another key is a mismatch, and the answer is
-    /// never echoed. An already registered domain is checked the same way.
     #[tokio::test]
     async fn fleet_partner_requires_the_registered_key_to_be_the_hubs() {
-        const ALREADY: &str = r#"{"error":"already_registered"}"#;
         let mut other = point();
         other[64] ^= 1;
-        let echo = || "synthetic-sensitive-echo".to_owned();
-        for (registration, status, body, expected) in [
-            (REGISTERED, 200, held(&point()), Ok(Registration::Registered)),
+        for (status, body, expected) in [
+            (200, held(&point()), Ok(Registration::Registered)),
             (
-                ALREADY,
                 200,
                 held(&point()).to_ascii_lowercase(),
-                Ok(Registration::AlreadyRegistered),
+                Ok(Registration::Registered),
             ),
-            (REGISTERED, 200, held(&other), Err(PartnerError::PublicKeyMismatch)),
-            (ALREADY, 200, held(&other), Err(PartnerError::PublicKeyMismatch)),
-            (REGISTERED, 404, echo(), Err(PartnerError::PublicKeyUnreachable)),
+            (200, held(&other), Err(PartnerError::PublicKeyMismatch)),
             (
-                REGISTERED,
+                404,
+                "unknown not-found shape".to_owned(),
+                Err(PartnerError::Response4xx),
+            ),
+            (
                 200,
-                r#"{"response":{"public_key":"synthetic-sensitive-echo"}}"#.to_owned(),
-                Err(PartnerError::InvalidResponse),
+                r#"{"response":{"public_key":"04"}}"#.to_owned(),
+                Err(PartnerError::Response2xx),
             ),
             (
-                REGISTERED,
                 200,
                 r#"{"response":{}}"#.to_owned(),
-                Err(PartnerError::InvalidResponse),
+                Err(PartnerError::Response2xx),
             ),
-            (REGISTERED, 401, echo(), Err(PartnerError::Authentication)),
-            (REGISTERED, 500, echo(), Err(PartnerError::Registration)),
+            (
+                401,
+                "unknown auth answer".to_owned(),
+                Err(PartnerError::Response4xx),
+            ),
+            (
+                500,
+                "unknown failure".to_owned(),
+                Err(PartnerError::Response5xx),
+            ),
         ] {
             let count = Arc::new(AtomicUsize::new(0));
             let calls = count.clone();
-            let registration_status = if registration == REGISTERED { 200 } else { 409 };
             let client = api(InProcessTransport::new(move |_| {
                 let result = match calls.fetch_add(1, Ordering::SeqCst) {
                     0 => answer(200, TOKEN),
-                    1 => answer(registration_status, registration),
+                    1 => answer(200, REGISTERED),
                     _ => answer(status, &body),
                 };
                 async { result }
             }));
-            let result = client
-                .register("synthetic.example.test", credentials(), &hub_key())
-                .await;
-            assert_eq!(result, expected);
-            assert!(!format!("{result:?}").contains("synthetic-sensitive-echo"));
+            assert_eq!(
+                client
+                    .register("synthetic.example.test", credentials(), &hub_key())
+                    .await,
+                expected
+            );
             assert_eq!(count.load(Ordering::SeqCst), 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn fleet_partner_window_close_cuts_each_in_flight_send_without_grace() {
+        for stall_at in 0..3 {
+            let window = Arc::new(egress::test_support::TestWindow::open(60));
+            let close = window.clone();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let count = calls.clone();
+            let client = api(InProcessTransport::new(move |_| {
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                let close = close.clone();
+                async move {
+                    if n == stall_at {
+                        close.close();
+                        std::future::pending().await
+                    } else if n == 0 {
+                        answer(200, TOKEN)
+                    } else {
+                        answer(200, REGISTERED)
+                    }
+                }
+            }));
+            let _auth = window.route(client.auth_url.as_str());
+            let _fleet = window.route(client.registration_url.as_str());
+            assert_eq!(
+                client
+                    .register("synthetic.example.test", credentials(), &hub_key())
+                    .await,
+                Err(PartnerError::WindowClosed)
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), stall_at + 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn fleet_partner_window_close_between_sends_prevents_next_send() {
+        for close_after in 0..2 {
+            let window = Arc::new(egress::test_support::TestWindow::open(60));
+            let close = window.clone();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let count = calls.clone();
+            let client = api(InProcessTransport::new(move |_| {
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                if n == close_after {
+                    close.close();
+                }
+                let result = if n == 0 {
+                    answer(200, TOKEN)
+                } else {
+                    answer(200, REGISTERED)
+                };
+                async { result }
+            }));
+            let _auth = window.route(client.auth_url.as_str());
+            let _fleet = window.route(client.registration_url.as_str());
+            assert_eq!(
+                client
+                    .register("synthetic.example.test", credentials(), &hub_key())
+                    .await,
+                Err(PartnerError::WindowClosed)
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), close_after + 1);
         }
     }
 
