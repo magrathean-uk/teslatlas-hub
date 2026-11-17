@@ -114,9 +114,9 @@ pub(crate) enum FailureClass {
 pub(crate) struct RetryState {
     /// Consecutive `Transport`-schedule ends since the last reset.
     pub(crate) transport_attempt: u32,
-    /// Consecutive `Vehicle` ends since the last accepted frame.
+    /// Consecutive `Vehicle` ends since the last stable session.
     pub(crate) vehicle_attempt: u32,
-    /// Consecutive `Refusal`s since the last accepted frame.
+    /// Consecutive `Refusal`s since the last stable session.
     pub(crate) refusal_streak: u32,
     /// One clock and counter across Transport, Vehicle, Unknown and Protocol.
     pub(crate) outage_since: Option<Instant>,
@@ -158,16 +158,11 @@ impl RetryState {
         }
     }
 
-    /// The first accepted frame, including a duplicate, ends the outage and
-    /// resets every retry schedule. REST data and hello frames do not call this.
-    pub(crate) fn on_first_accepted(&mut self) {
-        *self = Self::default();
-    }
-
-    /// The existing stable-session timer also clears the diagnostic Transport
-    /// counter. The outage schedule already reset on the first accepted frame.
+    /// Only a session still working 60 s after its first accepted frame ends
+    /// the outage and resets the retry schedules (R37, M04-T12 B2). Shorter
+    /// sessions, including ones carrying only a duplicate, preserve both.
     pub(crate) fn on_stable(&mut self) {
-        self.transport_attempt = 0;
+        *self = Self::default();
     }
 }
 

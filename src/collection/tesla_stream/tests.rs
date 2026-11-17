@@ -1123,24 +1123,17 @@ fn sc68_counter_functions() {
     };
     after.on_session_end(&FailureClass::Refusal);
     assert_eq!(steps(after), (0, 3, 2));
-    // Delivered stream data resets every retry counter and the outage clock.
+    // B2 / R37: only the stable timer resets the counters and outage clock.
     let mut after = RetryState {
         transport_attempt: 5,
         vehicle_attempt: 3,
         refusal_streak: 2,
-        ..RetryState::default()
-    };
-    after.on_first_accepted();
-    assert_eq!(steps(after), (0, 0, 0));
-    // Stability clears the transport counter only.
-    let mut after = RetryState {
-        transport_attempt: 5,
-        vehicle_attempt: 3,
-        refusal_streak: 2,
-        ..RetryState::default()
+        outage_since: Some(tokio::time::Instant::now()),
+        outage_attempt: 7,
+        outage_elapsed: Duration::from_secs(600),
     };
     after.on_stable();
-    assert_eq!(steps(after), (0, 3, 2));
+    assert_eq!(after, RetryState::default());
 
     // 40 consecutive Transport ends saturate at 32, whatever the class.
     for class in [
@@ -1422,13 +1415,19 @@ fn r3_constructors_apply_the_override_rule() {
 }
 
 #[test]
-fn m04_t12_delivered_data_resets_a_slow_outage() {
+fn m04_t12_stability_resets_a_slow_outage() {
     let start = tokio::time::Instant::now();
     let mut state = RetryState::default();
     state.on_session_end_at(&FailureClass::Protocol, start);
     state.on_session_end_at(&FailureClass::Vehicle, start + Duration::from_secs(600));
-    assert_eq!(next_delay(&FailureClass::Vehicle, &state, 1.0), Duration::from_secs(300));
-    state.on_first_accepted();
+    assert_eq!(
+        next_delay(&FailureClass::Vehicle, &state, 1.0),
+        Duration::from_secs(300)
+    );
+    state.on_stable();
     state.on_session_end_at(&FailureClass::Unknown, start + Duration::from_secs(601));
-    assert_eq!(next_delay(&FailureClass::Unknown, &state, 1.0), Duration::from_secs(2));
+    assert_eq!(
+        next_delay(&FailureClass::Unknown, &state, 1.0),
+        Duration::from_secs(2)
+    );
 }

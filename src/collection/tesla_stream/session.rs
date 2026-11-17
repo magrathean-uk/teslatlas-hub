@@ -889,17 +889,11 @@ fn unrecognised_error_type(text: &str, tag: &str, echo: &EchoGuard) -> Option<St
     if matches!(
         token,
         "vehicle_disconnected" | "vehicle_error" | "client_error"
-    ) {
+    ) || token.contains(tag)
+    {
         return None;
     }
-    Some(
-        if token == tag {
-            "other"
-        } else {
-            echo.loggable(Some(token))
-        }
-        .to_owned(),
-    )
+    Some(echo.loggable(Some(token)).to_owned())
 }
 
 fn socket_end_reason(message: &Option<Result<Message, WebSocketError>>) -> &'static str {
@@ -1864,7 +1858,7 @@ impl TeslaStreamSupervisor {
                 }
                 Wake::Stable => {
                     // R37: 60 s after the first accepted frame, with the session
-                    // still open, transport back-off starts over. It is the last
+                    // still open, the outage and retry schedules reset. It is the last
                     // branch of the wait, so a message, a dead socket, data
                     // silence or a Ping due at the same instant is handled first:
                     // a session that the dead-socket or silence rule ends at
@@ -1874,7 +1868,7 @@ impl TeslaStreamSupervisor {
                     state.clocks.on_stable_applied();
                     tracing::debug!(
                         host = %self.endpoint_host,
-                        "stream session is stable, transport back-off reset"
+                        "stream session is stable, outage and retry schedules reset"
                     );
                 }
                 Wake::Message(message) => {
@@ -2102,7 +2096,6 @@ impl TeslaStreamSupervisor {
         if !state.accepted_seen {
             state.accepted_seen = true;
             state.first_accepted_at = Some(queued_at);
-            run.retry.on_first_accepted();
             state.clocks.on_first_accepted(queued_at);
             if state.subscribe_open {
                 state.subscribe_open = false;

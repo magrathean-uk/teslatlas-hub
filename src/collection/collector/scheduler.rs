@@ -1900,6 +1900,7 @@ impl VehicleScheduler {
             return Vec::new();
         };
         vehicle.next_check_due = None;
+        vehicle.stream_state_check_pending = false;
         Self::note_listed(vehicle, now, wall_ms);
         let revoke = apply_reported_state(&timing, vehicle, &state, now, wall_ms);
         let unavailable_online = Self::settle_unavailable(vehicle, &state);

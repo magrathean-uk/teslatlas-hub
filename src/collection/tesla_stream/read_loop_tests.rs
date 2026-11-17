@@ -746,7 +746,8 @@ async fn sc59_and_sc60_events_follow_the_facts_in_order_with_their_read_times() 
     assert!(second >= sent[1]);
     assert!(second >= first, "queued_at is non-decreasing");
     assert_eq!(second - first, secs(1), "queued_at is the time of the read");
-    // Ruling 2: delivered data resets the outage, so reconnect after 1 s.
+    // B2 / ruling 2: this is the first end of the outage, so its wait is 1 s.
+    // The accepted frames did not reset a previous outage or prove stability.
     let ended = Instant::now();
     expect_no_event_for(&mut run, Duration::from_millis(999)).await;
     assert_eq!(run.event().await, StreamEvent::Healthy);
@@ -992,8 +993,12 @@ async fn sc82_a_repeated_frame_as_the_first_frame_of_a_session_still_proves_the_
     go_error.notify_one();
     assert_eq!(run.event().await, StreamEvent::VehicleOffline);
     let ended = Instant::now();
-    // Ruling 2: accepted duplicate data resets the outage to its first short wait.
-    assert_eq!(accepted_after(&peer, ended, 3).await, Duration::from_secs(1));
+    // B2 / R37: a duplicate proves the subscription, but this short session
+    // leaves the outage on its second wait.
+    assert_eq!(
+        accepted_after(&peer, ended, 3).await,
+        Duration::from_secs(2)
+    );
     run.shut_down().await.expect("shutdown");
     let outcomes = request_outcomes(&store);
     assert_eq!(
