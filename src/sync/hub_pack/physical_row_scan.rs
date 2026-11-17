@@ -29,8 +29,8 @@ thread_local! {
 /// pack), `admission-pack-digest`, `retained-pack-digest` and
 /// `delta-pack-digest` (a pack file hashed against the catalogue),
 /// `pack-sqlite-integrity` (a decoded or written pack's SQLite check), and
-/// the markers `compare` and `context-copy` (a changed set's two readers
-/// begin).
+/// the markers `compare`, `context-copy` and `context-copy-end` (a changed
+/// set's two readers begin, and the second ends).
 #[cfg(test)]
 pub(crate) fn record_verification(place: &'static str, object: impl ToString, ok: bool) {
     VERIFICATIONS.with(|log| {

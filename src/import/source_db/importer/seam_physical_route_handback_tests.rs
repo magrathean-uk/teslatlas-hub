@@ -1827,25 +1827,40 @@ fn assert_one_check_of_the_planned_copy(fixture: &Fixture) {
     }
 }
 
+/// Every place that authenticates a pack's bytes: the authenticated decode,
+/// the protocol's reader check and the file digests against the catalogue.
+const PACK_AUTHENTICATIONS: [&str; 5] = [
+    "pack-decode",
+    "pack-reader",
+    "admission-pack-digest",
+    "retained-pack-digest",
+    "delta-pack-digest",
+];
+
 /// M08-T19 (S2): the changed set's comparison authenticated every pack of
-/// both heads exactly once, over the bytes it decoded, with no SQLite check
-/// of a decoded pack; its context copy authenticated each target pack it
-/// read once.
+/// both heads exactly once, in the read that decodes it, with no SQLite
+/// check of a decoded pack; its context copy authenticated each target pack
+/// it read once, in that read. Every authentication of either phase counts,
+/// so a second verification of a pack in the same phase fails.
 fn assert_each_compared_pack_authenticated_once(prior: &[String], target: &[String]) {
     let log = crate::hub_pack::verifications();
-    let compare = log
-        .iter()
-        .position(|verification| verification.place == "compare")
-        .expect("a comparison ran");
-    let context = log
-        .iter()
-        .position(|verification| verification.place == "context-copy")
-        .unwrap_or(log.len());
-    let decoded: Vec<&crate::hub_pack::Verification> = log[compare..context]
-        .iter()
-        .filter(|verification| verification.place == "pack-decode")
-        .collect();
-    assert!(decoded.iter().all(|verification| verification.ok));
+    let at = |place: &str| log.iter().position(|verification| verification.place == place);
+    let compare = at("compare").expect("a comparison ran");
+    let context = at("context-copy").unwrap_or(log.len());
+    let context_end = at("context-copy-end").unwrap_or(log.len());
+    assert!(compare < context && context <= context_end, "{log:#?}");
+    let authentications = |phase: &[crate::hub_pack::Verification]| -> Vec<crate::hub_pack::Verification> {
+        phase
+            .iter()
+            .filter(|verification| PACK_AUTHENTICATIONS.contains(&verification.place))
+            .cloned()
+            .collect()
+    };
+    let compared = authentications(&log[compare..context]);
+    assert!(
+        compared.iter().all(|verification| verification.ok && verification.place == "pack-decode"),
+        "the comparison authenticates only in its decodes: {log:#?}"
+    );
     assert!(
         !log.iter().any(|verification| verification.place == "pack-sqlite-integrity"
             && verification.object == "scan"),
@@ -1853,17 +1868,18 @@ fn assert_each_compared_pack_authenticated_once(prior: &[String], target: &[Stri
     );
     for pack in prior.iter().chain(target) {
         assert_eq!(
-            decoded.iter().filter(|verification| &verification.object == pack).count(),
+            compared.iter().filter(|verification| &verification.object == pack).count(),
             1,
             "pack {pack} is authenticated once by the comparison: {log:#?}"
         );
     }
-    assert_eq!(decoded.len(), prior.len() + target.len());
+    assert_eq!(compared.len(), prior.len() + target.len(), "{log:#?}");
     let mut copied = std::collections::BTreeSet::new();
-    for verification in log[context..].iter().filter(|verification| verification.place == "pack-decode") {
+    for verification in authentications(&log[context..context_end]) {
         assert!(verification.ok);
+        assert_eq!(verification.place, "pack-decode", "the context copy authenticates in its decodes: {log:#?}");
         assert!(target.contains(&verification.object), "the context copy reads target packs");
-        assert!(copied.insert(verification.object.clone()), "each read once");
+        assert!(copied.insert(verification.object.clone()), "each read once: {log:#?}");
     }
 }
 
@@ -2187,8 +2203,9 @@ fn handback_refuses_a_kept_stage_that_differs_from_its_record() {
 }
 
 /// M08-T19: a pack of the current head whose bytes changed (same length)
-/// fails the state lookup's digest check of that head, the last thing the
-/// run does, and nothing is published.
+/// fails the first state lookup's digest check of that head, before any
+/// emission or comparison and as the last thing the run does; nothing is
+/// published.
 #[test]
 fn handback_refuses_a_damaged_pack_of_the_current_head() {
     let (fixture, _root, env) = planned_then_refused(true);
@@ -2230,14 +2247,26 @@ fn handback_refuses_a_damaged_pack_of_the_current_head() {
         ))),
         "a damaged pack of the current head is refused: {result:?}"
     );
-    // The check this test names refused it, and nothing ran after it: the
-    // last verification is the state lookup's failed digest of that pack.
+    // The check this test names refused it: the first state lookup, before
+    // any emission or comparison, hashed the damaged pack first and failed,
+    // and nothing ran after it. Whether the damaged bytes would decompress
+    // does not matter: no later reader runs.
     let log = crate::hub_pack::verifications();
     let failed: Vec<_> = log.iter().filter(|verification| !verification.ok).collect();
     assert_eq!(failed.len(), 1, "{log:#?}");
     assert_eq!(failed[0].place, "admission-pack-digest");
     assert_eq!(failed[0].object, damaged);
-    assert_eq!(log.last(), Some(failed[0]), "nothing is decoded or written after it");
+    let first_hash = log
+        .iter()
+        .position(|verification| verification.place == "admission-pack-digest" && verification.object == damaged);
+    assert_eq!(first_hash, Some(log.len() - 1), "the first hash of that pack refused it, last: {log:#?}");
+    assert!(
+        !log.iter().any(|verification| matches!(
+            verification.place,
+            "stage-emit" | "compare" | "context-copy" | "pack-decode" | "pack-reader"
+        )),
+        "no emission, comparison or pack read precedes the refusal: {log:#?}"
+    );
     assert_eq!(current_snapshot(&fixture), head, "nothing is published");
     assert_eq!(
         PhysicalClient::bootstrap(&env, &fixture).err(),

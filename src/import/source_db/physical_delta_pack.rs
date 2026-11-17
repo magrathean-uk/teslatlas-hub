@@ -608,6 +608,8 @@ fn copy_target_context(
             }
         }
     }
+    #[cfg(test)]
+    crate::hub_pack::record_verification("context-copy-end", "", true);
     Ok(())
 }
 
