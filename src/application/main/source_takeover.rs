@@ -142,10 +142,8 @@ pub(crate) fn reader_refusal(error: SourceTokenRowError) -> OperatorRefusal {
 
 /// A vault refusal, with its code unchanged and the owner text for it.
 fn vault_refusal(error: tesatlas_hub::CredentialVaultEntryError) -> OperatorRefusal {
-    let code = error.code();
-    let message = tesatlas_hub::auth::credential_sign_in::credential_owner_message(code, None, None, None)
-        .unwrap_or_else(|| "the Hub could not store the login".to_owned());
-    OperatorRefusal::new(code, message)
+    let error = tesatlas_hub::auth::credential_sign_in::credential_entry_error(error);
+    OperatorRefusal::new(error.code(), error.to_string())
 }
 
 /// The report of a completed take-over: no token, fingerprint or key.

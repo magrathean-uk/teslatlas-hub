@@ -720,6 +720,7 @@ mod source_takeover {
         assert_refused(&output, "slot_occupied", &["second take-over"]);
         assert!(stdout(&output).is_empty());
         assert_secret_free(&output);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
 
         // An upgraded store whose legacy fence is opaque takes no supplied
         // login: `fresh_sign_in_required`, nothing stored.
@@ -735,8 +736,34 @@ mod source_takeover {
         assert_secret_free(&output);
         let output = take_over(&fenced, &source_url(&source), &input(), Some(&pair));
         assert_refused(&output, "fresh_sign_in_required", &["nothing was stored"]);
+        assert_eq!(source.connections(), 0, "the double stood in for the source");
+
+        // A refresh token the Hub already spent is refused
+        // `refresh_token_spent`, nothing stored.
+        let (spent, source) = hub_with_store();
+        let fingerprint = {
+            use sha2::Digest as _;
+            let mut hash = sha2::Sha256::new();
+            hash.update(b"teslatlas-hub/refresh-fingerprint/v1"); // rename:keep
+            hash.update([0]);
+            hash.update(REFRESH.as_bytes());
+            hash.finalize().to_vec()
+        };
+        let connection = rusqlite::Connection::open(spent.data().join("hub.sqlite")).expect("store");
+        connection
+            .execute("INSERT INTO credential_refresh_fences(fingerprint,kind,fenced_at_ms) VALUES(?1,'attempt',0)", [fingerprint])
+            .expect("spent fence");
+        drop(connection);
+        let pair = double(&spent, serde_json::json!({"access": access(), "refresh": REFRESH}));
+        for _ in 0..2 {
+            let output = take_over(&spent, &source_url(&source), &input(), Some(&pair));
+            assert_refused(&output, "refresh_token_spent", &["spent take-over"]);
+            assert!(stdout(&output).is_empty());
+            assert_secret_free(&output);
+        }
 
         assert_eq!(source.connections(), 0, "the double stood in for the source");
+        assert_eq!(spent.endpoint.connections(), 0);
         assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
         assert_eq!(fenced.endpoint.connections(), 0);
     }
