@@ -8487,6 +8487,107 @@ struct HubFleetApplication: Equatable {
     }
 }
 
+/// The polling figures the consent page states and the owner accepts: the cadence, the price
+/// and the monthly cap in effect for this Hub. Defaults mirror `src/runtime/config.rs` (the Fleet
+/// poll intervals, the billed state check and list intervals, `FLEET_PRICING` and
+/// `DEFAULT_FLEET_MONTHLY_CAP_CENTS`); the configuration's `[collector.fleet_polling]` overrides
+/// them. The service will report these figures itself (needs-from-service.md).
+struct HubFleetConsentFigures: Equatable {
+    var drivingSeconds = 30
+    var chargingSeconds = 120
+    var updatingSeconds = 300
+    var onlineSeconds = 120
+    var stateCheckSeconds = 600
+    var inventorySeconds = 3_600
+    var monthlyCapCents = 1_000
+    /// Tesla's data rate, and the rate the service counts a state check or a list at.
+    var dataRequestsPerDollar = 500
+    var stateRequestsPerDollar = 500
+
+    static let serviceDefaults = HubFleetConsentFigures()
+
+    private static let keys: [String: WritableKeyPath<HubFleetConsentFigures, Int>] = [
+        "driving_poll_seconds": \.drivingSeconds,
+        "charging_poll_seconds": \.chargingSeconds,
+        "updating_poll_seconds": \.updatingSeconds,
+        "online_poll_seconds": \.onlineSeconds,
+        "state_poll_seconds": \.stateCheckSeconds,
+        "inventory_poll_seconds": \.inventorySeconds,
+        "monthly_cap_cents": \.monthlyCapCents
+    ]
+
+    private static let recordKeys: [String: WritableKeyPath<HubFleetConsentFigures, Int>] = [
+        "drivingSeconds": \.drivingSeconds, "chargingSeconds": \.chargingSeconds,
+        "updatingSeconds": \.updatingSeconds, "onlineSeconds": \.onlineSeconds,
+        "stateCheckSeconds": \.stateCheckSeconds, "inventorySeconds": \.inventorySeconds,
+        "monthlyCapCents": \.monthlyCapCents, "dataRequestsPerDollar": \.dataRequestsPerDollar,
+        "stateRequestsPerDollar": \.stateRequestsPerDollar
+    ]
+
+    var record: [String: Int] { Self.recordKeys.mapValues { self[keyPath: $0] } }
+
+    init() {}
+
+    init?(record: [String: Any]) {
+        guard Set(record.keys) == Set(Self.recordKeys.keys) else { return nil }
+        for (key, path) in Self.recordKeys {
+            guard let value = HubFleetJSON.integer(record[key]), value >= 0 else { return nil }
+            self[keyPath: path] = value
+        }
+    }
+
+    /// The figures in effect for a configuration, read with the app's line reader. Anything it
+    /// cannot read exactly (another spelling of the table, a dotted or inline form, an unknown
+    /// or repeated key, a value that is not plain decimal digits, an interval of 0) names the
+    /// setting instead: the consent page then states no figure and offers no acceptance.
+    static func reading(in config: String?) -> HubFleetConsentReading {
+        let table = "collector.fleet_polling"
+        guard let config else { return .figures(.serviceDefaults) }
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var figures = HubFleetConsentFigures.serviceDefaults
+        var inTable = false
+        var tableSeen = false
+        var seen: Set<String> = []
+        for raw in config.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = uncommented(String(raw))
+            if line.isEmpty { continue }
+            if line.hasPrefix("[") {
+                inTable = false
+                guard line.contains("fleet_polling") else { continue }
+                guard line == "[\(table)]", !tableSeen else { return .unreadable(setting: table) }
+                inTable = true
+                tableSeen = true
+                continue
+            }
+            guard inTable else {
+                if line.contains("fleet_polling") { return .unreadable(setting: table) }
+                continue
+            }
+            guard let equals = line.firstIndex(of: "=") else { return .unreadable(setting: table) }
+            let key = line[..<equals].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            guard let path = keys[key], !seen.contains(key) else { return .unreadable(setting: "\(table).\(key)") }
+            seen.insert(key)
+            guard (1...9).contains(value.count), value.allSatisfy({ ("0"..."9").contains($0) }),
+                  value == "0" || !value.hasPrefix("0"),
+                  let number = Int(value), number > 0 || key == "monthly_cap_cents" else {
+                return .unreadable(setting: "\(table).\(key)")
+            }
+            figures[keyPath: path] = number
+        }
+        return .figures(figures)
+    }
+}
+
+enum HubFleetConsentReading: Equatable {
+    case figures(HubFleetConsentFigures)
+    /// The named setting cannot be read exactly; no figure is stated and nothing can be accepted.
+    case unreadable(setting: String)
+}
+
 /// `setup-fleet public-key --output` saved the Hub's public key.
 struct HubFleetPublicKey: Equatable {
     let path: String
@@ -8664,6 +8765,12 @@ extension HubController {
 
     /// Whether this Hub's configuration names the Fleet provider.
     var hubConfiguredForFleet: Bool { configuredCollectorProvider() == "fleet" }
+
+    /// The polling figures in effect for this Hub, as the consent page states them.
+    var fleetConsentReading: HubFleetConsentReading {
+        do { return HubFleetConsentFigures.reading(in: try readConfigIfPresent()) }
+        catch { return .unreadable(setting: configPath.lastPathComponent) }
+    }
 
     /// Reads, without changing anything, which Fleet set-up state the Hub is in (`preflight`).
     /// The completion runs on the main queue.

@@ -315,6 +315,95 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(fixture.runner.fleetVerbs, [], "nothing is sent from an unknown state")
     }
 
+    // MARK: The figures in effect (note 3)
+
+    func testTheConsentPageStatesTheDefaultFiguresWhenNothingOverridesThem() throws {
+        let fixture = try Fixture(state: .awaitingActivation)
+        defer { fixture.tearDown() }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .consent && !fixture.window.isBusyForTests }
+        let shown = fixture.labels().joined(separator: "\n")
+        for figure in ["a driving car every 30 seconds", "a charging car every 2 minutes", "an awake car every 2 minutes",
+                       "a car that is updating every 5 minutes", "checks a sleeping car every 10 minutes",
+                       "lists your cars every hour", "$1 for every 500 vehicle-data requests ($0.002 each)",
+                       "A state check or a list of your cars is billed at the same price.",
+                       "when its requests reach $10.00", "around day 14 of a month"] {
+            XCTAssertTrue(shown.contains(figure), figure)
+        }
+    }
+
+    func testTheConsentPageStatesTheCapAndPollingOverridesOfThisHub() throws {
+        let fixture = try Fixture(state: .awaitingActivation, config: """
+
+            [collector.fleet_polling]
+            driving_poll_seconds = 60   # once a minute
+            updating_poll_seconds = 600
+            state_poll_seconds = 900
+            monthly_cap_cents = 2000
+
+            """)
+        defer { fixture.tearDown() }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .consent && !fixture.window.isBusyForTests }
+        let shown = fixture.labels().joined(separator: "\n")
+        for figure in ["a driving car every minute", "a charging car every 2 minutes",
+                       "a car that is updating every 10 minutes", "checks a sleeping car every 15 minutes",
+                       "lists your cars every hour", "when its requests reach $20.00"] {
+            XCTAssertTrue(shown.contains(figure), figure)
+        }
+        XCTAssertFalse(shown.contains("$10.00"), "not the default cap")
+        XCTAssertFalse(shown.contains("day 14"), "the default's day is not claimed for other figures")
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.consent-accept"))
+    }
+
+    func testAFigureThatCannotBeReadExactlyIsNamedAndNothingCanBeAccepted() throws {
+        let fixture = try Fixture(state: .awaitingActivation, config: "\n[collector.fleet_polling]\nmonthly_cap_cents = 2_000\n")
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        let shown = fixture.labels().joined(separator: "\n")
+        XCTAssertTrue(shown.contains("Hub cannot read the setting collector.fleet_polling.monthly_cap_cents"), shown)
+        XCTAssertFalse(shown.contains("$10.00") || shown.contains("$20.00"), "no figure is stated")
+        XCTAssertNil(fixture.view(identifier: "onboarding.fleet.consent-accept"), "no acceptance is offered")
+        window.acceptFleetConsentForTests()
+        XCTAssertFalse(window.continueEnabledForTests)
+        window.continueForTests()
+        XCTAssertNil(fixture.runner.call("activate"))
+    }
+
+    func testTheFiguresAreReadExactlyOrTheSettingIsNamed() {
+        func reading(_ table: String) -> HubFleetConsentReading {
+            HubFleetConsentFigures.reading(in: "data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\n" + table)
+        }
+        XCTAssertEqual(HubFleetConsentFigures.reading(in: nil), .figures(.serviceDefaults))
+        XCTAssertEqual(reading(""), .figures(.serviceDefaults))
+        var expected = HubFleetConsentFigures.serviceDefaults
+        expected.chargingSeconds = 300
+        expected.onlineSeconds = 240
+        expected.inventorySeconds = 7_200
+        expected.monthlyCapCents = 0
+        XCTAssertEqual(reading("\n[collector.fleet_polling]\ncharging_poll_seconds = 300\nonline_poll_seconds=240\n"
+                               + "inventory_poll_seconds = 7200 # two hours\nmonthly_cap_cents = 0\n\n[geocoder]\nenabled = false\n"),
+                       .figures(expected))
+        let table = "collector.fleet_polling"
+        for (text, setting) in [
+            ("\n[collector.fleet_polling]\nmonthly_cap_cents = 2_000\n", "\(table).monthly_cap_cents"),
+            ("\n[collector.fleet_polling]\nmonthly_cap_cents = 0x10\n", "\(table).monthly_cap_cents"),
+            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 030\n", "\(table).driving_poll_seconds"),
+            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 0\n", "\(table).driving_poll_seconds"),
+            ("\n[collector.fleet_polling]\ndriving_poll_seconds = -5\n", "\(table).driving_poll_seconds"),
+            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 1e2\n", "\(table).driving_poll_seconds"),
+            ("\n[collector.fleet_polling]\nwake_poll_seconds = 60\n", "\(table).wake_poll_seconds"),
+            ("\n[collector.fleet_polling]\ncharging_poll_seconds = 60\ncharging_poll_seconds = 90\n", "\(table).charging_poll_seconds"),
+            ("\n[collector.fleet_polling]\n\"monthly_cap_cents\" = 100\n", "\(table).\"monthly_cap_cents\""),
+            ("\n[ collector.fleet_polling ]\nmonthly_cap_cents = 100\n", table),
+            ("\n[collector.fleet_polling]\n[collector.fleet_polling]\n", table),
+            ("fleet_polling.monthly_cap_cents = 100\n", table),
+            ("fleet_polling = { monthly_cap_cents = 100 }\n", table),
+            ("\n[collector.fleet_polling]\nmonthly_cap_cents\n", table)
+        ] {
+            XCTAssertEqual(reading(text), .unreadable(setting: setting), text)
+        }
+    }
+
     // MARK: Refusals
 
     func testAnUnknownRefusalIsShownWithTheServicesOwnMessageAndAKnownOneWithTheAppsLine() throws {
@@ -662,8 +751,9 @@ private final class Fixture {
         return #"{"status":"ready","state":"\#(state)","version":"1","provider":"fleet","collectorEnabled":false}"#
     }
 
-    /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app.
-    init(state: HubFleetSetupState? = nil) throws {
+    /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
+    /// appended to that Hub's configuration.
+    init(state: HubFleetSetupState? = nil, config: String = "") throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -673,7 +763,7 @@ private final class Fixture {
         let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
                                        serviceInstalledOverride: state != nil)
         if let state {
-            try "data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = 0\n"
+            try ("data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\ninterval_seconds = 0\n" + config)
                 .write(to: folder.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
             try controller.saveFleetApplication(HubFleetApplication(
                 clientID: "c0ffee00-1111-4222-8333-444455556666", region: .eu,

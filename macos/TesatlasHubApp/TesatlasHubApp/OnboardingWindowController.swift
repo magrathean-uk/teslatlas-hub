@@ -3273,22 +3273,60 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 // MARK: - Fleet route (M09-T12)
 
 extension OnboardingWindowController {
-    // Polling cadence, price and cap, as the service applies them by default
-    // (src/runtime/config.rs: the Fleet poll intervals, FLEET_PRICING and
-    // DEFAULT_FLEET_MONTHLY_CAP_CENTS). Changing one there is a dated decision; change it here too.
-    static var fleetCadenceText: String {
-        HubL10n.text("hub.fleetSetup.consent.cadence",
-            fallback: "Hub reads a driving car every 30 seconds, a charging or awake car every 2 minutes, and checks a sleeping car every 10 minutes. It lists your cars once an hour. It polls only while a collection window is open.")
+    // The cadence, price and cap the consent page states: the figures in effect for this Hub
+    // (`HubController.fleetConsentReading`), never fixed text.
+
+    /// "every 30 seconds", "every 2 minutes", "every hour".
+    static func fleetEvery(_ seconds: Int) -> String {
+        if seconds % 3_600 == 0 {
+            return HubL10n.plural("hub.fleetSetup.every.hours", count: seconds / 3_600, one: "every hour", other: "every %d hours")
+        }
+        if seconds % 60 == 0 {
+            return HubL10n.plural("hub.fleetSetup.every.minutes", count: seconds / 60, one: "every minute", other: "every %d minutes")
+        }
+        return HubL10n.plural("hub.fleetSetup.every.seconds", count: seconds, one: "every second", other: "every %d seconds")
     }
 
-    static var fleetPriceText: String {
-        HubL10n.text("hub.fleetSetup.consent.price",
-            fallback: "Tesla bills your developer account $1 for every 500 vehicle-data requests ($0.002 each).")
+    /// "$10.00" for 1,000 cents.
+    static func fleetDollars(cents: Int) -> String {
+        String(format: "$%d.%02d", cents / 100, cents % 100)
     }
 
-    static var fleetCapText: String {
-        HubL10n.text("hub.fleetSetup.consent.cap",
-            fallback: "Hub stops polling for the month at $10.00, Tesla's monthly discount. With these settings that is reached around day 14 of a month.")
+    static func fleetCadenceText(_ figures: HubFleetConsentFigures) -> String {
+        HubL10n.format("hub.fleetSetup.consent.cadence",
+            fallback: "Hub reads a driving car %1$@, a charging car %2$@, an awake car %3$@ and a car that is updating %4$@. It checks a sleeping car %5$@ and lists your cars %6$@. It polls only while a collection window is open.",
+            arguments: [fleetEvery(figures.drivingSeconds), fleetEvery(figures.chargingSeconds),
+                        fleetEvery(figures.onlineSeconds), fleetEvery(figures.updatingSeconds),
+                        fleetEvery(figures.stateCheckSeconds), fleetEvery(figures.inventorySeconds)])
+    }
+
+    static func fleetPriceText(_ figures: HubFleetConsentFigures) -> String {
+        let each = String(format: "$%.3f", 1 / Double(max(1, figures.dataRequestsPerDollar)))
+        var text = HubL10n.format("hub.fleetSetup.consent.price",
+            fallback: "Tesla bills your developer account $1 for every %1$@ vehicle-data requests (%2$@ each).",
+            arguments: [String(figures.dataRequestsPerDollar), each])
+        if figures.stateRequestsPerDollar == figures.dataRequestsPerDollar {
+            text += " " + HubL10n.text("hub.fleetSetup.consent.priceState",
+                fallback: "A state check or a list of your cars is billed at the same price.")
+        }
+        return text
+    }
+
+    static func fleetCapText(_ figures: HubFleetConsentFigures) -> String {
+        var text = HubL10n.format("hub.fleetSetup.consent.cap",
+            fallback: "Hub stops polling for the month when its requests reach %1$@.",
+            arguments: [fleetDollars(cents: figures.monthlyCapCents)])
+        if figures == .serviceDefaults {
+            text += " " + HubL10n.text("hub.fleetSetup.consent.capDefault",
+                fallback: "That is Tesla's $10.00 monthly discount; with these settings it is reached around day 14 of a month.")
+        }
+        return text
+    }
+
+    static func fleetUnreadableText(setting: String) -> String {
+        HubL10n.format("hub.fleetSetup.consent.unreadable",
+            fallback: "Hub cannot read the setting %1$@ in its configuration exactly, so this page cannot state what polling would cost, and nothing can be accepted. Correct that setting, or remove it to use Hub's defaults, then open this page again.",
+            arguments: [setting])
     }
 
     static var fleetConsentText: String {
@@ -3344,7 +3382,7 @@ extension OnboardingWindowController {
             return controller.savedFleetApplication?.registered == true || !fleetClientSecret.stringValue.isEmpty
         case .signIn: return !fleetClientSecret.stringValue.isEmpty
         case .vehicles: return true
-        case .consent: return fleetConsent.state == .on
+        case .consent: return fleetConsent.state == .on && fleetConsentFigures != nil
         }
     }
 
@@ -3356,7 +3394,7 @@ extension OnboardingWindowController {
             return controller.savedFleetApplication?.registered == true ? [] : [fleetClientSecret]
         case .signIn: return [fleetClientSecret]
         case .vehicles: return []
-        case .consent: return [fleetConsent]
+        case .consent: return fleetConsentFigures == nil ? [] : [fleetConsent]
         }
     }
 
@@ -3500,14 +3538,19 @@ extension OnboardingWindowController {
         featureRow(HubL10n.text("hub.fleetSetup.vehiclesNote", fallback: "Finding your car needs an open collection window. It reads the list of cars only: nothing is sent to a car."), "car.side")
     }
 
-    private func fleetConsentBody() -> NSView {
+    /// The figures the consent page shows; nil while one of them cannot be read exactly.
+    private var fleetConsentFigures: HubFleetConsentFigures? {
+        if case let .figures(figures) = controller.fleetConsentReading { return figures }
+        return nil
+    }
+
+    private func fleetFigureRows(_ figures: HubFleetConsentFigures) -> [NSView] {
         let rows: [(String, String, String)] = [
-            ("clock", HubL10n.text("hub.fleetSetup.consent.cadenceTitle", fallback: "How often"), Self.fleetCadenceText),
-            ("dollarsign.circle", HubL10n.text("hub.fleetSetup.consent.priceTitle", fallback: "Price"), Self.fleetPriceText),
-            ("gauge", HubL10n.text("hub.fleetSetup.consent.capTitle", fallback: "Monthly cap"), Self.fleetCapText)
+            ("clock", HubL10n.text("hub.fleetSetup.consent.cadenceTitle", fallback: "How often"), Self.fleetCadenceText(figures)),
+            ("dollarsign.circle", HubL10n.text("hub.fleetSetup.consent.priceTitle", fallback: "Price"), Self.fleetPriceText(figures)),
+            ("gauge", HubL10n.text("hub.fleetSetup.consent.capTitle", fallback: "Monthly cap"), Self.fleetCapText(figures))
         ]
-        var views: [NSView] = []
-        for (symbol, title, text) in rows {
+        return rows.map { symbol, title, text in
             let heading = NSTextField(labelWithString: title)
             heading.font = HubTypography.emphasis
             let detail = NSTextField(wrappingLabelWithString: text)
@@ -3522,9 +3565,23 @@ extension OnboardingWindowController {
             row.alignment = .top
             row.spacing = 12
             detail.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true
-            views.append(row)
+            return row
         }
-        views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
+    }
+
+    private func fleetConsentBody() -> NSView {
+        var views: [NSView] = []
+        switch controller.fleetConsentReading {
+        case let .figures(figures):
+            views += fleetFigureRows(figures)
+            views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
+        case let .unreadable(setting):
+            // A figure that cannot be read exactly is not stated, and nothing can be accepted.
+            fleetConsent.state = .off
+            views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
+                                    message: Self.fleetUnreadableText(setting: setting),
+                                    identifier: "onboarding.fleet.consent-unreadable"))
+        }
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
