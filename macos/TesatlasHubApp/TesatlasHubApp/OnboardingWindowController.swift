@@ -17,8 +17,20 @@ enum HubOnboardingProvider: Equatable {
 /// default whether or not Fleet is offered.
 enum HubFleetOnboarding {
     static let offeredByDefault = false
-    /// Read by the provider page, the Tesla account menu and Status. Only tests change it.
+    /// Read by the provider page, the Tesla account menu, Status and every route this window
+    /// builds or renders. Only test code changes it.
     static var isOffered = offeredByDefault
+
+    /// A state that names the Fleet route while Fleet is not offered falls back as the provider
+    /// page does: to the owner sign-in. Applied to the preview environment, an explicit first
+    /// route, navigation and every render, so no Fleet screen is built with the switch off.
+    static func offered(_ state: HubOnboardingState) -> HubOnboardingState {
+        guard state.route == .fleet || state.provider == .fleet, !isOffered else { return state }
+        var fallback = state
+        fallback.provider = .legacy
+        if fallback.route == .fleet { fallback.route = .legacy }
+        return fallback
+    }
 }
 
 /// The Fleet route's steps, in the order of a first set-up (M09-T19a interface, section 10).
@@ -405,9 +417,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 provider: .legacy
             )
         } else {
-            state = Self.previewState(route: effectivePreviewRoute)
+            state = HubFleetOnboarding.offered(Self.previewState(route: effectivePreviewRoute)
                 ?? initialRoute.map { Self.initialState(route: $0) }
-                ?? HubOnboardingState()
+                ?? HubOnboardingState())
             shouldAutoVerify = false
             resumeMessage = nil
         }
@@ -585,7 +597,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
-        state = Self.initialState(route: route)
+        state = HubFleetOnboarding.offered(Self.initialState(route: route))
         errorMessage = nil
         errorFromWindowCheck = false
         signInIdle = false
@@ -720,6 +732,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func render() {
         guard let window else { return }
+        state = HubFleetOnboarding.offered(state)
         let previousStep = renderedStep
         renderedStep = state.step
         diagnosticView = nil

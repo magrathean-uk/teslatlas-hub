@@ -20,9 +20,12 @@ final class HubVisualSnapshotTests: XCTestCase {
         previousAlertPresenter = HubUIPresentation.replaceAlertPresenterForTesting(alertRecorder)
         baselineAlertCount = alertRecorder.totalInvocations
         baselinePanelCount = panelRecorder.savePanelRequests
+        // The Fleet scene is drawn with the Fleet switch on; the shipped default stays off.
+        HubFleetOnboarding.isOffered = true
     }
 
     override func tearDownWithError() throws {
+        HubFleetOnboarding.isOffered = HubFleetOnboarding.offeredByDefault
         defer {
             _ = HubUIPresentation.replaceAlertPresenterForTesting(previousAlertPresenter)
             try? super.tearDownWithError()

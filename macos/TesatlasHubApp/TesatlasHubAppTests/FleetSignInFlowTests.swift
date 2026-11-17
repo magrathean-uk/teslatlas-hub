@@ -398,6 +398,43 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertTrue(shown.contains { $0.contains("your own Tesla developer application and a domain") })
     }
 
+    func testNoRouteBuildsAFleetScreenWhileTheSwitchIsOff() throws {
+        HubFleetOnboarding.isOffered = false
+        func fleetViews(_ onboarding: OnboardingWindowController) -> [String] {
+            Fixture.descendants(onboarding.window?.contentView)
+                .compactMap { $0.identifier?.rawValue }
+                .filter { $0.hasPrefix("onboarding.fleet") }
+        }
+        // The preview environment, by route name and by catalogue scene.
+        for environment in [["TESATLAS_HUB_UI_PREVIEW": "1", "TESATLAS_HUB_ONBOARDING_PREVIEW": "fleet"],
+                            ["TESATLAS_HUB_PREVIEW_SCENE": "r14-fleet"]] {
+            let controller = HubController(environment: environment)
+            XCTAssertEqual(controller.onboardingPreviewRoute, "fleet")
+            let preview = OnboardingWindowController(controller: controller,
+                                                     previewRoute: controller.onboardingPreviewRoute,
+                                                     onComplete: { _ in })
+            defer { preview.close() }
+            XCTAssertEqual(preview.currentRoute, .legacy, "\(environment)")
+            XCTAssertEqual(fleetViews(preview), [], "\(environment)")
+        }
+        // An explicit first route, and navigation.
+        let explicit = OnboardingWindowController(
+            controller: HubController(environment: ["TESATLAS_HUB_UI_PREVIEW": "1"]),
+            initialRoute: .fleet, onComplete: { _ in })
+        defer { explicit.close() }
+        XCTAssertEqual(explicit.currentRoute, .legacy)
+        XCTAssertEqual(fleetViews(explicit), [])
+        explicit.navigate(to: .fleet)
+        XCTAssertEqual(explicit.currentRoute, .legacy)
+        XCTAssertEqual(fleetViews(explicit), [])
+
+        // The same routes build the Fleet screen once test code switches Fleet on.
+        HubFleetOnboarding.isOffered = true
+        explicit.navigate(to: .fleet)
+        XCTAssertEqual(explicit.currentRoute, .fleet)
+        XCTAssertFalse(fleetViews(explicit).isEmpty)
+    }
+
     // MARK: Helpers
 
     private static func flow() throws -> FleetOAuthFlow {
