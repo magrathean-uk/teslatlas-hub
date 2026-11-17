@@ -641,7 +641,7 @@ const SERVING_BETWEEN_WINDOWS: &str = r#"echo '{"status":"serving","readiness":"
 #[derive(Clone)]
 struct FakeService {
     job: LoadedJob,
-    restart_fails: bool,
+    reload_fails: bool,
     /// How long decoding the installed file takes (a decoder that hangs).
     decoding: Duration,
     identity: Option<(PathBuf, PathBuf)>,
@@ -650,7 +650,7 @@ struct FakeService {
 
 impl FakeService {
     fn new(job: LoadedJob) -> Self {
-        Self { job, restart_fails: false, decoding: Duration::ZERO, identity: None, calls: Arc::default() }
+        Self { job, reload_fails: false, decoding: Duration::ZERO, identity: None, calls: Arc::default() }
     }
 
     fn calls(&self) -> Vec<&'static str> {
@@ -677,12 +677,7 @@ impl CurrentService for FakeService {
 
     fn reload(&mut self) -> io::Result<()> {
         self.calls.lock().unwrap().push("reload");
-        Ok(())
-    }
-
-    fn restart(&mut self) -> io::Result<()> {
-        self.calls.lock().unwrap().push("restart");
-        if self.restart_fails { Err(io::Error::other("launchctl failed")) } else { Ok(()) }
+        if self.reload_fails { Err(io::Error::other("launchctl failed")) } else { Ok(()) }
     }
 }
 
@@ -844,10 +839,13 @@ fn handover_an_already_serving_current_job_is_not_restarted() {
 }
 
 #[test]
-fn handover_a_loaded_job_that_is_not_serving_is_restarted_then_confirmed() {
+fn handover_a_loaded_job_that_is_not_serving_is_loaded_afresh_then_confirmed() {
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
-    // Not serving for the short check; serving after the restart.
+    // Not serving for the short check; serving after the fresh load. M08-T21:
+    // a `kickstart -k` here waited out launchd's throttle of a job that had
+    // just failed (about 51 s of the 60-second limit in the lab guest); a
+    // fresh load runs at once.
     let hub = recording_hub(
         &home,
         r#"if [ "$wait" = 2 ]; then echo 'tesatlas-hub: the Hub service is not serving its configuration on its listener' >&2; exit 1; fi
@@ -856,19 +854,19 @@ echo '{"status":"serving","readiness":"ready"}'"#,
     let service = FakeService::new(LoadedJob::Installed);
     let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(changes(&service), ["restart"]);
+    assert_eq!(changes(&service), ["reload"], "unloaded and loaded again, never restarted");
     assert_eq!(checks_run(&home), ["2", "45"]);
 
-    // The restart keeps its fail-closed refusal: nothing is confirmed or retired.
+    // A fresh load that fails is refused: nothing is confirmed or retired.
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
     let hub = recording_hub(&home, "echo 'tesatlas-hub: not serving' >&2; exit 1");
     let mut service = FakeService::new(LoadedJob::Installed);
-    service.restart_fails = true;
+    service.reload_fails = true;
     let failed = complete(&home, &hub, &config, &service);
     assert_eq!(failed.status, Status::Failed);
     assert_eq!(failed.detail.as_deref(), Some("the Hub service did not start under its current name: launchctl failed"));
-    assert_eq!(checks_run(&home), ["2"], "no check after a refused restart");
+    assert_eq!(checks_run(&home), ["2"], "no check after a refused load");
     assert_kept_for_the_next_attempt(&home);
 }
 
@@ -914,7 +912,7 @@ fn handover_no_restart_is_begun_after_the_limit() {
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
     // The short check of a loaded job hangs past the limit, then says it is
-    // not serving: the abandoned attempt must not restart the job afterwards.
+    // not serving: the abandoned attempt must not reload the job afterwards.
     let ended = home.layout.home.join("ended");
     let hub = fake_hub(&home, &format!("sleep 1\ntouch '{}'\nexit 1", ended.display()));
     let service = FakeService::new(LoadedJob::Installed);
