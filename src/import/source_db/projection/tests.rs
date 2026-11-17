@@ -792,7 +792,7 @@ fn projects_only_completed_selected_vehicle_history() {
         ProjectionReport {
             completed_drives: 1,
             skipped_open_drives: 1,
-            broken_drives: 0,
+            broken_drives: 1,
             detached_positions: 0,
             held_open_session_positions: 1,
             skipped_unattached_positions: 0,
@@ -1033,8 +1033,8 @@ fn broken_drive_terminal_candidate_retains_its_sample_without_guessing_an_end() 
     assert!(projected.snapshot.positions.is_empty());
     assert_eq!(projected.report.held_open_session_positions, 1);
     assert_eq!(projected.report.skipped_open_drives, 1);
-    // No later evidence: it may be a just-started drive, not proven abandoned.
-    assert_eq!(projected.report.broken_drives, 0);
+    // The report counts the shape even when lifecycle ownership retains the sample.
+    assert_eq!(projected.report.broken_drives, 1);
     assert_eq!(source.drives[0].end_date_ms, None);
     assert_eq!(source.positions[0].drive_id, Some(11));
 }
@@ -1055,4 +1055,31 @@ fn broken_drive_policy_does_not_classify_in_progress_or_completed_short_drives()
     assert_eq!(projected.report.detached_positions, 0);
     assert_eq!(projected.report.held_open_session_positions, 2);
     assert_eq!(projected.snapshot.drives[0].distance_km, None);
+}
+
+#[test]
+fn broken_drive_shape_counts_tied_starts_and_the_whole_terminal_run() {
+    let mut source = history();
+    source.drives.clear();
+    source.positions.clear();
+    source.charging_processes.clear();
+    source.charges.clear();
+    let template = history();
+    for (id, at) in [(1, 100), (2, 200), (3, 300), (4, 300)] {
+        let mut drive = template.drives[1].clone();
+        drive.id = id;
+        drive.start_date_ms = at;
+        // Duration is not one of DEC-191's three shape conditions.
+        drive.duration_min = Some(0);
+        source.drives.push(drive);
+        let mut position = template.positions[1].clone();
+        position.id = 100 + id;
+        position.drive_id = Some(id);
+        position.date_ms = at;
+        source.positions.push(position);
+    }
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 4);
+    assert_eq!(projected.report.detached_positions, 4);
+    assert!(projected.snapshot.drives.is_empty());
 }

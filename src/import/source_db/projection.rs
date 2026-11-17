@@ -957,7 +957,7 @@ pub fn project_update(
 pub struct ProjectionReport {
     pub completed_drives: u64,
     pub skipped_open_drives: u64,
-    /// Confirmed abandoned one-position fragments, a subset of skipped_open_drives.
+    /// Rows with no end or distance and exactly one sample, including terminal rows.
     pub broken_drives: u64,
     /// Retained samples whose parent did not project. Included in projected_positions.
     pub detached_positions: u64,
@@ -973,8 +973,7 @@ pub struct ProjectionReport {
 }
 
 /// Bounded by source drive rows, never by the number of history positions.
-/// A terminal fragment has the same shape as a just-started drive. Only a
-/// strictly later drive of this car supplies evidence that it was abandoned.
+/// Count the DEC-191 shape independently of ordering and lifecycle handover.
 pub(crate) struct BrokenDriveTracker {
     car_id: i64,
     candidate_position_counts: HashMap<i64, u8>,
@@ -982,19 +981,13 @@ pub(crate) struct BrokenDriveTracker {
 
 impl BrokenDriveTracker {
     pub(crate) fn new(drives: &[SourceDbDrive], car_id: i64) -> Self {
-        let latest_start = drives
-            .iter()
-            .filter(|d| d.car_id == car_id)
-            .map(|d| d.start_date_ms)
-            .max();
         let candidate_position_counts = drives
             .iter()
             .filter(|d| {
                 d.car_id == car_id
                     && d.end_date_ms.is_none()
                     && d.distance_km.is_none()
-                    && d.duration_min.is_none()
-                    && latest_start.is_some_and(|latest| d.start_date_ms < latest)
+
             })
             .map(|d| (d.id, 0))
             .collect();

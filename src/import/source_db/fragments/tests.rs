@@ -1375,7 +1375,7 @@ fn broken_drive_staged_import_preserves_run_and_terminal_samples_in_valid_packs(
     .unwrap();
     assert_eq!(built.report.completed_drives, 1);
     assert_eq!(built.report.skipped_open_drives, 4);
-    assert_eq!(built.report.broken_drives, 3);
+    assert_eq!(built.report.broken_drives, 4);
     assert_eq!(built.report.projected_positions, 5);
     assert_eq!(built.report.detached_positions, 4);
     assert_eq!(built.report.skipped_unattached_positions, 0);
