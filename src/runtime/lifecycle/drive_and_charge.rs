@@ -2067,8 +2067,8 @@ fn close_open_charge(
 /// Motion evidence (after R22) with no open drive and the car not in service
 /// opens a drive at `t_drive`; motion is the only direct evidence that a trip
 /// began. The start is never earlier than the end of a session closed in step
-/// 4 of this observation (R9). When the parked snapshot is no older than
-/// `T_gap`, the drive takes its start values from it where it knows them: the
+/// 4 of this observation (R9). When a parked start-value family is no older
+/// than `T_gap`, the drive takes its start values from it where it knows them: the
 /// odometer reading taken at the origin counts the distance driven before the
 /// first Motion detection (up to one parked polling interval), and the start
 /// coordinates name where the car was parked. Within `T_gap` no other trip can
@@ -2099,18 +2099,29 @@ fn drive_open_step(
     if let Some(snapshot) = state.parked_snapshot.as_ref()
         && t_drive.saturating_sub(snapshot.seen_at_ms) <= observation.t_gap_ms
     {
-        if let Some(odometer) = snapshot.odometer_km {
+        // A fresh family must not make another family's old values recent.
+        // Old blobs without a family watermark retain the group/snapshot fallback.
+        let recent = |at_ms: Option<i64>| {
+            t_drive.saturating_sub(at_ms.unwrap_or(snapshot.seen_at_ms)) <= observation.t_gap_ms
+        };
+        if recent(state.last_odometer_fact_ms.or(state.last_vehicle_timestamp_ms))
+            && let Some(odometer) = snapshot.odometer_km
+        {
             open.first_odometer = Some(odometer);
             open.last_odometer = Some(odometer);
             open.odometer_coarse = snapshot.odometer_coarse;
         }
-        if let (Some(latitude), Some(longitude)) = (snapshot.latitude, snapshot.longitude) {
+        if recent(state.last_position_fact_ms.or(state.last_drive_timestamp_ms))
+            && let (Some(latitude), Some(longitude)) = (snapshot.latitude, snapshot.longitude)
+        {
             open.start_latitude = Some(latitude);
             open.start_longitude = Some(longitude);
         }
-        open.start_soc = snapshot.battery_level;
-        open.start_ideal_range_km = snapshot.ideal_range_km;
-        open.start_rated_range_km = snapshot.rated_range_km;
+        if recent(state.last_battery_fact_ms.or(state.last_charge_timestamp_ms)) {
+            open.start_soc = snapshot.battery_level;
+            open.start_ideal_range_km = snapshot.ideal_range_km;
+            open.start_rated_range_km = snapshot.rated_range_km;
+        }
     }
     state.parked_snapshot = None;
     state.open_drive = Some(open);
