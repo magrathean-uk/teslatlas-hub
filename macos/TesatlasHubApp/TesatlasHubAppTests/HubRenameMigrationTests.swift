@@ -184,6 +184,57 @@ final class HubRenameMigrationTests: XCTestCase {
         XCTAssertEqual(outcome, .retry(fault))
     }
 
+    func testAStepStillRunningIsOfferedAgainAsInProgressAndNothingFollows() {
+        let preparing = HubRenameMigration.handOver(run: { _ in nil },
+                                                    installAgent: { XCTFail("nothing while the move runs") },
+                                                    prepareLogs: {})
+        XCTAssertEqual(preparing, .retry(HubRenameMigration.inProgressMessage))
+        var runs: [[String]] = []
+        let completing = HubRenameMigration.handOver(run: { arguments in
+            runs.append(arguments)
+            return arguments.count == 1 ? (0, self.report("prepared", install: true, start: true)) : nil
+        }, installAgent: {}, prepareLogs: {})
+        XCTAssertEqual(completing, .retry(HubRenameMigration.inProgressMessage))
+        XCTAssertEqual(runs.count, 2)
+    }
+
+    func testAStepPastTheLimitIsLeftAloneAndATryAgainStartsNoSecondMove() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let marks = folder.appendingPathComponent("marks").path
+        let slow = folder.appendingPathComponent("slow").path
+        FileManager.default.createFile(atPath: slow, contents: Data())
+        // A stand-in for the bundled binary: slow while `slow` exists.
+        let script = """
+        echo "started $1" >> '\(marks)'
+        if [ -f '\(slow)' ]; then sleep 2; fi
+        echo "ended $1" >> '\(marks)'
+        echo '{"status":"inert","install":false,"start":false}'
+        """
+        let runner = HubRenameMigration.StepRunner(executable: URL(fileURLWithPath: "/bin/sh"),
+                                                   leadingArguments: ["-c", script, "sh"],
+                                                   limit: 0.3)
+        let lines = { (try? String(contentsOfFile: marks, encoding: .utf8))?.split(separator: "\n").map(String.init) ?? [] }
+
+        let started = Date()
+        XCTAssertNil(runner.run(["migrate-names"]), "past its limit the run is left going")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5, "the app stops waiting at the limit")
+        XCTAssertNil(runner.run(["migrate-names"]), "a Try Again while it runs")
+        XCTAssertEqual(lines(), ["started migrate-names"], "no second move starts")
+
+        // Never terminated: the late step ends by itself.
+        let deadline = Date().addingTimeInterval(10)
+        while !lines().contains("ended migrate-names"), Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        XCTAssertEqual(lines(), ["started migrate-names", "ended migrate-names"])
+        Thread.sleep(forTimeInterval: 0.3)
+
+        try FileManager.default.removeItem(atPath: slow)
+        let next = try XCTUnwrap(runner.run(["migrate-names"]), "once it has ended, Try Again runs again")
+        XCTAssertEqual(next.0, 0)
+        XCTAssertEqual(try JSONDecoder().decode(HubRenameMigration.StepReport.self, from: next.1).status, "inert")
+    }
+
     func testOnlyTheInstalledAppRunsTheHandOver() {
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: ["XCTestConfigurationFilePath": "/x"]))
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: [DevelopmentHubConfiguration.enableVariable: "1"]))

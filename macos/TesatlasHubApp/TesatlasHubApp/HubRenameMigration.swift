@@ -13,10 +13,15 @@ import Foundation
 ///    LaunchAgent, moves the Hub's folders and points the configuration at
 ///    them. The app then writes the current LaunchAgent with its own writer,
 ///    and `migrate-names --complete` starts it (when the earlier one was
-///    running) before the earlier property list is removed. The start counts
-///    once the binary's `serving-check` confirms it (between collection
-///    windows included); this runs before the app finishes launching, so the
-///    owner sees no window until it ends, at most about 50 seconds.
+///    running) before the earlier property list is removed. A current service
+///    already serving is not restarted. The start counts once the binary's
+///    `serving-check` confirms the service serves its configuration (between
+///    collection windows included); the binary refuses the step after one
+///    minute. This runs before the app finishes launching, so the owner sees no
+///    window until it ends. The app waits for each run at most
+///    `StepRunner.limit`; a run still going then is left alone and the owner is
+///    offered Try Again or Quit, and a Try Again while it still runs starts
+///    nothing and says the move is still in progress.
 ///
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and
@@ -114,11 +119,13 @@ enum HubRenameMigration {
     }
 
     /// One attempt of step 3. `run` runs the bundled binary with the given
-    /// arguments and returns its exit status and standard output.
-    static func handOver(run: ([String]) -> (Int32, Data),
+    /// arguments and returns its exit status and standard output, or nil when
+    /// that run (or an earlier one) is still going.
+    static func handOver(run: ([String]) -> (Int32, Data)?,
                          installAgent: () throws -> Void,
                          prepareLogs: () throws -> Void) -> Outcome {
-        let (status, output) = run([verb])
+        guard let prepared = run([verb]) else { return .retry(inProgressMessage) }
+        let (status, output) = prepared
         let report = try? JSONDecoder().decode(StepReport.self, from: output)
         guard status == 0, let report else {
             return .retry(status == deferredExitStatus ? (report?.detail ?? deferredMessage) : failureDetail(report))
@@ -130,7 +137,10 @@ enum HubRenameMigration {
         } catch {
             return .retry(error.localizedDescription)
         }
-        let (completed, completion) = run([verb, "--complete"] + (report.start ? ["--start"] : []))
+        guard let completing = run([verb, "--complete"] + (report.start ? ["--start"] : [])) else {
+            return .retry(inProgressMessage)
+        }
+        let (completed, completion) = completing
         guard completed == 0 else {
             return .retry(failureDetail(try? JSONDecoder().decode(StepReport.self, from: completion)))
         }
@@ -140,6 +150,11 @@ enum HubRenameMigration {
     private static var deferredMessage: String {
         HubL10n.text("hub.rename.deferred",
                      fallback: "The Hub's data is still in use by its earlier service. Wait a moment, then try again.")
+    }
+
+    static var inProgressMessage: String {
+        HubL10n.text("hub.rename.inProgress",
+                     fallback: "The Hub's move to its new name is still in progress. Wait a moment, then try again.")
     }
 
     private static func failureDetail(_ report: StepReport?) -> String {
@@ -204,8 +219,9 @@ enum HubRenameMigration {
         let writer = HubLaunchAgentWriter(configuration: {
             try HubLaunchAgentConfiguration.production(bundle: .main, home: home)
         })
+        let runner = StepRunner(executable: binary)
         while true {
-            let outcome = handOver(run: { runBinary(binary, $0) },
+            let outcome = handOver(run: { runner.run($0) },
                                    installAgent: { _ = try writer.ensureInstalled(requireConfig: false) },
                                    prepareLogs: { try writer.prepareLogsForBootstrap() })
             guard case let .retry(detail) = outcome else { return }
@@ -214,21 +230,62 @@ enum HubRenameMigration {
         }
     }
 
-    private static func runBinary(_ binary: URL, _ arguments: [String]) -> (Int32, Data) {
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return (1, Data())
+    /// Runs the bundled binary's steps one at a time and waits for each at most
+    /// `limit`. A step still running then is left alone (never terminated or
+    /// signalled) and the run answers nil; while it still runs, a further run
+    /// starts nothing and answers nil too. Used from the main thread only.
+    final class StepRunner {
+        /// Longer than the binary's own one-minute bound on its confirmation.
+        static let limit: TimeInterval = 75
+
+        private let executable: URL
+        private let leadingArguments: [String]
+        private let limit: TimeInterval
+        private var running: Process?
+
+        init(executable: URL, leadingArguments: [String] = [], limit: TimeInterval = StepRunner.limit) {
+            self.executable = executable
+            self.leadingArguments = leadingArguments
+            self.limit = limit
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, data)
+
+        func run(_ arguments: [String]) -> (Int32, Data)? {
+            if let running, running.isRunning { return nil }
+            running = nil
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = leadingArguments + arguments
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            let ended = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in ended.signal() }
+            let collected = Collected()
+            let drained = DispatchSemaphore(value: 0)
+            do {
+                try process.run()
+            } catch {
+                return (1, Data())
+            }
+            running = process
+            let reader = output.fileHandleForReading
+            DispatchQueue.global(qos: .userInitiated).async {
+                collected.data = reader.readDataToEndOfFile()
+                drained.signal()
+            }
+            let deadline = DispatchTime.now() + limit
+            guard ended.wait(timeout: deadline) == .success else { return nil }
+            running = nil
+            guard drained.wait(timeout: max(deadline, .now() + 1)) == .success else {
+                return (process.terminationStatus, Data())
+            }
+            return (process.terminationStatus, collected.data)
+        }
+
+        /// The output a reader thread hands back once it has all of it.
+        private final class Collected: @unchecked Sendable {
+            var data = Data()
+        }
     }
 
     private static func offerRetry(_ detail: String) -> Bool {
