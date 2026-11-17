@@ -260,7 +260,7 @@ pub fn start_preflight(
         }
         let now_ms = preflight_epoch_ms()?;
         let status = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
-        if selected_credentials_admitted(store, config, &status, now_ms)? {
+        if crate::diagnostics::selected_credential_decision(store, config, &status, now_ms)?.selected_admitted {
             return Ok(());
         }
         Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into())
@@ -270,45 +270,6 @@ pub fn start_preflight(
         "version": crate::BUILD_VERSION,
         "provider": config.collector.provider,
     }))
-}
-
-/// The `doctor`'s `selectedProviderCredentials` admission of the selected
-/// provider's stored pair (`diagnostics::inspect_hub`), read from the credential
-/// rows only: present and header-readable with a usable key store; for Legacy no
-/// unresolved refresh and no `signed_out` status; for Fleet a sound pair without
-/// an unresolved refresh. A refusal or a configuration fault alone is attention,
-/// not a refusal. Reads that fail are errors, in the doctor's order.
-fn selected_credentials_admitted(
-    store: &crate::db::HubStore,
-    config: &crate::config::HubConfig,
-    status: &crate::auth::credential_sign_in::CredentialStatus,
-    now_ms: i64,
-) -> Result<bool, crate::db::StoreError> {
-    let keyring_usable = status.credential_store.keyring == "ok";
-    match config.collector.provider {
-        crate::config::CollectorProvider::Legacy => {
-            let auth = match store.effective_collector_auth(crate::config::collector_mode(&config.collector), now_ms) {
-                Ok(effective) => effective.map(|effective| effective.row),
-                Err(_) => store.load_collector_auth_row()?,
-            };
-            let unresolved_refresh = crate::auth::legacy_auth::effective::owner_diagnostic_summary(store, now_ms)?.unresolved_refresh
-                || auth.as_ref().is_some_and(|row| row.reason.as_deref() == Some("refresh_outcome_unknown"));
-            let pair = &status.legacy_credentials;
-            Ok(pair.present
-                && pair.store_state == "ok"
-                && keyring_usable
-                && !unresolved_refresh
-                && !auth.as_ref().is_some_and(|row| row.state == "signed_out"))
-        }
-        crate::config::CollectorProvider::Fleet => {
-            let pair = &status.fleet_credentials;
-            Ok(pair.present
-                && pair.store_state == "ok"
-                && keyring_usable
-                && crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir)
-                    .is_ok_and(|inspection| !inspection.unresolved_refresh))
-        }
-    }
 }
 
 fn preflight_epoch_ms() -> io::Result<i64> {
