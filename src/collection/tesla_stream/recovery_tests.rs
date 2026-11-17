@@ -1992,7 +1992,7 @@ async fn collector_m04_t12_reason_labels_do_not_reflect_a_short_credential() {
 async fn collector_m04_t12_busy_never_uses_fast_retries() {
     for end in [End::Close(1013), End::Hello(429), End::Hello(503)] {
         for jitter in [0.0, 1.0] {
-            let peer = plan_peer(vec![Plan::ends(end); 3]).await;
+            let peer = plan_peer(vec![Plan::ends(end.clone()); 3]).await;
             let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
             rig.jitter = vec![jitter; 10];
             let mut run = rig.start();
