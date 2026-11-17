@@ -559,7 +559,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard canCancel else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return false
         }
         return true

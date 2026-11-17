@@ -526,10 +526,13 @@ fn bounded_direct_maps_reject_growth_and_duplicate_ids() {
 }
 
 #[test]
-fn direct_count_gate_accepts_named_projection_and_skip_reasons() {
+fn broken_drive_count_gate_accounts_for_subsets_without_double_counting() {
     let report = ProjectionReport {
         completed_drives: 1,
         skipped_open_drives: 2,
+        broken_drives: 1,
+        detached_positions: 2,
+        held_open_session_positions: 2,
         skipped_unattached_positions: 3,
         projected_positions: 4,
         projected_charges: 5,
@@ -543,7 +546,7 @@ fn direct_count_gate_accepts_named_projection_and_skip_reasons() {
             SourceDbCounts {
                 cars: 1,
                 drives: 3,
-                positions: 7,
+                positions: 9,
                 charging_processes: 5,
                 charges: 6,
                 states: 7,
@@ -1054,8 +1057,62 @@ async fn native_complete_corpus_direct_import_projects_every_kind_when_configure
     assert!(!result.chunks.is_empty());
     assert_eq!(result.report.completed_drives, 1);
     assert_eq!(result.report.projected_positions, 2);
-    assert_eq!(result.report.skipped_unattached_positions, 1);
+    assert_eq!(result.report.skipped_unattached_positions, 0);
+    assert_eq!(result.report.detached_positions, 0);
+    assert_eq!(result.report.held_open_session_positions, 1);
     assert_eq!(result.report.projected_charges, 1);
     assert_eq!(result.report.projected_charge_samples, 1);
     assert_eq!(result.report.projected_states, 1);
+}
+
+#[tokio::test]
+#[ignore = "needs an explicitly configured read-only PostgreSQL source and expected aggregate counts"]
+async fn broken_drive_native_import_preserves_all_positions_when_configured() {
+    let (source, password) = configured_native_postgres_source().expect("configured source");
+    let expected = |name| {
+        std::env::var(name)
+            .expect("expected aggregate count")
+            .parse::<u64>()
+            .expect("aggregate count is an integer")
+    };
+    let positions = expected("TESATLAS_HUB_TEST_EXPECTED_POSITIONS");
+    let broken = expected("TESATLAS_HUB_TEST_EXPECTED_BROKEN_DRIVES");
+    let drives = expected("TESATLAS_HUB_TEST_EXPECTED_COMPLETED_DRIVES");
+    let packs = crate::private_tempdir().expect("private scratch packs");
+    let result = write_direct_full_snapshot(
+        &source,
+        &password,
+        1,
+        SourceDbReadLimits::default(),
+        &ProjectionPackWriter::new(packs.path()),
+        ProjectionBinding {
+            installation_id: Uuid::new_v4(),
+            account_id: Uuid::new_v4(),
+            vehicle_id: Uuid::new_v4(),
+            generation: 1,
+            selected_car_id: 1,
+        },
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+    )
+    .await
+    .expect("read-only snapshot import");
+    assert_eq!(result.report.broken_drives, broken);
+    assert_eq!(result.report.completed_drives, drives);
+    assert_eq!(result.report.projected_positions, positions);
+    assert_eq!(result.report.skipped_unattached_positions, 0);
+    assert_eq!(result.report.detached_positions, broken);
+    assert_eq!(result.report.skipped_open_drives, broken);
+    assert_eq!(result.report.held_open_session_positions, 0);
+    println!(
+        "broken_drive native import: completed_drives={} broken_drives={} projected_positions={} detached_positions={} skipped_positions={}",
+        result.report.completed_drives,
+        result.report.broken_drives,
+        result.report.projected_positions,
+        result.report.detached_positions,
+        result.report.skipped_unattached_positions
+    );
 }

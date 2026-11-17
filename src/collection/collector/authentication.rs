@@ -203,6 +203,8 @@ struct SupervisedCollectorTestSeam {
     /// While set, every tick transaction that would commit fails instead and
     /// rolls back.
     tick_commit_fault: AtomicBool,
+    /// Run inside every tick transaction just before it commits (M04-T11).
+    tick_commit_hook: std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// While set, the start function fails right after its transaction committed and
     /// before it reads anything else (B2 P3: the durable lift must survive it).
     start_commit_fault: AtomicBool,
@@ -297,6 +299,12 @@ struct SupervisedCollectorTestSeam {
     /// The clock the loops' scheduler is built on instead of the system clock, when a
     /// test selects one.
     scheduler_clock: std::sync::Mutex<Option<Arc<ManualClock>>>,
+    /// The intake latency recorder and window a run uses instead of the process's
+    /// and the window gate's, when a test selects them (M04-T11).
+    intake: std::sync::Mutex<Option<(&'static IntakeRecorder, u64)>>,
+    /// Run as part of every stream frame's commit call, after the writer's
+    /// transaction (M04-T11: the time a commit takes).
+    stream_commit_hook: std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 /// A tick of a supervised loop that has completed, as the loop saw it then (B2 fix
@@ -685,6 +693,10 @@ impl SupervisedCollectorTestSeam {
     /// the fault when one is set.
     fn tick_commit_gate(&self) -> Result<(), CollectorError> {
         self.tick_commit_attempts.fetch_add(1, Ordering::SeqCst);
+        let hook = self.tick_commit_hook.lock().expect("tick commit hook").clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         self.tick_commit_times
             .lock()
             .expect("tick commit times")
@@ -702,6 +714,23 @@ impl SupervisedCollectorTestSeam {
     /// publication begins.
     fn set_tick_committed_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
         *self.tick_committed.lock().expect("tick hook") = Some(hook);
+    }
+
+    /// Run `hook` as part of every stream frame's commit call (M04-T11).
+    fn set_stream_commit_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.stream_commit_hook.lock().expect("stream commit hook") = Some(hook);
+    }
+
+    fn stream_commit_hook(&self) {
+        let hook = self.stream_commit_hook.lock().expect("stream commit hook").clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    /// Run `hook` inside every tick transaction just before it commits.
+    fn set_tick_commit_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.tick_commit_hook.lock().expect("tick commit hook") = Some(hook);
     }
 
     fn tick_commits(&self) -> usize {

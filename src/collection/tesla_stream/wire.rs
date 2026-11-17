@@ -366,7 +366,15 @@ pub fn parse_data_update(frame: &str) -> Result<StreamUpdate, StreamError> {
 /// [`parse_data_update`] that also returns how many value elements were
 /// invalid, for the per-run `fields_invalid` counter (R21).
 pub(crate) fn parse_data_update_counted(frame: &str) -> Result<(StreamUpdate, u32), StreamError> {
-    let malformed = || StreamError::MalformedDataUpdate;
+    parse_data_update_diagnosed(frame).map_err(|(error, _reason)| error)
+}
+
+/// The stream's private diagnostic seam retains the public parser's errors,
+/// while naming the failed condition with fixed, payload-free text.
+pub(crate) fn parse_data_update_diagnosed(
+    frame: &str,
+) -> Result<(StreamUpdate, u32), (StreamError, &'static str)> {
+    let malformed = || (StreamError::MalformedDataUpdate, "update_envelope");
     let Ok(Value::Object(members)) = serde_json::from_str::<Value>(frame) else {
         return Err(malformed());
     };
@@ -374,7 +382,7 @@ pub(crate) fn parse_data_update_counted(frame: &str) -> Result<(StreamUpdate, u3
         return Err(malformed());
     };
     if msg_type != "data:update" {
-        return Err(StreamError::WrongMessageType);
+        return Err((StreamError::WrongMessageType, "update_envelope"));
     }
     let (Some(Value::String(tag)), Some(Value::String(value))) =
         (members.get("tag"), members.get("value"))
@@ -383,9 +391,10 @@ pub(crate) fn parse_data_update_counted(frame: &str) -> Result<(StreamUpdate, u3
     };
     let elements: Vec<&str> = value.split(',').collect();
     if elements.len() != VALUE_ELEMENTS {
-        return Err(malformed());
+        return Err((StreamError::MalformedDataUpdate, "column_count"));
     }
-    let timestamp_ms = parse_sample_time(elements[0])?;
+    let timestamp_ms =
+        parse_sample_time(elements[0]).map_err(|error| (error, "invalid_timestamp"))?;
     let mut invalid = 0_u32;
     let update = StreamUpdate {
         tag: tag.clone(),
