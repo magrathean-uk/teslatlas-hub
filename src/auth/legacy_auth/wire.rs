@@ -236,7 +236,7 @@ impl PreparedRequest {
 
     /// The POST with `body` moved into the client as it is, with no copy: the
     /// allocation passes once to the request, which owns it from then on.
-    pub(super) fn from_body(client: &Client, endpoint: Url, mut body: Zeroizing<Vec<u8>>) -> Self {
+    pub(super) fn from_body(client: &Client, endpoint: Url, body: Zeroizing<Vec<u8>>) -> Self {
         #[cfg(test)]
         probe::handed(&body);
         let mut request = client.post(endpoint);
@@ -244,7 +244,7 @@ impl PreparedRequest {
             request = request.header(name, value);
         }
         Self {
-            request: request.body(std::mem::take(&mut *body)),
+            request: request.body(axum::body::Bytes::from_owner(body)),
         }
     }
 
@@ -848,7 +848,7 @@ mod request_tests {
     /// CL-16: through `PreparedRequest::new`, the one path production uses, the
     /// body is measured and filled once at its exact length, reaches
     /// `from_body` as that same allocation and passes to the request builder
-    /// by `mem::take`, so the request's body is that allocation, not a copy.
+    /// with its wiping owner, so the request's body is that allocation, not a copy.
     #[test]
     fn the_prepared_token_request_moves_the_measured_allocation_once() {
         crate::crypto::install_default_provider();

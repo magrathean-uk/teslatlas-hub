@@ -205,12 +205,27 @@ pub async fn sign_in_or_resume_owner_code_with_stub_for_test(entry: &CredentialV
     exchange_owner_code_with_stub_for_test(entry, code, code_verifier, redirect_uri, stub).await
 }
 
+struct CountingWriter(usize);
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
 /// The request body in one wiping buffer of its exact length.
 fn request_body(code: &str, code_verifier: &str) -> Result<Zeroizing<Vec<u8>>, CredentialCommandError> {
     let request = ExchangeRequest {
         grant_type: "authorization_code", client_id: OWNER_CLIENT_ID, code, code_verifier, redirect_uri: OWNER_REDIRECT_URI,
     };
-    let mut body = Zeroizing::new(Vec::with_capacity(512));
+    // Measure before copying secrets so serialisation never grows and releases
+    // an earlier allocation containing part of the code or verifier.
+    let mut counter = CountingWriter(0);
+    serde_json::to_writer(&mut counter, &request).map_err(|_| CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID))?;
+    let mut body = Zeroizing::new(Vec::with_capacity(counter.0));
     serde_json::to_writer(&mut *body, &request).map_err(|_| CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID))?;
     Ok(body)
 }
@@ -221,12 +236,12 @@ enum Answer {
     TooLarge,
 }
 
-async fn send(client: &Client, endpoint: Url, mut body: Zeroizing<Vec<u8>>) -> Result<Answer, reqwest::Error> {
+async fn send(client: &Client, endpoint: Url, body: Zeroizing<Vec<u8>>) -> Result<Answer, reqwest::Error> {
     let request = client.post(endpoint)
         .header(USER_AGENT, EXCHANGE_USER_AGENT)
         .header(CONTENT_TYPE, "application/json")
         .header(ACCEPT, "application/json")
-        .body(std::mem::take(&mut *body));
+        .body(axum::body::Bytes::from_owner(body));
     #[cfg(test)]
     crate::api::test_egress_guard::refuse_production_request(&request);
     let mut response = request.send().await?;
