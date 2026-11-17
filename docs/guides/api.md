@@ -20,6 +20,7 @@ and 1.1.0 profiles have been retired and are no longer part of the protocol pack
 - Plaintext HTTP is accepted only on loopback.
 - A non-loopback bind requires TLS.
 - TLS-facing mirror routes require a paired-device bearer.
+- Health (`GET /healthz`), readiness (`GET /readyz`) and the registered discovery route are intentionally unauthenticated on TLS and loopback, including automatic HEAD. Their response fields remain public for the Mac app, serving check and phone. Browser access still follows CORS admission.
 - `POST /v1/pairings/{pairing_id}/claim` is the sole unauthenticated mutation
   and accepts only a live, single-use invitation.
 - Internal Fleet Telemetry ingestion uses a separate private bearer and must
