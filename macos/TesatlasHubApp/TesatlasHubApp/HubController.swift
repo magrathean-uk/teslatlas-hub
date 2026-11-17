@@ -8538,9 +8538,16 @@ struct HubFleetRefusal: LocalizedError, Equatable {
         HubFleetRefusal(code: code, message: message(code: code) ?? serviceMessage)
     }
 
+    /// The five `fleet_partner_response_*` codes the contract names (interface section 11).
+    /// Any other code with that prefix is unknown and keeps the service's message.
+    static let partnerResponseCodes: Set<String> = [
+        "fleet_partner_response_1xx", "fleet_partner_response_2xx", "fleet_partner_response_3xx",
+        "fleet_partner_response_4xx", "fleet_partner_response_5xx"
+    ]
+
     /// The app's line for a code it knows; nil for any other code.
     static func message(code: String) -> String? {
-        if code.hasPrefix("fleet_partner_response_") {
+        if partnerResponseCodes.contains(code) {
             return HubL10n.text("hub.fleetSetup.refusal.partnerResponse",
                 fallback: "Tesla's answer to the registration was not understood. Try again later.")
         }

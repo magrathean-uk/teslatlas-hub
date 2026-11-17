@@ -297,8 +297,15 @@ final class FleetSignInFlowTests: XCTestCase {
                        "This Tesla sign-in is no longer the current one. Sign in with Tesla again.")
         XCTAssertEqual(message("fleet_scope_missing_vehicle_location: the grant lacks vehicle_location"),
                        "Tesla did not grant vehicle information and vehicle location. Sign in with Tesla again and allow both on Tesla's consent page.")
-        XCTAssertEqual(message("fleet_partner_response_4xx: Tesla's answer was not understood"),
-                       "Tesla's answer to the registration was not understood. Try again later.")
+        for known in ["1xx", "2xx", "3xx", "4xx", "5xx"] {
+            XCTAssertEqual(message("fleet_partner_response_\(known): Tesla's answer was not understood"),
+                           "Tesla's answer to the registration was not understood. Try again later.", known)
+        }
+        // Only the five codes the contract names are known: any other keeps the service's message.
+        for unknown in ["fleet_partner_response_future", "fleet_partner_response_6xx", "fleet_partner_response_"] {
+            XCTAssertEqual(message("\(unknown): Fixed text the service wrote for a newer code."),
+                           "Fixed text the service wrote for a newer code.", unknown)
+        }
         XCTAssertEqual(message("keyring_unsafe: the key store is not owner-only"), "the key store is not owner-only")
         XCTAssertEqual((HubFleetRefusal.from(HubActionError.commandExited(1, "control_channel_failed: lost"))
             as? HubFleetRefusal)?.outcomeUnknown, true)
