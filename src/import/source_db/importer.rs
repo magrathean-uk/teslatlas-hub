@@ -2421,7 +2421,9 @@ fn source_history_fingerprint(
 ) -> Result<Sha256Digest, SourceDbImportError> {
     let canonical = serde_json::to_vec(&(selected_car_id, history))?;
     let mut digest = Sha256::new();
-    digest.update(crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
+    // The raw source may be unchanged while a newer projection recovers facts
+    // omitted by an older import. Bind that policy so it publishes a successor.
+    digest.update(b"tesatlas.source-history.v3-detached-positions");
     digest.update(
         u64::try_from(canonical.len())
             .map_err(|_| SourceDbImportError::SourceFingerprintTooLarge)?
