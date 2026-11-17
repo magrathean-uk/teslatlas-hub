@@ -162,6 +162,8 @@ pub struct Geocoder {
     /// different binding and never reads or rewrites this one's rows.
     binding: AddressLookupBinding,
     limiter: SharedLimiter,
+    // Read at refusal receipt; the test factory supplies the caller's logical clock.
+    refusal_clock: fn(i64) -> Result<i64, GeocoderError>,
 }
 
 impl std::fmt::Debug for Geocoder {
@@ -216,6 +218,11 @@ impl Geocoder {
             language,
             binding,
             limiter,
+            refusal_clock: if test_mode {
+                Ok
+            } else {
+                current_refusal_time_ms
+            },
         })
     }
 
@@ -361,6 +368,7 @@ impl Geocoder {
                 match failure.error {
                     // C7 R58: the provider refuses this client now.
                     GeocoderError::HttpStatus(status @ (403 | 429)) => {
+                        let refused_at_ms = (self.refusal_clock)(looked_up_at_ms)?;
                         // The state row is a store mutation after the request's
                         // awaits, so the guard stands in front of it too.
                         admit(egress_guard)?;
@@ -370,7 +378,7 @@ impl Geocoder {
                             state.as_ref(),
                             status,
                             failure.retry_after_seconds,
-                            looked_up_at_ms,
+                            refused_at_ms,
                         )?;
                     }
                     // C7 R62: the provider answered, with something other than a refusal.
@@ -559,6 +567,14 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
     response_mapping::parse_response(body)
 }
 
+fn current_refusal_time_ms(_looked_up_at_ms: i64) -> Result<i64, GeocoderError> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+        .ok_or(GeocoderError::ClockUnavailable)
+}
+
 fn classify_request_error(error: reqwest::Error) -> GeocoderError {
     if error.is_timeout() {
         GeocoderError::Timeout
@@ -581,6 +597,8 @@ pub enum GeocoderError {
     Timeout,
     #[error("geocoder transport failed")]
     Transport,
+    #[error("geocoder response time is unavailable")]
+    ClockUnavailable,
     #[error("geocoder returned HTTP status {0}")]
     HttpStatus(u16),
     #[error("geocoder response is too large")]
