@@ -44,12 +44,16 @@ pub use exchange::{ANSWER_CAP as OWNER_EXCHANGE_ANSWER_CAP, MAX_OWNER_CODE_BYTES
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use exchange::{exchange_owner_code_with_stub_for_test, sign_in_or_resume_owner_code_with_stub_for_test};
+pub use exchange::{FleetSignInBinding, SIGN_IN_BINDING_INVALID, abandon_fleet_sign_in, begin_fleet_sign_in, exchange_fleet_code, fleet_sign_in_not_begun};
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use exchange::{begin_fleet_sign_in_with_stub_for_test, exchange_fleet_code_with_stub_for_test};
 pub use discovery::{OwnerDiscovery, discover_owner_cars, owner_car_selection};
 pub use crate::collection::collector::OwnerCarSelection;
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use discovery::discover_owner_cars_with_stub_for_test;
-pub use protocol::{FLEET_SIGN_IN_SCOPE, SignInSettings, SignInAttempt, pkce_verifier, pkce_challenge};
+pub use protocol::{FLEET_SIGN_IN_SCOPE, FleetSignInStep, SignInSettings, SignInAttempt, check_fleet_sign_in_input, pkce_verifier, pkce_challenge};
 pub use entries::clear_owner_after_fleet;
 pub use entries::prepare_owner_tokens;
 pub use entries::persist_owner_entry_with_notice;

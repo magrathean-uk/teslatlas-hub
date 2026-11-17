@@ -238,7 +238,7 @@ where
 use tesatlas_hub::runtime::operator::{
     self as operator,
     admission::{OperatorRefusal, Route},
-    channel::{OperatorRequest, SetupMaterial},
+    channel::{FleetSignInInput, OperatorRequest, SetupMaterial},
 };
 
 /// Largest `setup` input: the sign-in code material as one JSON object.
@@ -359,6 +359,37 @@ fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn st
                 material: parse_setup_material(&bytes)?,
                 vehicle_id: *vehicle_id,
                 all_vehicles: *all_vehicles,
+            }
+        }
+        // The Fleet sign-in (M09-T09): standard input is read only now, on
+        // the authenticated connection, and checked as the service will read
+        // it (a token-named key is refused from the keys alone) before it is
+        // forwarded.
+        #[cfg(unix)]
+        Command::SetupFleet {
+            step,
+            vehicle_id,
+            all_vehicles,
+        } => {
+            use tesatlas_hub::auth::credential_sign_in::{FleetSignInStep, check_fleet_sign_in_input};
+            let bytes = read_bounded_migration_secret(std::io::stdin(), SETUP_INPUT_MAX_BYTES)
+                .map_err(|_| setup_input_invalid("setup-fleet input is unreadable or larger than 4 KiB"))?;
+            let begin = matches!(step, Some(operator::cli::FleetSetupStep::Begin));
+            check_fleet_sign_in_input(if begin { FleetSignInStep::Begin } else { FleetSignInStep::Redeem }, &bytes)
+                .map_err(setup_refusal)?;
+            let input = FleetSignInInput(
+                std::str::from_utf8(&bytes)
+                    .map_err(|_| setup_input_invalid("setup-fleet input is not UTF-8"))?
+                    .to_owned(),
+            );
+            if begin {
+                OperatorRequest::FleetSignInBegin { input }
+            } else {
+                OperatorRequest::FleetSignInRedeem {
+                    input,
+                    vehicle_id: *vehicle_id,
+                    all_vehicles: *all_vehicles,
+                }
             }
         }
         Command::Window { command } => match command {
@@ -511,6 +542,10 @@ struct HubServiceBackend {
     admitted_idle: bool,
     /// The collector slot the setup reloads with the completed configuration.
     collector: ServiceCollectorSlot,
+    /// The Fleet sign-in `setup-fleet begin` started and `setup-fleet` will
+    /// redeem (M09-T09): its binding and the application's public values,
+    /// never the client secret. A new begin replaces it.
+    fleet_sign_in: std::sync::Mutex<Option<tesatlas_hub::auth::credential_sign_in::FleetSignInBinding>>,
 }
 
 /// The collection interval the fresh-install setup sets (M02-T21, DEC-116):
@@ -707,6 +742,74 @@ impl operator::authority::ServiceBackend for HubServiceBackend {
         Ok(report)
     }
 
+    /// `setup-fleet begin` (M09-T09): records the Fleet sign-in's binding in
+    /// the vault, in custody as the owner sign-in does, and answers the
+    /// regional authorise URL. Nothing is sent to Tesla. A sign-in begun
+    /// earlier and not redeemed is abandoned.
+    fn fleet_sign_in_begin(&self, input: FleetSignInInput) -> Result<serde_json::Value, OperatorRefusal> {
+        use tesatlas_hub::auth::credential_sign_in as sign_in;
+        let earlier = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take();
+        let binding = with_vault_custody(
+            &self.custody,
+            &*self.kick,
+            || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
+            |entry| {
+                if let Some(earlier) = earlier { sign_in::abandon_fleet_sign_in(entry, earlier); }
+                sign_in::begin_fleet_sign_in(entry, input.0.as_bytes())
+            },
+        );
+        drop(input);
+        let binding = binding?;
+        let report = serde_json::json!({
+            "status": "sign_in_begun",
+            "slot": "fleet_api",
+            "authorizeUrl": binding.authorization_url().as_str(),
+            "binding": binding.id().to_string(),
+            "expiresAt": binding.expires_at_s(),
+        });
+        *self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())? = Some(binding);
+        Ok(report)
+    }
+
+    /// `setup-fleet` (M09-T09): redeems the begun sign-in's code at the
+    /// regional Fleet token endpoint and stores the pair through the vault's
+    /// grant path, then discovers the cars with it, inside the same custody
+    /// and window. The input, with its client secret, is wiped when this
+    /// returns; the secret is never stored.
+    fn fleet_sign_in_redeem(
+        &self,
+        input: FleetSignInInput,
+        vehicle_id: Option<i64>,
+        all_vehicles: bool,
+    ) -> Result<serde_json::Value, OperatorRefusal> {
+        use tesatlas_hub::auth::{credential_sign_in as sign_in, fleet_credentials};
+        // Local checks first: a bad car choice or input refuses with nothing
+        // sent and the begun sign-in kept.
+        let selection = sign_in::owner_car_selection(vehicle_id, all_vehicles).map_err(setup_refusal)?;
+        sign_in::check_fleet_sign_in_input(sign_in::FleetSignInStep::Redeem, input.0.as_bytes()).map_err(setup_refusal)?;
+        let binding = self.fleet_sign_in.lock().map_err(|_| fleet_sign_in_unavailable())?.take()
+            .ok_or_else(|| setup_refusal(fleet_binding_invalid()))?;
+        let report = fleet_setup(
+            &self.custody,
+            &*self.kick,
+            || open_command_credential_vault(self.store.clone(), std::sync::Arc::clone(&self.admission), &self.data_dir),
+            |entry| run_owner_exchange(|| sign_in::exchange_fleet_code(entry, binding, input.0.as_bytes())),
+            |entry| run_owner_exchange(|| fleet_credentials::discover_fleet_cars(
+                entry, &self.store, &self.config, &self.admission, selection)),
+        );
+        drop(input);
+        let mut report = report?;
+        let installation = self.store.installation_id().map_err(|error| {
+            OperatorRefusal::new("setup_marker_unavailable", error.to_string())
+        })?;
+        tesatlas_hub::storage::setup_marker::record(&self.data_dir, installation)
+            .map_err(|error| OperatorRefusal::new("setup_marker_unavailable", error.to_string()))?;
+        if self.admitted_idle && report["vehicleDiscovery"] == "configured" {
+            report["collectionIntervalSeconds"] = self.complete_fresh_install()?.into();
+        }
+        Ok(report)
+    }
+
     fn recovery_export(
         &self,
         destination: &Path,
@@ -795,6 +898,44 @@ fn owner_setup(
     discover: impl FnOnce(&tesatlas_hub::CredentialVaultEntry)
         -> Result<tesatlas_hub::auth::credential_sign_in::OwnerDiscovery, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
 ) -> Result<serde_json::Value, OperatorRefusal> {
+    let (signed_in, discovery) = with_vault_custody(custody, kick, open_entry, |entry| {
+        exchange(entry).map(|signed_in| (signed_in, discover(entry)))
+    })?;
+    Ok(owner_setup_report(signed_in, discovery))
+}
+
+/// The Fleet sign-in inside the service (M09-T09): as [`owner_setup`], in
+/// the vault's custody with the collector stopped, the code exchange and,
+/// only after a stored sign-in, the car discovery with the vault's own
+/// Fleet pair. A refused sign-in refuses `setup-fleet` and runs no
+/// discovery; a discovery failure after the pair is stored does not.
+#[cfg(unix)]
+fn fleet_setup(
+    custody: &tesatlas_hub::collection::window::CredentialCustody,
+    kick: &dyn Fn(),
+    open_entry: impl FnOnce() -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>,
+    exchange: impl FnOnce(&tesatlas_hub::CredentialVaultEntry)
+        -> Result<tesatlas_hub::auth::credential_sign_in::OwnerSignIn, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+    discover: impl FnOnce(&tesatlas_hub::CredentialVaultEntry)
+        -> Result<usize, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> Result<serde_json::Value, OperatorRefusal> {
+    let (signed_in, discovery) = with_vault_custody(custody, kick, open_entry, |entry| {
+        exchange(entry).map(|signed_in| (signed_in, discover(entry)))
+    })?;
+    Ok(setup_report("fleet_api", "fleet_oauth", signed_in, discovery))
+}
+
+/// Runs `work` on the process's one credential vault, opened in this
+/// request's custody: the supervisor stops the collector and hands custody
+/// over, the vault is opened, `work` runs, and the vault is closed before
+/// custody ends and the supervisor is woken to start the collector again.
+#[cfg(unix)]
+fn with_vault_custody<T>(
+    custody: &tesatlas_hub::collection::window::CredentialCustody,
+    kick: &dyn Fn(),
+    open_entry: impl FnOnce() -> Result<tesatlas_hub::CredentialVaultEntry, tesatlas_hub::CredentialVaultEntryError>,
+    work: impl FnOnce(&tesatlas_hub::CredentialVaultEntry) -> Result<T, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> Result<T, OperatorRefusal> {
     use tesatlas_hub::collection::window::custody::{CUSTODY_WAIT, SIGN_IN_BUSY};
     let held = custody.acquire(CUSTODY_WAIT, kick).map_err(|code| {
         let message = if code == SIGN_IN_BUSY {
@@ -807,15 +948,25 @@ fn owner_setup(
     let result = open_entry()
         .map_err(tesatlas_hub::auth::credential_sign_in::credential_entry_error)
         .and_then(|entry| {
-            let result = exchange(&entry).map(|signed_in| (signed_in, discover(&entry)));
+            let result = work(&entry);
             // The vault is closed before custody ends.
             drop(entry);
             result
         });
     drop(held);
     kick();
-    let (signed_in, discovery) = result.map_err(setup_refusal)?;
-    Ok(owner_setup_report(signed_in, discovery))
+    result.map_err(setup_refusal)
+}
+
+/// The refusal of a Fleet redeem with no begun sign-in to finish.
+#[cfg(unix)]
+fn fleet_binding_invalid() -> tesatlas_hub::auth::credential_sign_in::CredentialCommandError {
+    tesatlas_hub::auth::credential_sign_in::fleet_sign_in_not_begun()
+}
+
+#[cfg(unix)]
+fn fleet_sign_in_unavailable() -> OperatorRefusal {
+    setup_refusal(tesatlas_hub::auth::credential_sign_in::sign_in_unavailable())
 }
 
 /// The refusal `setup` returns: the fixed code and its fixed owner text.
@@ -840,17 +991,28 @@ fn owner_setup_report(
         tesatlas_hub::auth::credential_sign_in::CredentialCommandError,
     >,
 ) -> serde_json::Value {
+    setup_report("owner_api", "hub_login", signed_in, discovery.map(|discovery| discovery.vehicles_configured))
+}
+
+/// The report of a stored sign-in (owner or Fleet) and its car discovery.
+#[cfg(unix)]
+fn setup_report(
+    slot: &str,
+    origin: &str,
+    signed_in: tesatlas_hub::auth::credential_sign_in::OwnerSignIn,
+    discovery: Result<usize, tesatlas_hub::auth::credential_sign_in::CredentialCommandError>,
+) -> serde_json::Value {
     let mut report = serde_json::json!({
         "status": "signed_in",
-        "slot": "owner_api",
-        "origin": "hub_login",
+        "slot": slot,
+        "origin": origin,
         "signIn": signed_in.sign_in(),
         "aftercare": signed_in.aftercare(),
     });
     match discovery {
-        Ok(discovery) => {
+        Ok(vehicles_configured) => {
             report["vehicleDiscovery"] = "configured".into();
-            report["vehiclesConfigured"] = discovery.vehicles_configured.into();
+            report["vehiclesConfigured"] = vehicles_configured.into();
         }
         Err(error) => {
             report["vehicleDiscovery"] = "failed".into();
@@ -1444,8 +1606,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         #[cfg(unix)]
-        Command::Setup { .. } | Command::SetupFleet | Command::ConfigureFleetTelemetry => {
-            unreachable!("setup is forwarded to the service and Fleet verbs are refused before Hub state opens")
+        Command::Setup { .. } | Command::SetupFleet { .. } | Command::ConfigureFleetTelemetry => {
+            unreachable!("setup and setup-fleet are forwarded to the service and configure-fleet-telemetry is refused before Hub state opens")
         }
         Command::Legal
         | Command::Source
@@ -1593,6 +1755,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             config_path: config_path.clone(),
                             admitted_idle,
                             collector: collector_slot,
+                            fleet_sign_in: std::sync::Mutex::new(None),
                         }),
                         supervisor.kicker(),
                         window_trust_authority(authority.host_id())?,

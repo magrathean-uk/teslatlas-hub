@@ -18,7 +18,7 @@ use tempfile::TempDir;
 use super::{
     admission::{self, OperatorRefusal, Route},
     authority::{OperatorService, ServiceBackend},
-    channel::{self, ChannelServer, OperatorRequest, SetupMaterial},
+    channel::{self, ChannelServer, FleetSignInInput, OperatorRequest, SetupMaterial},
     cli::{Cli, Command, WindowCommand},
     trust::{OwnerConfirmation, TrustAuthority},
 };
@@ -90,6 +90,21 @@ impl ServiceBackend for FakeBackend {
     fn purge_refused_credentials(&self) -> Result<Value, OperatorRefusal> {
         self.0.push("refused_purge");
         Ok(json!({ "mode": "purge" }))
+    }
+
+    fn fleet_sign_in_begin(&self, input: FleetSignInInput) -> Result<Value, OperatorRefusal> {
+        self.0.push(&format!("fleet_begin:{}", input.0.len()));
+        Ok(json!({ "status": "sign_in_begun" }))
+    }
+
+    fn fleet_sign_in_redeem(
+        &self,
+        input: FleetSignInInput,
+        vehicle_id: Option<i64>,
+        all_vehicles: bool,
+    ) -> Result<Value, OperatorRefusal> {
+        self.0.push(&format!("fleet_redeem:{}:{vehicle_id:?}:{all_vehicles}", input.0.len()));
+        Ok(json!({ "status": "signed_in" }))
     }
 }
 
@@ -321,6 +336,39 @@ fn collection_window_operator_channel_forwards_window_verbs_to_the_service() {
     assert_eq!(rig.calls.all().len(), 2);
 }
 
+/// The Fleet sign-in (M09-T09) is forwarded like the owner sign-in: refused
+/// `window_closed` outside an Open window before the backend is asked, and
+/// its input, which may hold the client secret, never printed.
+#[test]
+fn fleet_sign_in_operator_channel_needs_an_open_window() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let _server = rig.serve();
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let input = || FleetSignInInput(r#"{"clientSecret":"fleet-secret-0001"}"#.to_owned());
+    assert_eq!(format!("{:?}", input()), "FleetSignInInput { .. }");
+    let requests = [
+        OperatorRequest::FleetSignInBegin { input: input() },
+        OperatorRequest::FleetSignInRedeem { input: input(), vehicle_id: Some(7), all_vehicles: false },
+    ];
+    for request in &requests {
+        assert!(!format!("{request:?}").contains("fleet-secret-0001"));
+        assert_eq!(rig.forward(request).unwrap_err().code, "window_closed");
+    }
+    assert!(rig.calls.all().is_empty(), "nothing reached the backend");
+    rig.forward(&OperatorRequest::WindowOpen {
+        grant: encoded(&rig.grant(3_600)),
+    })
+    .expect("open");
+    for request in &requests {
+        rig.forward(request).expect("forwarded inside the window");
+    }
+    assert_eq!(rig.calls.all(), vec!["fleet_begin:36".to_owned(), "fleet_redeem:36:Some(7):false".to_owned()]);
+}
+
 #[test]
 fn collection_window_operator_channel_refuses_a_replayed_grant_and_bad_material() {
     let rig = Rig::new();
@@ -451,7 +499,8 @@ fn parsed(arguments: &[&str]) -> Result<Command, String> {
 fn collection_window_operator_routes_every_operator_command() {
     let route = |arguments: &[&str]| admission::route(&parsed(arguments).expect("parsed"));
     assert_eq!(route(&["setup", "--all-vehicles"]), Route::Service);
-    assert_eq!(route(&["setup-fleet"]), Route::Refused("provider_parked"));
+    assert_eq!(route(&["setup-fleet"]), Route::Service);
+    assert_eq!(route(&["setup-fleet", "begin"]), Route::Service);
     assert_eq!(route(&["configure-fleet-telemetry"]), Route::Refused("provider_parked"));
     for verb in [
         vec!["window", "status"],

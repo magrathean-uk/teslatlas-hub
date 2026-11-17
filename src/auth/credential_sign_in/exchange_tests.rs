@@ -617,3 +617,325 @@ async fn owner_exchange_persistence_faults_leave_no_partial_state() {
     assert_eq!(binding_count(root.path()), 0);
     assert_eq!(exchange(&entry, "code-fault-aftercare-0002", VERIFIER, OWNER_REDIRECT_URI, &stub).await.expect("stored"), OwnerSignIn::Complete);
 }
+
+// The Fleet sign-in (M09-T09): `setup-fleet begin` and the redeem, against a
+// loopback stub token endpoint; nothing here reaches Tesla.
+
+const FLEET_CLIENT: &str = "fleet-client-0001";
+const FLEET_SECRET: &str = "fleet-secret-value-0001";
+const FLEET_REDIRECT: &str = "https://owner.example/fleet/callback";
+
+fn fleet_begin_input(region: &str) -> String {
+    serde_json::json!({"clientId": FLEET_CLIENT, "region": region, "redirectUri": FLEET_REDIRECT}).to_string()
+}
+
+fn fleet_redeem_input(code: &str) -> String {
+    serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT, "clientSecret": FLEET_SECRET, "region": "eu"}).to_string()
+}
+
+fn fleet_begin(entry: &CredentialVaultEntry, stub: &Stub) -> Result<FleetSignInBinding, CredentialCommandError> {
+    fleet_begin_at(entry, fleet_begin_input("eu").as_bytes(), Some(&Url::parse(&stub.url).expect("stub URL")))
+}
+
+async fn fleet_redeem(entry: &CredentialVaultEntry, binding: FleetSignInBinding, input: &str, stub: &Stub) -> Result<OwnerSignIn, CredentialCommandError> {
+    fleet_exchange_at(entry, binding, input.as_bytes(), Some(Url::parse(&stub.url).expect("stub URL"))).await
+}
+
+/// No secret of a Fleet attempt appears in a refusal.
+fn assert_fleet_secret_free(error: &CredentialCommandError, code: &str) {
+    assert_secret_free(error, code);
+    assert!(!format!("{error} {error:?}").contains(FLEET_SECRET), "the client secret appears in the refusal");
+}
+
+/// Begin records one binding and answers the regional authorise address
+/// with the Fleet scope and the binding's state; nothing is sent.
+#[tokio::test]
+async fn fleet_sign_in_begin_returns_the_regional_authorise_url_and_binding() {
+    let (root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let before = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs() as i64;
+    for (region, authorise) in [("eu", "https://auth.tesla.com/oauth2/v3/authorize?"), ("na", "https://auth.tesla.com/oauth2/v3/authorize?"), ("cn", "https://auth.tesla.cn/oauth2/v3/authorize?")] {
+        let url = Url::parse(&stub.url).expect("stub URL");
+        let binding = fleet_begin_at(&entry, fleet_begin_input(region).as_bytes(), Some(&url)).expect("begin");
+        let address = binding.authorization_url();
+        assert!(address.starts_with(authorise), "{region}: regional authorise endpoint");
+        let query: std::collections::BTreeMap<String, String> = url::form_urlencoded::parse(address.split_once('?').expect("query").1.as_bytes()).into_owned().collect();
+        assert_eq!(query.keys().map(String::as_str).collect::<Vec<_>>(), ["client_id", "redirect_uri", "response_type", "scope", "state"], "no PKCE challenge for Fleet");
+        assert_eq!((query["client_id"].as_str(), query["redirect_uri"].as_str(), query["response_type"].as_str(), query["scope"].as_str()),
+            (FLEET_CLIENT, FLEET_REDIRECT, "code", super::super::FLEET_SIGN_IN_SCOPE));
+        assert_eq!(query["state"].len(), 43, "a 32-byte state");
+        assert!((before + 595..=before + 605).contains(&binding.expires_at_s()), "the vault's 10-minute binding");
+        let recorded: (String, String) = rusqlite::Connection::open(root.path().join("hub.sqlite")).expect("synthetic SQL")
+            .query_row("SELECT sign_in_id, slot FROM credential_sign_ins WHERE sign_in_id=?1", [binding.id().to_string()], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("the binding is recorded");
+        assert_eq!(recorded.0, binding.id().to_string());
+        abandon_fleet_sign_in(&entry, binding);
+    }
+    assert_eq!(binding_count(root.path()), 0, "an abandoned binding is removed");
+    assert_eq!(stub.accepted(), 0, "begin sends nothing");
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none());
+}
+
+/// Begin writes its binding only inside an Open window.
+#[tokio::test]
+async fn fleet_sign_in_begin_needs_an_open_window() {
+    for window in [
+        TestWindow::closed(),
+        { let window = TestWindow::open(600); window.close(); window },
+        { let window = TestWindow::open(600); window.advance(601); window },
+    ] {
+        let (root, _store, entry) = fixture();
+        let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+        let _route = window.route(&stub.url);
+        assert_eq!(fleet_begin(&entry, &stub).unwrap_err().code(), WINDOW_CLOSED);
+        assert_untouched(root.path(), &entry);
+    }
+}
+
+/// The redeem posts exactly the six Fleet form members once to the token
+/// endpoint and stores the answer through the vault's grant path: origin
+/// `fleet_oauth`, the Hub as refresher, the client id and region, and the
+/// begin's binding is consumed.
+#[tokio::test]
+async fn fleet_sign_in_redeem_exchanges_and_stores_through_the_hub_grant() {
+    let (root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    let signed_in = fleet_redeem(&entry, binding, &fleet_redeem_input("code-fleet-stores-0001"), &stub).await.expect("redeem");
+    assert_eq!(signed_in, OwnerSignIn::Complete);
+    assert_eq!(stub.accepted(), 1, "one connection");
+    let requests = stub.requests.lock().expect("requests");
+    let request = std::str::from_utf8(&requests[0]).expect("request text");
+    let (head, body) = request.split_once("\r\n\r\n").expect("request parts");
+    assert!(head.starts_with("POST /oauth2/v3/token HTTP/1.1\r\n"));
+    assert!(head.to_ascii_lowercase().contains("\r\ncontent-type: application/x-www-form-urlencoded"));
+    let form: Vec<(String, String)> = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+    assert_eq!(form, [
+        ("grant_type", "authorization_code"), ("client_id", FLEET_CLIENT), ("client_secret", FLEET_SECRET),
+        ("code", "code-fleet-stores-0001"), ("audience", "https://fleet-api.prd.eu.vn.cloud.tesla.com"), ("redirect_uri", FLEET_REDIRECT),
+    ].map(|(key, value)| (key.to_owned(), value.to_owned())));
+    let pair = entry.vault().load(CredentialSlot::FleetApi).expect("read").expect("own Fleet pair");
+    assert_eq!((pair.origin, pair.refresh_owner, pair.access.as_str(), pair.refresh.as_str()),
+        (Some(CredentialOrigin::FleetOauth), RefreshOwner::Hub, ACCESS, REFRESH));
+    assert_eq!((pair.client_id.as_deref(), pair.region.as_deref()), (Some(FLEET_CLIENT), Some("eu")));
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::OwnerApi).expect("presence").is_none(), "nothing else stored");
+    assert_eq!(binding_count(root.path()), 0, "the binding was consumed");
+}
+
+/// The redeem reads exactly code, redirectUri, clientId, clientSecret and
+/// region; any other shape is refused locally with no connection and
+/// nothing stored.
+#[tokio::test]
+async fn fleet_sign_in_redeem_reads_exactly_its_five_keys() {
+    let (root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let base = |code: &str| serde_json::json!({"code": code, "redirectUri": FLEET_REDIRECT, "clientId": FLEET_CLIENT, "clientSecret": FLEET_SECRET, "region": "eu"});
+    let mut invalid: Vec<String> = vec![String::new(), "[]".to_owned(), "{}".to_owned(), format!("{} trailing", base("code-fleet-shape-0001"))];
+    for missing in ["code", "redirectUri", "clientId", "clientSecret", "region"] {
+        let mut object = base("code-fleet-shape-0002");
+        object.as_object_mut().expect("object").remove(missing);
+        invalid.push(object.to_string());
+    }
+    for (key, value) in [("codeVerifier", serde_json::json!(VERIFIER)), ("domain", serde_json::json!("owner.example"))] {
+        let mut object = base("code-fleet-shape-0003");
+        object.as_object_mut().expect("object").insert(key.to_owned(), value);
+        invalid.push(object.to_string());
+    }
+    for (key, value) in [("clientSecret", serde_json::json!("")), ("region", serde_json::json!("us")), ("clientId", serde_json::json!("")),
+        ("redirectUri", serde_json::json!("https://owner.example/callback?query=1")), ("code", serde_json::json!(7))] {
+        let mut object = base("code-fleet-shape-0004");
+        object[key] = value;
+        invalid.push(object.to_string());
+    }
+    invalid.push(format!(r#"{{"code":"code-fleet-shape-0005","code":"code-fleet-shape-0006","redirectUri":"{FLEET_REDIRECT}","clientId":"{FLEET_CLIENT}","clientSecret":"{FLEET_SECRET}","region":"eu"}}"#));
+    for input in &invalid {
+        assert_eq!(check_fleet_sign_in_input_for_test(super::super::FleetSignInStep::Redeem, input), Some("sign_in_settings_invalid"), "{input}");
+        let binding = fleet_begin(&entry, &stub).expect("begin");
+        let error = fleet_redeem(&entry, binding, input, &stub).await.unwrap_err();
+        assert_eq!(error.code(), "sign_in_settings_invalid", "{input}");
+        assert_fleet_secret_free(&error, "code-fleet-shape-0001");
+    }
+    for input in [fleet_begin_input("eu"), serde_json::json!({"clientId": FLEET_CLIENT, "region": "eu"}).to_string(),
+        serde_json::json!({"clientId": FLEET_CLIENT, "region": "eu", "redirectUri": FLEET_REDIRECT, "clientSecret": FLEET_SECRET}).to_string()] {
+        let begin = check_fleet_sign_in_input_for_test(super::super::FleetSignInStep::Begin, &input);
+        assert_eq!(begin, (input != fleet_begin_input("eu")).then_some("sign_in_settings_invalid"), "begin reads exactly three keys: {input}");
+    }
+    assert_eq!(stub.accepted(), 0, "nothing sent");
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none());
+    drop(root);
+}
+
+fn check_fleet_sign_in_input_for_test(step: super::super::FleetSignInStep, input: &str) -> Option<&'static str> {
+    super::super::check_fleet_sign_in_input(step, input.as_bytes()).err().map(|error| error.code())
+}
+
+/// A key naming a token is a source credential: both steps refuse it
+/// `source_credential_disabled` from the keys alone, before any value (the
+/// code or the client secret) is read into memory, whatever follows it.
+#[tokio::test]
+async fn fleet_sign_in_token_keys_are_refused_before_any_secret_is_read() {
+    let inputs = [
+        format!(r#"{{"clientSecret":"{FLEET_SECRET}","accessToken":"access-0001","code":"c","redirectUri":"{FLEET_REDIRECT}","clientId":"{FLEET_CLIENT}","region":"eu"}}"#),
+        r#"{"refresh_token":"refresh-0001"}"#.to_owned(),
+        r#"{"IdTOKEN":"id-0001","clientId":"#.to_owned(),
+        format!(r#"{{"code":"c","clientSecret":"{FLEET_SECRET}","sourceToken": not json"#),
+        r#"{"tokens":{"access":"a"}}"#.to_owned(),
+    ];
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&drops);
+    super::super::observe_sign_in_secret_drops(move |event| record.lock().expect("drops").push(event.kind), || {
+        for input in &inputs {
+            for step in [super::super::FleetSignInStep::Begin, super::super::FleetSignInStep::Redeem] {
+                assert_eq!(check_fleet_sign_in_input_for_test(step, input), Some("source_credential_disabled"), "{step:?} {input}");
+            }
+        }
+    });
+    assert!(!drops.lock().expect("drops").contains(&"wire_secret"), "no value was read into a secret");
+    let (root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let url = Url::parse(&stub.url).expect("stub URL");
+    assert_eq!(fleet_begin_at(&entry, inputs[1].as_bytes(), Some(&url)).unwrap_err().code(), "source_credential_disabled");
+    assert_eq!(binding_count(root.path()), 0, "no binding for a token input");
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    assert_eq!(fleet_redeem(&entry, binding, &inputs[0], &stub).await.unwrap_err().code(), "source_credential_disabled");
+    assert_eq!(stub.accepted(), 0, "nothing sent");
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none());
+}
+
+/// The exchange asks the window's gate immediately before its send: once
+/// the window has closed or passed its deadline after the begin, the redeem
+/// is refused `window_closed`, nothing is sent and nothing stored.
+#[tokio::test]
+async fn fleet_sign_in_exchange_is_window_gated() {
+    let ends: [fn(&TestWindow); 2] = [|window| window.close(), |window| window.advance(601)];
+    for (index, end) in ends.into_iter().enumerate() {
+        let (_root, _store, entry) = fixture();
+        let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+        let window = TestWindow::open(600);
+        let _route = window.route(&stub.url);
+        let binding = fleet_begin(&entry, &stub).expect("begin inside the window");
+        end(&window);
+        let code = format!("code-fleet-window-{index}");
+        let error = fleet_redeem(&entry, binding, &fleet_redeem_input(&code), &stub).await.unwrap_err();
+        assert_eq!(error.code(), WINDOW_CLOSED);
+        assert_fleet_secret_free(&error, &code);
+        assert_eq!(stub.accepted(), 0, "no connection opened");
+        assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none(), "nothing stored");
+    }
+}
+
+/// The client secret is used for the exchange only: every copy is wiped
+/// (the parsed value and the request body that carried it), and no byte of
+/// it reaches the store, its write-ahead log or the key folder.
+#[test]
+fn fleet_sign_in_client_secret_is_zeroised_and_never_stored() {
+    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime");
+    let (root, _store, entry) = fixture();
+    let stub = runtime.block_on(Stub::spawn(Reply::Json(200, valid_answer())));
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&drops);
+    let input = fleet_redeem_input("code-fleet-zeroised-0001");
+    // The observer is this thread's; the redeem is polled on this thread.
+    super::super::observe_sign_in_secret_drops(move |event| record.lock().expect("drops").push(event), || {
+        runtime.block_on(fleet_redeem(&entry, binding, &input, &stub)).expect("redeem");
+    });
+    let wiped_body = || drops.lock().expect("drops").iter().any(|event| event.kind == "request_body" && event.before > FLEET_SECRET.len() && event.zeroised);
+    let waited = std::time::Instant::now();
+    while !wiped_body() && waited.elapsed() < std::time::Duration::from_secs(5) { std::thread::sleep(std::time::Duration::from_millis(20)); }
+    assert!(wiped_body(), "the request body holding the secret was wiped once sent");
+    let drops = drops.lock().expect("drops");
+    assert!(drops.iter().any(|event| event.kind == "wire_secret" && event.before == FLEET_SECRET.len()), "the parsed client secret was dropped");
+    assert!(drops.iter().filter(|event| event.kind == "wire_secret").all(|event| event.zeroised && event.after == 0), "every parsed value was wiped");
+    let mut files = vec![root.path().to_owned()];
+    while let Some(path) = files.pop() {
+        if path.is_dir() {
+            files.extend(std::fs::read_dir(&path).expect("listing").map(|entry| entry.expect("entry").path()));
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            assert!(!bytes.windows(FLEET_SECRET.len()).any(|window| window == FLEET_SECRET.as_bytes()), "the client secret is stored in {path:?}");
+        }
+    }
+}
+
+/// A redeem finishes only the sign-in its begin started: another client,
+/// region or redirect is refused locally, as is a redeem with no begin.
+#[tokio::test]
+async fn fleet_sign_in_redeem_must_finish_its_begin() {
+    let (_root, _store, entry) = fixture();
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    for (key, value) in [("clientId", "fleet-client-0002"), ("region", "na"), ("redirectUri", "https://owner.example/other")] {
+        let mut input: serde_json::Value = serde_json::from_str(&fleet_redeem_input("code-fleet-binding-0001")).expect("input");
+        input[key] = value.into();
+        let binding = fleet_begin(&entry, &stub).expect("begin");
+        let error = fleet_redeem(&entry, binding, &input.to_string(), &stub).await.unwrap_err();
+        assert_eq!(error.code(), SIGN_IN_BINDING_INVALID, "{key}");
+        assert_fleet_secret_free(&error, "code-fleet-binding-0001");
+    }
+    assert_eq!(fleet_sign_in_not_begun().code(), SIGN_IN_BINDING_INVALID);
+    assert_eq!(stub.accepted(), 0, "nothing sent");
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none());
+}
+
+/// Tesla's refusal reaches the operator as its fixed code and stores
+/// nothing; a code is exchanged at most once.
+#[tokio::test]
+async fn fleet_sign_in_refusal_stores_nothing_and_a_code_is_used_once() {
+    let (_root, _store, entry) = fixture();
+    let refusing = Stub::spawn(Reply::Json(400, r#"{"error":"invalid_grant","error_description":"synthetic-description-0001"}"#.to_owned())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&refusing.url);
+    let binding = fleet_begin(&entry, &refusing).expect("begin");
+    let error = fleet_redeem(&entry, binding, &fleet_redeem_input("code-fleet-refused-0001"), &refusing).await.unwrap_err();
+    assert_eq!(error.code(), "sign_in_refused");
+    assert_fleet_secret_free(&error, "code-fleet-refused-0001");
+    assert_eq!(refusing.accepted(), 1);
+    assert!(entry.vault().credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none(), "nothing stored");
+    let binding = fleet_begin(&entry, &refusing).expect("begin again");
+    let error = fleet_redeem(&entry, binding, &fleet_redeem_input("code-fleet-refused-0001"), &refusing).await.unwrap_err();
+    assert_eq!(error.code(), SIGN_IN_CODE_REUSED, "the same code is not sent twice");
+    assert_eq!(refusing.accepted(), 1);
+}
+
+/// Car discovery after a Fleet sign-in uses only the vault's own Fleet pair
+/// on a Fleet-configured Hub, and asks the window's gate before its list:
+/// with the window closed it is refused `window_closed` with nothing sent
+/// and no car configured.
+#[tokio::test]
+async fn fleet_sign_in_discovery_refuses_before_any_send() {
+    use crate::{auth::credential_vault::fixtures::fixture_admission, collection::collector::OwnerCarSelection, config::HubConfig};
+    let (root, store, entry) = fixture();
+    let admission = fixture_admission(&store, root.path());
+    let config = |provider: &str| HubConfig::from_exact_bytes(format!(
+        "data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\nprovider = {provider:?}\n", root.path()).as_bytes())
+        .expect("configuration").0;
+    let discover = |config: HubConfig, selection| {
+        let (entry, store, admission) = (&entry, &store, &admission);
+        async move { crate::auth::fleet_credentials::discover_fleet_cars(entry, store, &config, admission, selection).await.map_err(|error| error.code()) }
+    };
+    assert_eq!(discover(config("legacy"), OwnerCarSelection::All).await, Err("discovery_settings_invalid"), "a Legacy Hub lists no Fleet cars");
+    assert_eq!(discover(config("fleet"), OwnerCarSelection::Vehicle(0)).await, Err("discovery_selection_invalid"));
+    assert_eq!(discover(config("fleet"), OwnerCarSelection::All).await, Err("discovery_pair_unavailable"), "no own Fleet pair yet");
+
+    let stub = Stub::spawn(Reply::Json(200, valid_answer())).await;
+    let window = TestWindow::open(600);
+    let _route = window.route(&stub.url);
+    let binding = fleet_begin(&entry, &stub).expect("begin");
+    fleet_redeem(&entry, binding, &fleet_redeem_input("code-fleet-discovery-0001"), &stub).await.expect("redeem");
+    let closed = TestWindow::closed();
+    let _fleet_api = closed.route(crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica.base_url());
+    assert_eq!(discover(config("fleet"), OwnerCarSelection::All).await, Err(WINDOW_CLOSED));
+    assert!(store.configured_tesla_vehicles().expect("cars").is_empty(), "no car configured");
+    assert!(entry.vault().load(CredentialSlot::FleetApi).expect("read").is_some(), "the stored pair stays");
+}

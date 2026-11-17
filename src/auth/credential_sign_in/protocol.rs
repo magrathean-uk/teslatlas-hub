@@ -16,7 +16,7 @@ fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError:
 fn wiped_copy(text: &str) -> Zeroizing<String> { Zeroizing::new(text.to_owned()) }
 
 /// Encodes into the wiping destination without an intermediate form string.
-fn parameter(body: &mut Vec<u8>, key: &str, value: &str) {
+pub(super) fn parameter(body: &mut Vec<u8>, key: &str, value: &str) {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     if !body.is_empty() { body.push(b'&'); }
     body.extend_from_slice(key.as_bytes());
@@ -76,18 +76,129 @@ fn redirect_is_valid(text: &str) -> bool {
         && url.password().is_none() && url.query().is_none() && url.fragment().is_none())
 }
 
+/// The keys of `setup-fleet begin`'s input: the owner's own application, no
+/// secret (M09-T09).
+const FLEET_BEGIN_KEYS: [&str; 3] = ["clientId", "region", "redirectUri"];
+/// The keys of the `setup-fleet` redeem input, exactly these five.
+const FLEET_REDEEM_KEYS: [&str; 5] = ["code", "redirectUri", "clientId", "clientSecret", "region"];
+
+/// The step of a Fleet sign-in whose standard input is checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FleetSignInStep {
+    /// `setup-fleet begin`: `clientId`, `region` and `redirectUri`.
+    Begin,
+    /// `setup-fleet`: `code`, `redirectUri`, `clientId`, `clientSecret` and `region`.
+    Redeem,
+}
+
+/// Checks one Fleet sign-in input as the service will read it, so the
+/// operator command refuses a bad one before it is forwarded. A key naming a
+/// token is refused `source_credential_disabled` from the keys alone, before
+/// any value (a code or the client secret) is read; any other shape is
+/// `sign_in_settings_invalid`. Nothing is kept.
+pub fn check_fleet_sign_in_input(step: FleetSignInStep, line: &[u8]) -> Result<(), CredentialCommandError> {
+    match step {
+        FleetSignInStep::Begin => SignInSettings::fleet_application(line).map(drop),
+        FleetSignInStep::Redeem => SignInSettings::fleet_redeem(line).map(drop),
+    }
+}
+
+/// The first pass over an input object: only its keys are looked at, every
+/// value is skipped unread. A key naming a token, in any case, is a source
+/// credential and refused as one, before the second pass reads a value.
+fn refuse_token_keys(line: &[u8]) -> Result<(), CredentialCommandError> {
+    struct Keys<'a>(&'a std::cell::Cell<bool>);
+    impl<'de> Visitor<'de> for Keys<'_> {
+        type Value = ();
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("an object") }
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+            while let Some(key) = map.next_key::<std::borrow::Cow<'de, str>>()? {
+                if key.to_ascii_lowercase().contains("token") { self.0.set(true); return Err(de::Error::custom("token key")); }
+                map.next_value::<de::IgnoredAny>()?;
+            }
+            Ok(())
+        }
+    }
+    // A malformed object after a token-named key is still a token input.
+    let token = std::cell::Cell::new(false);
+    let _shape = serde_json::Deserializer::from_slice(line).deserialize_map(Keys(&token));
+    if token.get() { return Err(super::source_credential_disabled()); }
+    Ok(())
+}
+
 impl SignInSettings {
     pub fn fleet(line: &[u8]) -> Result<Self, CredentialCommandError> {
         let values = secret_object(line, &["clientId", "region", "redirectUri", "clientSecret"])
             .map_err(|_| failure(SignInError::SettingsInvalid))?;
         let [client_id, region, redirect_uri, client_secret]: [WireSecret; 4] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
+        if client_secret.as_str().is_empty() { return Err(failure(SignInError::SettingsInvalid)); }
+        Self::fleet_from(&client_id, &region, &redirect_uri, Some(client_secret))
+    }
+
+    /// The Fleet settings of the owner's own application from its public
+    /// values, with the client secret only when the step sends it.
+    fn fleet_from(client_id: &WireSecret, region: &WireSecret, redirect_uri: &WireSecret, client_secret: Option<WireSecret>) -> Result<Self, CredentialCommandError> {
         FleetClientId::parse(client_id.as_str()).map_err(|_| failure(SignInError::SettingsInvalid))?;
         let region = FleetRegion::from_storage_code(region.as_str()).map_err(|_| failure(SignInError::SettingsInvalid))?;
-        if client_secret.as_str().is_empty() || !redirect_is_valid(redirect_uri.as_str()) { return Err(failure(SignInError::SettingsInvalid)); }
+        if !redirect_is_valid(redirect_uri.as_str()) { return Err(failure(SignInError::SettingsInvalid)); }
         let authorization = if region == FleetRegion::China { "https://auth.tesla.cn/oauth2/v3/authorize" } else { "https://auth.tesla.com/oauth2/v3/authorize" };
         Ok(Self { slot: CredentialSlot::FleetApi, authorization: endpoint(authorization, false)?, token: endpoint(region.auth_token_url(), false)?,
             client_id: client_id.as_str().to_owned(), redirect_uri: redirect_uri.as_str().to_owned(), scope: FLEET_SIGN_IN_SCOPE.to_owned(),
-            region: Some(region), client_secret: Some(client_secret) })
+            region: Some(region), client_secret })
+    }
+
+    /// `setup-fleet begin`: exactly `clientId`, `region` and `redirectUri`.
+    pub(super) fn fleet_application(line: &[u8]) -> Result<Self, CredentialCommandError> {
+        refuse_token_keys(line)?;
+        let values = secret_object(line, &FLEET_BEGIN_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
+        let [client_id, region, redirect_uri]: [WireSecret; 3] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
+        Self::fleet_from(&client_id, &region, &redirect_uri, None)
+    }
+
+    /// The `setup-fleet` redeem: exactly `code`, `redirectUri`, `clientId`,
+    /// `clientSecret` and `region`. Returns the settings, which hold the
+    /// client secret, and the authorisation code.
+    pub(super) fn fleet_redeem(line: &[u8]) -> Result<(Self, WireSecret), CredentialCommandError> {
+        refuse_token_keys(line)?;
+        let values = secret_object(line, &FLEET_REDEEM_KEYS).map_err(|_| failure(SignInError::SettingsInvalid))?;
+        let [code, redirect_uri, client_id, client_secret, region]: [WireSecret; 5] = values.try_into().map_err(|_| failure(SignInError::SettingsInvalid))?;
+        if client_secret.as_str().is_empty() { return Err(failure(SignInError::SettingsInvalid)); }
+        Ok((Self::fleet_from(&client_id, &region, &redirect_uri, Some(client_secret))?, code))
+    }
+
+    /// Whether `other` names the same application, region and redirect as
+    /// these settings: a redeem must finish the sign-in its begin started.
+    pub(super) fn same_application(&self, other: &Self) -> bool {
+        self.slot == other.slot && self.client_id == other.client_id && self.region == other.region && self.redirect_uri == other.redirect_uri
+    }
+
+    pub(super) fn token_endpoint(&self) -> &url::Url { &self.token }
+    pub(super) fn client_id(&self) -> &str { &self.client_id }
+    pub(super) fn redirect_uri(&self) -> &str { &self.redirect_uri }
+    pub(super) fn region(&self) -> Option<FleetRegion> { self.region }
+    pub(super) fn client_secret(&self) -> Option<&str> { self.client_secret.as_ref().map(WireSecret::as_str) }
+
+    /// The authorisation address for `session`: the regional authorise
+    /// endpoint with the client, redirect, scope and state, and for the
+    /// owner client its PKCE challenge.
+    pub(super) fn authorization_url(&self, session: &SignInSession) -> SecretText {
+        let mut query = SecretBuffer::new("authorization_query", 1024);
+        parameter(&mut query, "response_type", "code");
+        parameter(&mut query, "client_id", &self.client_id);
+        parameter(&mut query, "redirect_uri", &self.redirect_uri);
+        parameter(&mut query, "scope", &self.scope);
+        let state = encode_secret(session.state(), "state_encoding");
+        parameter(&mut query, "state", &state);
+        if self.slot == CredentialSlot::OwnerApi {
+            let verifier = pkce_verifier(session.grant_secret());
+            let challenge = pkce_challenge(&verifier);
+            parameter(&mut query, "code_challenge", &challenge);
+            parameter(&mut query, "code_challenge_method", "S256");
+        }
+        let mut address = SecretText::copy("authorization_url", self.authorization.as_str());
+        address.buffer_mut().push('?');
+        address.buffer_mut().push_str(std::str::from_utf8(&query).expect("ASCII form"));
+        address
     }
 
     /// Explicit synthetic issuer configuration. No real endpoint is accepted.
@@ -159,25 +270,7 @@ impl<'a> SignInAttempt<'a> {
         Ok(Self { entry, settings, session })
     }
 
-    pub fn authorization_url(&self) -> SecretText {
-        let mut query = SecretBuffer::new("authorization_query", 1024);
-        parameter(&mut query, "response_type", "code");
-        parameter(&mut query, "client_id", &self.settings.client_id);
-        parameter(&mut query, "redirect_uri", &self.settings.redirect_uri);
-        parameter(&mut query, "scope", &self.settings.scope);
-        let state = encode_secret(self.session.state(), "state_encoding");
-        parameter(&mut query, "state", &state);
-        if self.settings.slot == CredentialSlot::OwnerApi {
-            let verifier = pkce_verifier(self.session.grant_secret());
-            let challenge = pkce_challenge(&verifier);
-            parameter(&mut query, "code_challenge", &challenge);
-            parameter(&mut query, "code_challenge_method", "S256");
-        }
-        let mut address = SecretText::copy("authorization_url", self.settings.authorization.as_str());
-        address.buffer_mut().push('?');
-        address.buffer_mut().push_str(std::str::from_utf8(&query).expect("ASCII form"));
-        address
-    }
+    pub fn authorization_url(&self) -> SecretText { self.settings.authorization_url(&self.session) }
 
     fn redirect_code(&self, line: &[u8]) -> Result<SecretText, CredentialCommandError> {
         let mut values = secret_object(line, &["redirectUrl"]).map_err(|_| failure(SignInError::AnswerInvalid))?;

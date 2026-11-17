@@ -96,6 +96,26 @@ impl Drop for SetupMaterial {
     }
 }
 
+/// One Fleet sign-in step's standard input (M09-T09), forwarded as the
+/// operator command read and checked it: the service parses it again. It
+/// may hold the code and the client secret, so it is cleared on drop and
+/// never printed.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct FleetSignInInput(pub String);
+
+impl fmt::Debug for FleetSignInInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("FleetSignInInput { .. }")
+    }
+}
+
+impl Drop for FleetSignInInput {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 /// One request. Grants and trust documents travel base64-encoded.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -110,6 +130,16 @@ pub enum OperatorRequest {
     WindowClose,
     Setup {
         material: SetupMaterial,
+        vehicle_id: Option<i64>,
+        all_vehicles: bool,
+    },
+    /// `setup-fleet begin`: the owner's own application, no secret.
+    FleetSignInBegin {
+        input: FleetSignInInput,
+    },
+    /// `setup-fleet`: the code and the client secret of the begun sign-in.
+    FleetSignInRedeem {
+        input: FleetSignInInput,
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     },

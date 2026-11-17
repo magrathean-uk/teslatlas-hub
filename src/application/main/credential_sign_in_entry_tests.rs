@@ -100,7 +100,7 @@ fn ct098_no_override_inputs() {
         assert!(Cli::try_parse_from(["hub", "setup", flag, "ungranted-0001"]).is_err());
     }
     assert!(matches!(Cli::try_parse_from(["hub", "setup", "--all-vehicles"]).expect("setup grammar").command, Command::Setup { all_vehicles: true, vehicle_id: None }));
-    assert!(matches!(Cli::try_parse_from(["hub", "setup-fleet"]).expect("parked verb").command, Command::SetupFleet));
+    assert!(matches!(Cli::try_parse_from(["hub", "setup-fleet"]).expect("Fleet sign-in grammar").command, Command::SetupFleet { step: None, .. }));
     let base = ["hub", "migrate", "--source", "postgres://127.0.0.1/source", "--car-id", "1", "--postgres-password-file", "pass", "--accept-schema-evidence", "--online-snapshot"];
     assert!(Cli::try_parse_from(base).is_ok());
     for removed in [["--access-token-file", "access"], ["--replace-credentials", "x"], ["--preserve-existing-credentials", "x"], ["--source-token-key-file", "key"], ["--encryption-key-file", "key"]] {

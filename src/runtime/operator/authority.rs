@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 
 use super::{
     admission::OperatorRefusal,
-    channel::{OperatorHandler, OperatorRequest, SetupMaterial},
+    channel::{FleetSignInInput, OperatorHandler, OperatorRequest, SetupMaterial},
     trust::{DialogConfirmation, TrustAuthority},
 };
 use crate::collection::window::{
@@ -232,6 +232,25 @@ pub trait ServiceBackend: Send + Sync {
         vehicle_id: Option<i64>,
         all_vehicles: bool,
     ) -> Result<Value, OperatorRefusal>;
+    /// `setup-fleet begin` (M09-T09). Called only while the window is Open.
+    fn fleet_sign_in_begin(&self, _input: FleetSignInInput) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_sign_in_unavailable",
+            "this service has no Fleet sign-in",
+        ))
+    }
+    /// `setup-fleet` (M09-T09). Called only while the window is Open.
+    fn fleet_sign_in_redeem(
+        &self,
+        _input: FleetSignInInput,
+        _vehicle_id: Option<i64>,
+        _all_vehicles: bool,
+    ) -> Result<Value, OperatorRefusal> {
+        Err(OperatorRefusal::new(
+            "fleet_sign_in_unavailable",
+            "this service has no Fleet sign-in",
+        ))
+    }
     /// Called only while the window is Closed, holding the import lock.
     fn recovery_export(
         &self,
@@ -338,6 +357,16 @@ impl OperatorService {
         status
     }
 
+    fn require_open_window(&self) -> Result<(), OperatorRefusal> {
+        if self.controller.status().phase != Phase::Open {
+            return Err(OperatorRefusal::new(
+                WINDOW_CLOSED,
+                "sign-in and vehicle discovery need an open collection window",
+            ));
+        }
+        Ok(())
+    }
+
     /// The service reads recovery files only at absolute paths it is named:
     /// never its own standard input (`-`) and never a path relative to its
     /// working directory (review finding 6).
@@ -406,6 +435,22 @@ impl OperatorHandler for OperatorService {
                     ));
                 }
                 self.backend.setup(material, vehicle_id, all_vehicles)
+            }
+            // The Fleet sign-in (M09-T09) is gated as the owner sign-in is:
+            // its binding, exchange and discovery need an Open window, and
+            // every send still asks the egress gate.
+            OperatorRequest::FleetSignInBegin { input } => {
+                self.require_open_window()?;
+                self.backend.fleet_sign_in_begin(input)
+            }
+            OperatorRequest::FleetSignInRedeem {
+                input,
+                vehicle_id,
+                all_vehicles,
+            } => {
+                self.require_open_window()?;
+                self.backend
+                    .fleet_sign_in_redeem(input, vehicle_id, all_vehicles)
             }
             OperatorRequest::RecoveryExport {
                 destination,

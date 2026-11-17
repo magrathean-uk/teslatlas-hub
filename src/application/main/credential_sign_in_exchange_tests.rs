@@ -297,3 +297,80 @@ fn sign_in_discovery_setup_runs_inside_custody_and_reports_its_outcome() {
     let mut after = slot.clone();
     after.stop();
 }
+
+/// M09-T09: the service's Fleet begin is refused `window_closed` by the
+/// production gate (no test opens it) before its binding is written, and
+/// nothing is stored or sent.
+#[test]
+fn fleet_sign_in_service_begin_refuses_while_the_gate_is_closed() {
+    assert!(!tesatlas_hub::collection::window::EgressGate::process_wide().is_open(), "no test opens the process gate");
+    let root = root();
+    let entry = exchange_entry(root.path());
+    let issuer = StubIssuer::valid();
+    let token = format!("{}/token", issuer.endpoint);
+    let begin = br#"{"clientId":"fleet-client-0101","region":"eu","redirectUri":"https://owner.example/fleet/callback"}"#;
+    let error = sign_in::begin_fleet_sign_in_with_stub_for_test(&entry, begin, &token).unwrap_err();
+    assert_eq!(error.code(), "window_closed");
+    let error = sign_in::begin_fleet_sign_in(&entry, begin).unwrap_err();
+    assert_eq!(error.code(), "window_closed", "the regional token endpoint rides the same gate");
+    drop(entry);
+    assert_eq!(issuer.calls(), 0, "nothing sent");
+    assert_no_pair(root.path());
+    assert!(!projection(root.path()).fleet_credentials.present);
+}
+
+/// M09-T09: `setup-fleet` runs the exchange and then, only after a stored
+/// sign-in, the car discovery inside the sign-in's custody with the
+/// collector stopped; a discovery failure still reports the stored sign-in
+/// and a refused sign-in runs no discovery.
+#[test]
+fn fleet_sign_in_setup_discovers_only_after_a_stored_sign_in() {
+    use tesatlas_hub::collection::window::{CollectorSlot as _, CredentialCustody, Supervisor};
+    let root = root();
+    let scratch = tempfile::tempdir().expect("scratch");
+    let store = HubStore::initialize(root.path()).expect("store");
+    let admission = AdmittedUserHub::admit(root.path()).expect("one service admission");
+    let window = operator_window::Window::new(scratch.path(), root.path());
+    window.controller.open(&window.grant(600)).expect("window opens");
+    let slot = HoldingSlot {
+        store: store.clone(), admission: Arc::clone(&admission), root: root.path().to_owned(),
+        held: Arc::default(), starts: Arc::default(),
+    };
+    let custody = CredentialCustody::new();
+    let supervisor = Arc::new(Mutex::new(
+        Supervisor::new(Arc::clone(&window.controller), slot.clone()).with_custody(custody.clone()),
+    ));
+    assert!(supervisor.lock().expect("supervisor").step().collector_running, "the collector runs inside the window");
+    let kick = {
+        let supervisor = Arc::clone(&supervisor);
+        move || { supervisor.lock().expect("supervisor").step(); }
+    };
+    let open = || CredentialVaultEntry::open_for_test(store.clone(), Arc::clone(&admission), root.path(), true);
+
+    let mut probe = slot.clone();
+    let report = fleet_setup(&custody, &kick, open, |_| Ok(sign_in::OwnerSignIn::Complete), |_| {
+        assert!(!probe.is_running(), "discovery runs with the collector stopped");
+        Ok(2)
+    }).expect("setup-fleet");
+    assert_eq!(report, serde_json::json!({"status": "signed_in", "slot": "fleet_api", "origin": "fleet_oauth", "signIn": "exchanged",
+        "aftercare": "complete", "vehicleDiscovery": "configured", "vehiclesConfigured": 2}));
+
+    let report = fleet_setup(&custody, &kick, open, |_| Ok(sign_in::OwnerSignIn::AftercarePending), |_| {
+        Err(sign_in::owner_car_selection(Some(7001), true).unwrap_err())
+    }).expect("a stored sign-in is not refused by its discovery");
+    assert_eq!((report["aftercare"].as_str(), report["vehicleDiscovery"].as_str(), report["discoveryCode"].as_str()),
+        (Some("pending"), Some("failed"), Some("discovery_selection_invalid")));
+
+    let discovered = Arc::new(AtomicUsize::new(0));
+    let ran = Arc::clone(&discovered);
+    let refusal = fleet_setup(&custody, &kick, open, |_| Err(sign_in::fleet_sign_in_not_begun()), move |_| {
+        ran.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }).unwrap_err();
+    assert_eq!(refusal.code, "sign_in_binding_invalid");
+    assert_eq!(discovered.load(Ordering::SeqCst), 0, "no discovery after a refused sign-in");
+    assert!(!custody.requested(), "custody released");
+    let mut after = slot.clone();
+    assert!(after.is_running(), "the collector started again once custody ended");
+    after.stop();
+}

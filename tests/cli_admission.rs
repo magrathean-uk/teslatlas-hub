@@ -4,8 +4,9 @@
 //! The built binary's admission boundary (M02-T10; design section 9, ruling
 //! R5). Removed inputs are rejected by the parser; `setup`, the window verbs
 //! and credential recovery refuse `service_not_running` before they read a
-//! secret path or standard input and with no network connection; Fleet verbs
-//! are refused `provider_parked`; import waits for the window to close; and the
+//! secret path or standard input and with no network connection, and so does
+//! the Fleet sign-in (`setup-fleet`, M09-T09); Fleet telemetry push is refused
+//! `provider_parked`; import waits for the window to close; and the
 //! service's window authority is what opens the process-wide egress gate. A
 //! listener of another program on the socket is not the service and receives
 //! nothing.
@@ -188,7 +189,9 @@ fn source_credential_disabled_removed_inputs_are_rejected_by_the_parser() {
         vec!["setup", "--sign-in"],
         vec!["setup", "--access-token-file", &key, "--refresh-token-file", &key],
         vec!["setup-fleet", "--sign-in"],
-        vec!["setup-fleet", "--all-vehicles"],
+        vec!["setup-fleet", "begin", "--all-vehicles"],
+        vec!["setup-fleet", "--client-secret", &key],
+        vec!["setup-fleet", "--access-token-file", &key],
         vec![
             "source-check", "--source", "postgresql://reader@127.0.0.1:9/sourcedb", "--car-id",
             "1", "--postgres-password-file", &key, "--history-only",
@@ -232,6 +235,10 @@ fn source_credential_disabled_service_verbs_refuse_before_any_secret_read() {
     let cases: Vec<Vec<&str>> = vec![
         vec!["setup", "--all-vehicles"],
         vec!["setup", "--vehicle-id", "7"],
+        vec!["setup-fleet", "begin"],
+        vec!["setup-fleet"],
+        vec!["setup-fleet", "--all-vehicles"],
+        vec!["setup-fleet", "--vehicle-id", "7"],
         vec!["window", "status"],
         vec!["window", "close"],
         vec!["window", "trust", &trust],
@@ -257,15 +264,48 @@ fn source_credential_disabled_service_verbs_refuse_before_any_secret_read() {
     assert_eq!(hub.endpoint.connections(), 0, "no network connection");
 }
 
+/// Fleet telemetry push is not offered (M09-T09): the verb is refused with
+/// its fixed text before the configuration is read.
 #[test]
-fn source_credential_disabled_fleet_verbs_are_parked_before_the_configuration_is_read() {
+fn fleet_sign_in_telemetry_push_is_refused_before_the_configuration_is_read() {
     let hub = Hub::new();
     fs::remove_file(hub.path("config.toml")).expect("no configuration");
-    for case in [["setup-fleet"], ["configure-fleet-telemetry"]] {
-        let output = hub.run(&case, TOKENS);
-        assert_refused(&output, "provider_parked", &case);
-    }
+    let output = hub.run(&["configure-fleet-telemetry"], TOKENS);
+    assert_refused(&output, "provider_parked", &["configure-fleet-telemetry"]);
+    assert!(stderr(&output).contains("provider_parked: Fleet telemetry push is not offered"), "{}", stderr(&output));
     assert_eq!(hub.endpoint.connections(), 0);
+}
+
+/// A Hub configured for Fleet refuses a vehicle command exactly as a Legacy
+/// Hub does (design B.5), before anything is sent.
+#[test]
+fn fleet_sign_in_configured_hub_refuses_vehicle_commands_as_legacy_does() {
+    let mut refusals = Vec::new();
+    for provider in ["legacy", "fleet"] {
+        let hub = Hub::new();
+        let config = format!(
+            "data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\nprovider = {provider:?}\n",
+            hub.data()
+        );
+        fs::write(hub.path("config.toml"), config).expect("config");
+        fs::create_dir(hub.data()).expect("data dir");
+        fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
+        drop(tesatlas_hub::db::HubStore::initialize(hub.data()).expect("store"));
+        for case in [
+            vec!["control", "climate-start", "--confirm"],
+            vec!["control", "--vehicle-id", "00000000-0000-4000-8000-000000000007", "climate-start", "--confirm"],
+        ] {
+            let output = hub.run(&case, b"");
+            assert_eq!(output.status.code(), Some(1), "{provider} {case:?}: {}", stderr(&output));
+            assert!(stdout(&output).is_empty(), "{provider} {case:?}: nothing reported");
+            refusals.push((provider, case.clone(), stderr(&output)));
+        }
+        assert_eq!(hub.endpoint.connections(), 0, "{provider}: nothing sent");
+    }
+    let (legacy, fleet) = refusals.split_at(2);
+    for (legacy, fleet) in legacy.iter().zip(fleet) {
+        assert_eq!(legacy.2, fleet.2, "{:?}: the Fleet Hub refuses as the Legacy Hub does", legacy.1);
+    }
 }
 
 /// An impostor on the control channel: another program of the same user

@@ -5,12 +5,12 @@
 //! Every parsed command is routed here before the binary reads a secret path,
 //! standard input or the network. Tesla code exchange and vehicle discovery
 //! run only inside the service that holds the window authority, so `setup`,
-//! the window verbs, the credential-recovery verbs and the refused-credential
-//! purge are forwarded to it over
-//! the local control channel; with no service running they are refused
-//! `service_not_running` before anything else is read. They never take the
-//! data-directory lifetime lock themselves. Fleet is parked: its verbs are
-//! refused `provider_parked`. Import, the source-token take-over and data
+//! the Fleet sign-in (`setup-fleet`, M09-T09), the window verbs, the
+//! credential-recovery verbs and the refused-credential purge are forwarded
+//! to it over the local control channel; with no service running they are
+//! refused `service_not_running` before anything else is read. They never
+//! take the data-directory lifetime lock themselves. Fleet telemetry push is
+//! not offered: `configure-fleet-telemetry` is refused `provider_parked`. Import, the source-token take-over and data
 //! restore are admitted only while no window is open on this host and the
 //! selected Hub's window is Closed with its handback recorded (design 2.10);
 //! the take-over also holds the data-directory lifetime lock, so it is
@@ -70,11 +70,9 @@ impl OperatorRefusal {
         )
     }
 
+    /// `configure-fleet-telemetry`: the Fleet offer is polling only (M09-T09).
     pub fn provider_parked() -> Self {
-        Self::new(
-            PROVIDER_PARKED,
-            "Fleet API collection is parked; the Hub signs in with its own Owner login only",
-        )
+        Self::new(PROVIDER_PARKED, "Fleet telemetry push is not offered")
     }
 
     pub fn window(refusal: Refusal) -> Self {
@@ -101,7 +99,9 @@ pub fn route(command: &Command) -> Route {
         #[cfg(unix)]
         Command::Setup { .. } => Route::Service,
         #[cfg(unix)]
-        Command::SetupFleet | Command::ConfigureFleetTelemetry => Route::Refused(PROVIDER_PARKED),
+        Command::SetupFleet { .. } => Route::Service,
+        #[cfg(unix)]
+        Command::ConfigureFleetTelemetry => Route::Refused(PROVIDER_PARKED),
         Command::ExportRecoveryCredentials { .. }
         | Command::RestoreRecoveryCredentials { .. }
         | Command::PurgeRefusedCredentials { .. }

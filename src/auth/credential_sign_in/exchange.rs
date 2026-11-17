@@ -40,8 +40,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::CredentialVaultEntry;
 use crate::fleet_api::egress::{self, PermitKind, Provider};
-use super::{CredentialCommandError, owner_client::{OWNER_CLIENT_ID, OWNER_REDIRECT_URI, OWNER_TOKEN_ENDPOINT}, protocol::token_answer};
-use super::super::{credential_envelope::CredentialSlot, credential_vault::{CredentialStoreError, RedeemedGrant, SignInError, SignInRefusalCode, WriteAuthority}};
+use super::{CredentialCommandError, SecretBuffer, SecretText, owner_client::{OWNER_CLIENT_ID, OWNER_REDIRECT_URI, OWNER_TOKEN_ENDPOINT}, protocol::{SignInSettings, parameter, token_answer}};
+use super::super::{credential_envelope::CredentialSlot, credential_vault::{CredentialStoreError, RedeemedGrant, SignInError, SignInRefusalCode, SignInSession, WriteAuthority}};
 
 /// The longest authorisation code accepted. Tesla's codes are far shorter; the
 /// bound keeps the request small and refuses pasted garbage locally.
@@ -221,12 +221,12 @@ enum Answer {
     TooLarge,
 }
 
-async fn send(client: &Client, endpoint: Url, mut body: Zeroizing<Vec<u8>>) -> Result<Answer, reqwest::Error> {
+async fn send(client: &Client, endpoint: Url, body: reqwest::Body, content_type: &'static str) -> Result<Answer, reqwest::Error> {
     let request = client.post(endpoint)
         .header(USER_AGENT, EXCHANGE_USER_AGENT)
-        .header(CONTENT_TYPE, "application/json")
+        .header(CONTENT_TYPE, content_type)
         .header(ACCEPT, "application/json")
-        .body(std::mem::take(&mut *body));
+        .body(body);
     #[cfg(test)]
     crate::api::test_egress_guard::refuse_production_request(&request);
     let mut response = request.send().await?;
@@ -299,7 +299,7 @@ fn stub_endpoint(stub: &str) -> Result<Url, CredentialCommandError> {
 async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, endpoint: Url, loopback: bool) -> Result<OwnerSignIn, CredentialCommandError> {
     check_material(code, code_verifier, redirect_uri)?;
     spend_code(code)?;
-    let body = request_body(code, code_verifier)?;
+    let mut body = request_body(code, code_verifier)?;
     crate::crypto::install_default_provider();
     let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| failure(SignInError::Unavailable))?;
     // The gate is the last check before the send: a refusal opens no
@@ -307,7 +307,7 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
     let permit = egress::ask(endpoint.as_str(), Provider::Legacy, PermitKind::TokenExchange)
         .map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
     let sent_at_s = now_s()?;
-    let answer = match permit.bound(send(&client, endpoint, body)).await {
+    let answer = match permit.bound(send(&client, endpoint, reqwest::Body::from(std::mem::take(&mut *body)), "application/json")).await {
         Ok(Ok(answer)) => answer,
         Ok(Err(error)) if error.is_connect() || error.is_builder() => return Err(failure(SignInError::Unavailable)),
         // Sent and not answered in full, or cut at the window's deadline: the
@@ -367,6 +367,182 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
         Ok(()) => Ok(OwnerSignIn::Complete),
         Err(error) => {
             tracing::warn!(code = error.code(), "credential aftercare deferred after a stored sign-in");
+            Ok(OwnerSignIn::AftercarePending)
+        }
+    }
+}
+
+/// The refusal of a Fleet redeem that does not finish the sign-in its begin
+/// started (another application, region or redirect, or no begin at all).
+pub const SIGN_IN_BINDING_INVALID: &str = "sign_in_binding_invalid";
+
+/// The refusal of a Fleet redeem with no begun sign-in to finish.
+pub fn fleet_sign_in_not_begun() -> CredentialCommandError { CredentialCommandError::new(SIGN_IN_BINDING_INVALID) }
+
+/// The first step of a Fleet sign-in with the owner's own Tesla developer
+/// application (M09-T09; design T-B2): the binding the vault recorded and
+/// the application's public values. The service holds it until the redeem;
+/// it holds no client secret, and its state and grant secret are wiped when
+/// it is dropped. It expires with the vault's binding (10 minutes).
+pub struct FleetSignInBinding {
+    settings: SignInSettings,
+    session: SignInSession,
+}
+
+impl FleetSignInBinding {
+    /// The binding's identifier (not a secret): it names this attempt.
+    pub fn id(&self) -> uuid::Uuid { self.session.id() }
+
+    /// When the binding expires, in Unix seconds.
+    pub fn expires_at_s(&self) -> i64 { self.session.expires_at_ms().div_euclid(1000) }
+
+    /// The regional authorise address, with the Fleet scope and this
+    /// binding's state, that the owner opens to sign in with Tesla.
+    pub fn authorization_url(&self) -> SecretText { self.settings.authorization_url(&self.session) }
+}
+
+impl std::fmt::Debug for FleetSignInBinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FleetSignInBinding").field("id", &self.session.id()).finish_non_exhaustive()
+    }
+}
+
+/// `setup-fleet begin` (M09-T09): reads exactly `clientId`, `region` and
+/// `redirectUri`, then records a sign-in binding for the Fleet slot. The
+/// binding is written only while the window's egress gate grants Fleet a
+/// permit (`window_closed` otherwise); nothing is sent to Tesla.
+pub fn begin_fleet_sign_in(entry: &CredentialVaultEntry, line: &[u8]) -> Result<FleetSignInBinding, CredentialCommandError> {
+    fleet_begin_at(entry, line, None)
+}
+
+/// [`begin_fleet_sign_in`] asking the gate for the loopback stub token
+/// endpoint the redeem will use, for the binary's tests.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn begin_fleet_sign_in_with_stub_for_test(entry: &CredentialVaultEntry, line: &[u8], stub: &str) -> Result<FleetSignInBinding, CredentialCommandError> {
+    let endpoint = stub_endpoint(stub)?;
+    fleet_begin_at(entry, line, Some(&endpoint))
+}
+
+fn fleet_begin_at(entry: &CredentialVaultEntry, line: &[u8], stub: Option<&Url>) -> Result<FleetSignInBinding, CredentialCommandError> {
+    let settings = SignInSettings::fleet_application(line)?;
+    let endpoint = stub.unwrap_or(settings.token_endpoint()).as_str();
+    let permit = egress::ask(endpoint, Provider::Fleet, PermitKind::Request)
+        .map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
+    let live = || permit.check().is_ok();
+    let session = entry.vault().begin_sign_in_under(CredentialSlot::FleetApi, WriteAuthority::of(&live))?;
+    Ok(FleetSignInBinding { settings, session })
+}
+
+/// Removes the binding of a Fleet sign-in that will not be redeemed (a new
+/// begin replaces it); best effort; an unremoved binding expires unused.
+pub fn abandon_fleet_sign_in(entry: &CredentialVaultEntry, binding: FleetSignInBinding) {
+    entry.vault().abandon_sign_in_under(binding.session.id(), WriteAuthority::UNBOUNDED);
+}
+
+/// The Fleet form body: exactly these six members, encoded into a wiping
+/// buffer that the transport owns and wipes once sent. The client secret is
+/// copied only here.
+fn fleet_request_body(settings: &SignInSettings, code: &str) -> Result<reqwest::Body, CredentialCommandError> {
+    let (Some(secret), Some(region)) = (settings.client_secret(), settings.region()) else {
+        return Err(failure(SignInError::SettingsInvalid));
+    };
+    let mut body = SecretBuffer::new("request_body", 1024);
+    parameter(&mut body, "grant_type", "authorization_code");
+    parameter(&mut body, "client_id", settings.client_id());
+    parameter(&mut body, "client_secret", secret);
+    parameter(&mut body, "code", code);
+    parameter(&mut body, "audience", region.base_url().trim_end_matches('/'));
+    parameter(&mut body, "redirect_uri", settings.redirect_uri());
+    Ok(reqwest::Body::from(axum::body::Bytes::from_owner(body)))
+}
+
+/// `setup-fleet` (M09-T09): redeems the code of the sign-in `binding`
+/// began. Reads exactly `code`, `redirectUri`, `clientId`, `clientSecret` and
+/// `region` (`SignInSettings::fleet`'s values plus the code); the
+/// application, region and redirect must be the begin's. Order, so that a
+/// refusal opens no connection and writes nothing:
+/// 1. the input and the binding are checked locally;
+/// 2. the code is recorded as used in this process;
+/// 3. the window's egress gate is asked for a Fleet token-exchange permit
+///    (`window_closed` unless a window is Open), immediately before the send;
+/// 4. one form POST to the regional Fleet token endpoint, bounded by the
+///    permit, with no redirect followed and the answer read to at most
+///    [`ANSWER_CAP`] bytes; the client secret is wiped once the body is built
+///    and is never stored;
+/// 5. only a complete, validated answer is stored, through the vault's one
+///    grant path (`store_hub_grant`): origin `fleet_oauth`, refresh owner the
+///    Hub, the client id and region, under the permit's write fence.
+pub async fn exchange_fleet_code(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8]) -> Result<OwnerSignIn, CredentialCommandError> {
+    fleet_exchange_at(entry, binding, line, None).await
+}
+
+/// [`exchange_fleet_code`] against a loopback stub token endpoint, for the
+/// binary's tests. It still asks the process-wide egress gate.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub async fn exchange_fleet_code_with_stub_for_test(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8], stub: &str) -> Result<OwnerSignIn, CredentialCommandError> {
+    let endpoint = stub_endpoint(stub)?;
+    fleet_exchange_at(entry, binding, line, Some(endpoint)).await
+}
+
+async fn fleet_exchange_at(entry: &CredentialVaultEntry, binding: FleetSignInBinding, line: &[u8], stub: Option<Url>) -> Result<OwnerSignIn, CredentialCommandError> {
+    let FleetSignInBinding { settings: begun, session } = binding;
+    let (settings, code) = SignInSettings::fleet_redeem(line)?;
+    if !begun.same_application(&settings) { return Err(CredentialCommandError::new(SIGN_IN_BINDING_INVALID)); }
+    if !code_is_valid(code.as_str()) { return Err(CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID)); }
+    // A binding past its expiry could not store the answer: the code is not
+    // sent, so it is not spent at Tesla either.
+    if session.expires_at_ms() <= now_s()?.saturating_mul(1000) { return Err(failure(SignInError::Expired)); }
+    spend_code(code.as_str())?;
+    let loopback = stub.is_some();
+    let endpoint = stub.unwrap_or_else(|| settings.token_endpoint().clone());
+    let body = fleet_request_body(&settings, code.as_str())?;
+    // Exchange only: the client secret is not needed again and is wiped now.
+    let (client_id, region) = (settings.client_id().to_owned(), settings.region());
+    drop(settings);
+    drop(code);
+    crate::crypto::install_default_provider();
+    let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| failure(SignInError::Unavailable))?;
+    let permit = egress::ask(endpoint.as_str(), Provider::Fleet, PermitKind::TokenExchange)
+        .map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
+    let sent_at_s = now_s()?;
+    let answer = match permit.bound(send(&client, endpoint, body, "application/x-www-form-urlencoded")).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(error)) if error.is_connect() || error.is_builder() => return Err(failure(SignInError::Unavailable)),
+        Ok(Err(_)) | Err(_) => return Err(failure(SignInError::AnswerInvalid)),
+    };
+    let bytes = match answer {
+        Answer::Complete(status, bytes) if status.is_success() => bytes,
+        Answer::Complete(_, bytes) => return Err(refused(&bytes)),
+        Answer::TooLarge => return Err(failure(SignInError::AnswerInvalid)),
+    };
+    let tokens = token_answer(&bytes)?;
+    drop(bytes);
+    // The grammar the Fleet loader reads a stored pair with: a pair it
+    // would refuse is never stored.
+    if !(60..=31_536_000).contains(&tokens.expires_in)
+        || crate::fleet_api::FleetAccessToken::new(tokens.access.as_str()).is_err()
+        || crate::fleet_api::FleetRefreshToken::new(tokens.refresh.as_str()).is_err()
+    {
+        return Err(failure(SignInError::AnswerInvalid));
+    }
+    permit.check().map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
+    let live = || permit.check().is_ok();
+    let authority = WriteAuthority::of(&live);
+    let sign_in_id = session.id();
+    let grant = RedeemedGrant::from_validated_redemption_at(session, Zeroizing::new(tokens.access.as_str().to_owned()),
+        Zeroizing::new(tokens.refresh.as_str().to_owned()), tokens.expires_in, Some(client_id), region, sent_at_s);
+    drop(tokens);
+    let grant = grant.inspect_err(|_| entry.vault().abandon_sign_in_under(sign_in_id, authority))?;
+    let stored = entry.vault().store_hub_grant_under(grant, authority)?;
+    tracing::info!(slot = "fleet_api", origin = "fleet_oauth", refresh_owner = "hub", provenance = "hub_grant", "credential write");
+    let aftercare = entry.vault().finish_hub_grant_aftercare_under(stored, authority);
+    drop(permit);
+    match aftercare {
+        Ok(()) => Ok(OwnerSignIn::Complete),
+        Err(error) => {
+            tracing::warn!(code = error.code(), "credential aftercare deferred after a stored Fleet sign-in");
             Ok(OwnerSignIn::AftercarePending)
         }
     }

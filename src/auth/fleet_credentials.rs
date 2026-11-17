@@ -152,6 +152,107 @@ impl FleetSetupCredentials {
     }
 }
 
+/// Car discovery after a Fleet sign-in (M09-T09): run by `setup-fleet` right
+/// after its exchange stored the Hub's own Fleet pair, inside the same Open
+/// window and with the same vault. Order, so that a refusal opens no
+/// connection and writes nothing:
+/// 1. local checks: the configured provider is `fleet` and the selection is
+///    usable;
+/// 2. only the vault's own Fleet pair is used (origin `fleet_oauth`, refresh
+///    owner the Hub, with its client id and region), read once, never
+///    refreshed here;
+/// 3. the window's egress gate is asked for Fleet (`window_closed` unless a
+///    window is Open); the list asks again for its own permit before its send;
+/// 4. one vehicle list over the Fleet API (counted in the request ledger),
+///    no wake, no vehicle-data read and no command; the chosen cars are then
+///    recorded.
+///
+/// Every failure is one of `setup`'s fixed `discovery_*` codes (or
+/// `window_closed`); no token, VIN or name appears in an error or a log.
+/// Returns how many cars are configured.
+pub async fn discover_fleet_cars(
+    entry: &crate::CredentialVaultEntry,
+    store: &HubStore,
+    config: &crate::config::HubConfig,
+    admission: &crate::hub_user_process::AdmittedUserHub,
+    selection: crate::collection::collector::OwnerCarSelection,
+) -> Result<usize, crate::auth::credential_sign_in::CredentialCommandError> {
+    use crate::auth::credential_sign_in::CredentialCommandError;
+    use crate::collection::collector::{OwnerCarSelection, setup_fleet_vehicle, setup_fleet_vehicles};
+    use crate::fleet_api::egress::{self, PermitKind, Provider};
+    if config.collector.provider != crate::config::CollectorProvider::Fleet {
+        return Err(CredentialCommandError::new("discovery_settings_invalid"));
+    }
+    if matches!(selection, OwnerCarSelection::Vehicle(id) if id <= 0) {
+        return Err(CredentialCommandError::new("discovery_selection_invalid"));
+    }
+    let credentials = own_fleet_pair(entry)?;
+    // After every local check and before the list: a closed window refuses
+    // here with no connection.
+    drop(egress::ask(credentials.region.base_url(), Provider::Fleet, PermitKind::Request)
+        .map_err(|_| CredentialCommandError::new(crate::auth::credential_sign_in::WINDOW_CLOSED))?);
+    let configured = match selection {
+        OwnerCarSelection::All => setup_fleet_vehicles(store, config, &credentials, admission).await.map(|report| report.vehicles.len()),
+        OwnerCarSelection::Vehicle(id) => setup_fleet_vehicle(store, config, &credentials, admission, Some(id)).await.map(|_| 1),
+        OwnerCarSelection::Implicit => setup_fleet_vehicle(store, config, &credentials, admission, None).await.map(|_| 1),
+    };
+    let base = credentials.region.base_url();
+    drop(credentials);
+    match configured {
+        Ok(vehicles_configured) => {
+            tracing::info!(vehicles_configured, "Fleet setup configured its cars");
+            Ok(vehicles_configured)
+        }
+        Err(error) => {
+            let code = fleet_discovery_code(&error, base);
+            tracing::warn!(code, "Fleet setup discovery failed");
+            Err(CredentialCommandError::new(code))
+        }
+    }
+}
+
+/// The Hub's own Fleet pair from this vault, for one list: origin
+/// `fleet_oauth` from the Hub's own sign-in, with the Hub as refresher, its
+/// client id and region. Any other pair, or none, is refused.
+fn own_fleet_pair(entry: &crate::CredentialVaultEntry) -> Result<FleetSetupCredentials, crate::auth::credential_sign_in::CredentialCommandError> {
+    use crate::auth::credential_envelope::CredentialOrigin;
+    let unavailable = || crate::auth::credential_sign_in::CredentialCommandError::new("discovery_pair_unavailable");
+    let pair = entry.vault().load(CredentialSlot::FleetApi).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
+    if pair.origin != Some(CredentialOrigin::FleetOauth) || pair.refresh_owner != RefreshOwner::Hub { return Err(unavailable()); }
+    let region = FleetRegion::from_storage_code(pair.region.as_deref().unwrap_or_default()).map_err(|_| unavailable())?;
+    let now_s = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs());
+    // The lifetime only bounds the value; the list never refreshes.
+    let lifetime = u64::try_from(pair.expires_at).unwrap_or(0).saturating_sub(now_s)
+        .clamp(MIN_FLEET_TOKEN_LIFETIME_SECONDS, MAX_FLEET_TOKEN_LIFETIME_SECONDS);
+    FleetSetupCredentials::new(pair.access.as_str().to_owned(), pair.refresh.as_str().to_owned(),
+        pair.client_id.clone().unwrap_or_default(), region, lifetime).map_err(|_| unavailable())
+}
+
+/// The fixed code of a Fleet discovery failure. A transport failure seen
+/// while the gate now refuses is the window closing under the list.
+fn fleet_discovery_code(error: &crate::collection::collector::CollectorError, base: &str) -> &'static str {
+    use crate::collection::collector::CollectorError;
+    use crate::fleet_api::egress::{self, PermitKind, Provider};
+    match error {
+        CollectorError::NativeSetupVehicleNotFound(_) => "discovery_vehicle_not_listed",
+        CollectorError::NativeSetupVehicleSelectionRequired { .. } => "discovery_selection_required",
+        CollectorError::NativeSetupVehicleIdInvalid => "discovery_selection_invalid",
+        CollectorError::NativeSetupNoVehicles => "discovery_no_vehicles",
+        CollectorError::NativeSetupVehicleConflict { .. } | CollectorError::FleetSetupInventoryMismatch => "discovery_vehicle_conflict",
+        CollectorError::NativeSetupStoreMismatch | CollectorError::NativeSetupFleetProviderRequired => "discovery_settings_invalid",
+        CollectorError::FleetApi(error) => match error {
+            FleetApiError::RequestNotSent | FleetApiError::Transport | FleetApiError::RequestTimeout
+                if egress::ask(base, Provider::Fleet, PermitKind::Request).is_err() => crate::auth::credential_sign_in::WINDOW_CLOSED,
+            FleetApiError::RequestNotSent | FleetApiError::Transport | FleetApiError::RequestTimeout | FleetApiError::ResponseRead => "discovery_unavailable",
+            FleetApiError::RateLimited { .. } => "discovery_rate_limited",
+            FleetApiError::HttpStatus(_) | FleetApiError::ProviderHttpStatus { .. } => "discovery_refused",
+            FleetApiError::InvalidEndpoint => "discovery_settings_invalid",
+            _ => "discovery_answer_invalid",
+        },
+        _ => "discovery_failed",
+    }
+}
+
 pub fn validate_stored_fleet_credentials(entry: &crate::CredentialVaultEntry, _data_dir: &Path) -> Result<(), FleetCredentialError> {
     validate_stored_fleet_credentials_after(entry.vault(), || {})
 }

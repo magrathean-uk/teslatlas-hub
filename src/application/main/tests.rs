@@ -315,22 +315,27 @@ fn migration_progress_is_online_snapshot_only() {
 #[cfg(unix)]
 #[tokio::test]
 async fn source_credential_disabled_raw_token_setup_is_refused_by_the_dispatcher_first() {
-    // No token input exists any more (M02-T10): Fleet setup is refused
-    // `provider_parked` before the configuration is read, and `setup` is
-    // forwarded to the service, so it reads the configuration and nothing else.
+    // No token input exists any more (M02-T10): Fleet telemetry is refused
+    // `provider_parked` before the configuration is read, and `setup` and
+    // `setup-fleet` are forwarded to the service, so they read the
+    // configuration and nothing else.
     let temporary = tempfile::tempdir().expect("temporary directory");
     let sealed = temporary.path().join("sealed");
     fs::create_dir(&sealed).expect("sealed directory");
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal");
     let config_path = temporary.path().join("absent-config.toml");
-    for command in [Command::SetupFleet, Command::ConfigureFleetTelemetry] {
+    let error = run(Cli { config: Some(config_path.clone()), command: Command::ConfigureFleetTelemetry }).await
+        .expect_err("Fleet telemetry is refused").to_string();
+    assert_eq!(error, "provider_parked: Fleet telemetry push is not offered");
+    for command in [
+        Command::Setup { vehicle_id: Some(7), all_vehicles: false },
+        Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: true },
+        Command::SetupFleet { step: Some(tesatlas_hub::runtime::operator::cli::FleetSetupStep::Begin), vehicle_id: None, all_vehicles: false },
+    ] {
         let error = run(Cli { config: Some(config_path.clone()), command }).await
-            .expect_err("Fleet setup is refused").to_string();
-        assert!(error.starts_with("provider_parked: "), "{error}");
+            .expect_err("setup without a configuration");
+        assert!(!error.to_string().starts_with("source_credential_disabled"), "{error}");
     }
-    let error = run(Cli { config: Some(config_path.clone()), command: Command::Setup { vehicle_id: Some(7), all_vehicles: false } }).await
-        .expect_err("setup without a configuration");
-    assert!(!error.to_string().starts_with("source_credential_disabled"), "{error}");
     fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).expect("unseal");
     let entries: Vec<_> = fs::read_dir(temporary.path()).expect("listing").map(|entry| entry.expect("entry").file_name()).collect();
     assert_eq!(entries, vec![std::ffi::OsString::from("sealed")], "nothing was created or read");
@@ -1886,17 +1891,25 @@ fn setup_command_takes_only_a_positive_optional_vehicle() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn fleet_setup_takes_no_input_and_is_parked() {
-    assert!(matches!(Cli::try_parse_from(["tesatlas-hub", "setup-fleet"]).expect("parked verb").command, Command::SetupFleet));
-    for args in [vec!["setup-fleet", "--vehicle-id", "70"], vec!["setup-fleet", "--all-vehicles"], vec!["setup-fleet", "--sign-in"]] {
-        let mut all = vec!["tesatlas-hub"];
-        all.extend(args.clone());
-        assert!(Cli::try_parse_from(all).is_err(), "{args:?}");
+fn fleet_sign_in_setup_fleet_grammar_routes_to_the_service() {
+    use tesatlas_hub::runtime::operator::{admission::{Route, requires_user_hub_admission as command_requires_user_hub_admission, route}, cli::FleetSetupStep};
+    let parse = |args: &[&str]| Cli::try_parse_from([&["tesatlas-hub"][..], args].concat()).map(|cli| cli.command);
+    assert!(matches!(parse(&["setup-fleet"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: false }));
+    assert!(matches!(parse(&["setup-fleet", "--vehicle-id", "70"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: Some(70), all_vehicles: false }));
+    assert!(matches!(parse(&["setup-fleet", "--all-vehicles"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: true }));
+    assert!(matches!(parse(&["setup-fleet", "begin"]).expect("begin"), Command::SetupFleet { step: Some(FleetSetupStep::Begin), .. }));
+    for args in [
+        vec!["setup-fleet", "--sign-in"], vec!["setup-fleet", "--vehicle-id", "70", "--all-vehicles"],
+        vec!["setup-fleet", "begin", "--all-vehicles"], vec!["setup-fleet", "--vehicle-id", "70", "begin"],
+        vec!["setup-fleet", "--client-secret", "x"], vec!["setup-fleet", "--access-token-file", "x"],
+    ] {
+        assert!(parse(&args).is_err(), "{args:?}");
     }
-    assert_eq!(
-        tesatlas_hub::runtime::operator::admission::route(&Command::SetupFleet),
-        tesatlas_hub::runtime::operator::admission::Route::Refused("provider_parked")
-    );
+    for command in [parse(&["setup-fleet"]).expect("redeem"), parse(&["setup-fleet", "begin"]).expect("begin")] {
+        assert_eq!(route(&command), Route::Service);
+        assert!(!command_requires_user_hub_admission(&command), "forwarded, never the lifetime lock");
+    }
+    assert_eq!(route(&Command::ConfigureFleetTelemetry), Route::Refused("provider_parked"));
 }
 
 #[cfg(target_os = "macos")]
@@ -2029,7 +2042,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
     // never take the lifetime lock themselves (ruling R5); Fleet is refused.
     for command in [
         Command::Setup { vehicle_id: None, all_vehicles: false },
-        Command::SetupFleet,
+        Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: false },
         Command::ExportRecoveryCredentials {
             destination: PathBuf::from("credentials.tthcr"),
             recovery_key_file: PathBuf::from("recovery.key"),

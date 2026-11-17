@@ -389,11 +389,27 @@ pub enum Command {
         #[arg(long)]
         all_vehicles: bool,
     },
-    /// Fleet API setup. Fleet is parked: always refused with `provider_parked`.
+    /// Sign the Hub in to the Fleet API with your own Tesla developer application
+    /// (polling only). `setup-fleet begin` reads one bounded
+    /// {"clientId","region","redirectUri"} JSON object from stdin and prints the
+    /// regional authorise URL and its binding; `setup-fleet` then reads
+    /// {"code","redirectUri","clientId","clientSecret","region"}. Both are
+    /// forwarded to the running service, which exchanges the code and discovers
+    /// the vehicles inside an open collection window. The client secret is used
+    /// for the exchange only and never stored. Never accepts tokens.
     #[cfg(unix)]
-    #[command(name = "setup-fleet")]
-    SetupFleet,
-    /// Fleet Telemetry configuration. Fleet is parked: always refused with `provider_parked`.
+    #[command(name = "setup-fleet", args_conflicts_with_subcommands = true)]
+    SetupFleet {
+        #[command(subcommand)]
+        step: Option<FleetSetupStep>,
+        /// Tesla vehicle id. Required only when discovery finds multiple vehicles.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
+        vehicle_id: Option<i64>,
+        /// Configure every vehicle returned by the Tesla account.
+        #[arg(long)]
+        all_vehicles: bool,
+    },
+    /// Fleet Telemetry configuration. Fleet telemetry push is not offered: always refused.
     #[cfg(unix)]
     #[command(name = "configure-fleet-telemetry")]
     ConfigureFleetTelemetry,
@@ -694,6 +710,14 @@ pub enum BackupPasswordAction {
     Store,
     Compare,
     Status,
+}
+
+/// The first step of the Fleet sign-in (`setup-fleet begin`).
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Subcommand)]
+pub enum FleetSetupStep {
+    /// Start a Fleet sign-in: print the regional authorise URL and its binding.
+    Begin,
 }
 
 /// Collection-window verbs (docs/operations/collection-windows.md).
