@@ -356,4 +356,31 @@ final class HubApplicationActivationTests: XCTestCase {
         let main = try String(contentsOf: sources.appendingPathComponent("main.swift"), encoding: .utf8)
         XCTAssertTrue(main.contains("HubApplicationActivation.launchPolicy()"))
     }
+
+    /// M08-T24: only `HubUIPresentation.playRefusalSound()` may call the system beep.
+    func testNoAppSourceCallsTheSystemBeepOutsideTheRefusalSoundFunction() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("TesatlasHubApp")
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        XCTAssertFalse(files.isEmpty)
+        var offenders: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for (index, line) in text.components(separatedBy: "\n").enumerated()
+            where line.contains("NSSound.beep(") || line.contains("NSBeep(") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("//") { continue }
+                if file.lastPathComponent == "HubTestUI.swift", trimmed == "NSSound.beep()" { continue }
+                offenders.append("\(file.lastPathComponent):\(index + 1)")
+            }
+        }
+        XCTAssertEqual(offenders, [])
+    }
+
+    func testRefusalSoundIsSilentAndCountedUnderTests() {
+        let before = HubUIPresentation.refusalSoundCountForTesting
+        HubUIPresentation.playRefusalSound()
+        XCTAssertEqual(HubUIPresentation.refusalSoundCountForTesting, before + 1)
+    }
 }
