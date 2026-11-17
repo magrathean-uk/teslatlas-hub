@@ -266,6 +266,7 @@ time you want Hub to stop collecting.
      window.
    Hub's consumption anchor stays in the login keychain, so restoring an older
    data directory does not make a used grant valid again.
+   When the login keychain is locked while Hub reads an anchor, macOS may ask to unlock it. For the read of an anchor saved by an earlier build, Hub waits five seconds, never stops the system helper, and treats the anchor as unavailable until a later load.
 3. **Confirm the other logger resumed.** In the other logger's database, check
    that the newest position timestamp for each vehicle advances over several
    minutes while the car is driving or awake. Hub is not involved in this

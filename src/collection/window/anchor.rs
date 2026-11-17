@@ -119,15 +119,15 @@ impl KeychainAnchor {
 }
 
 impl KeychainAnchor {
-    /// Runs `security`. A rename step (DEC-160) passes its unlock check: the
-    /// child starts only when the keychain is unlocked just before, and the
+    /// Runs `security`. A rename step (DEC-160) passes its still-found check: the
+    /// child starts only when the item is found without interaction just before, and the
     /// step stops waiting for it at a deadline (the child is left to end by
     /// itself, never killed), so it never holds a load or a write up.
     fn security(&self, args: Vec<String>, rename_step: Option<&dyn Fn() -> bool>) -> Result<std::process::Output, Refusal> {
         let mut command = Command::new(SECURITY);
         command.args(args);
         let output = match rename_step {
-            Some(unlocked) => crate::platform::name_migration::keychain::bounded_output(&mut command, unlocked),
+            Some(still_found) => crate::platform::name_migration::keychain::bounded_output(&mut command, still_found),
             None => command.output(),
         };
         output.map_err(|_| Refusal::AnchorUnavailable)
@@ -159,12 +159,12 @@ impl KeychainAnchor {
     }
 
     /// Runs `step` with this service's item as a rename step: a no-prompt
-    /// existence check, then an unlock check immediately before any bounded
+    /// existence check, then a still-found check immediately before any bounded
     /// `security` read, and retirement with the Keychain's user interface off
     /// (DEC-160).
     fn rename_step<T>(&self, step: impl FnOnce(&dyn AnchorStore) -> T) -> T {
         use crate::platform::name_migration::keychain::{AnchorStep, SystemNoPromptItems};
-        let read_value = |name: &str, unlocked: &dyn Fn() -> bool| self.read_own(name, Some(unlocked));
+        let read_value = |name: &str, still_found: &dyn Fn() -> bool| self.read_own(name, Some(still_found));
         step(&AnchorStep { service: &self.service, items: &SystemNoPromptItems, read_value: &read_value })
     }
 }

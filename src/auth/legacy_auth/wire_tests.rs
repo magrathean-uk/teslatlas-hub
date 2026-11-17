@@ -233,12 +233,12 @@ fn assert_policy_request(seen: &Seen) {
     assert_eq!(seen.header("content-type"), Some("application/json"));
     let agent = seen.header("user-agent").unwrap();
     let version = agent
-        .strip_prefix("Tesatlas-Hub/")
+        .strip_prefix("Teslatlas-Hub/")
         .unwrap_or_else(|| panic!("user agent {agent}"));
     assert!(version_is_semver_like(version), "user agent {agent}");
     assert_eq!(
         agent,
-        format!("Tesatlas-Hub/{}", env!("CARGO_PKG_VERSION"))
+        format!("Teslatlas-Hub/{}", env!("CARGO_PKG_VERSION"))
     );
     assert_eq!(
         seen.json_body(),
@@ -283,7 +283,7 @@ async fn t14_the_request_has_the_exact_body_and_the_three_policy_headers() {
     assert_eq!(REFRESH_REQUEST_HEADERS.len(), 3);
     assert_eq!(
         HUB_USER_AGENT,
-        format!("Tesatlas-Hub/{}", env!("CARGO_PKG_VERSION"))
+        format!("Teslatlas-Hub/{}", env!("CARGO_PKG_VERSION"))
     );
 }
 

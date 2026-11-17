@@ -7,7 +7,7 @@
 //! current service first, and only when it is missing there under its earlier
 //! service. The rules the App's rename review set:
 //! - a healthy load never fails and never waits on a new step;
-//! - a Keychain that cannot be read now (locked, or a prompt would be needed)
+//! - a Keychain that cannot be read now (a prompt would be needed)
 //!   defers the step: the read reports what it reports today, nothing latches
 //!   and nothing is deleted;
 //! - an earlier item is retired only after the current one reads back with
@@ -22,14 +22,15 @@
 //! path adds no change at all: a missing current anchor is read from the
 //! earlier item, and the earlier item is retired only after the next current
 //! write reads back. Every added step first asks the Keychain with its user
-//! interface turned off ([`NoPromptItems`]) whether the item exists: a locked
-//! keychain is refused there (unavailable, nothing changes) and an absent item
-//! needs no further call. Only an item shown to exist on an unlocked keychain
-//! is read through `security`, which created it and which its access list
-//! trusts. Immediately before that child starts, the keychain it would use is
-//! asked again, in process and with the user interface off, whether it is
-//! unlocked ([`NoPromptItems::unlocked`]); a locked keychain, or one whose state
-//! cannot be read, skips the step as unavailable. The caller waits for the
+//! interface turned off ([`NoPromptItems`]) whether the item exists: a search
+//! that would need a dialog is refused there (unavailable, nothing changes) and
+//! an absent item needs no further call. Only an item shown to exist is read
+//! through `security`, which created it and which its access list trusts.
+//! Immediately before that child starts, the item is looked up again, in
+//! process and with the user interface off ([`NoPromptItems::still_found`]); an
+//! item no longer found that way, or a lookup that fails, skips the step as
+//! unavailable. This shows only that the item is present and can be found
+//! without interaction. The caller waits for the
 //! child at most [`STEP_DEADLINE`]; a child still running then is never killed
 //! or signalled (a client stopped while it waits in a Keychain dialog crashed
 //! the security daemon, incident of 14 November): the wait is abandoned, the
@@ -146,21 +147,21 @@ pub fn password_store(
 /// How long one of the rename's own `security` steps may take.
 pub const STEP_DEADLINE: Duration = Duration::from_secs(5);
 
-/// Runs `command` (a rename step's `security` call) once `unlocked` says the
-/// keychain it would use is unlocked, waiting for it at most [`STEP_DEADLINE`].
-pub fn bounded_output(command: &mut Command, unlocked: &dyn Fn() -> bool) -> io::Result<Output> {
-    bounded_output_within(command, STEP_DEADLINE, unlocked)
+/// Runs `command` (a rename step's `security` call) once `still_found` says the
+/// item can still be found without interaction, waiting for it at most [`STEP_DEADLINE`].
+pub fn bounded_output(command: &mut Command, still_found: &dyn Fn() -> bool) -> io::Result<Output> {
+    bounded_output_within(command, STEP_DEADLINE, still_found)
 }
 
-/// [`bounded_output`] with its deadline. Not run, and refused, when `unlocked`
+/// [`bounded_output`] with its deadline. Not run, and refused, when `still_found`
 /// (asked immediately before the child starts) says no; a time-out when the
 /// child outlives `deadline`. Either way the step is not done.
-pub fn bounded_output_within(command: &mut Command, deadline: Duration, unlocked: &dyn Fn() -> bool) -> io::Result<Output> {
-    match run_step(command, deadline, unlocked) {
+pub fn bounded_output_within(command: &mut Command, deadline: Duration, still_found: &dyn Fn() -> bool) -> io::Result<Output> {
+    match run_step(command, deadline, still_found) {
         StepRun::Finished(output) => output,
-        StepRun::Locked => Err(io::Error::new(
+        StepRun::NotFound => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "the keychain is locked or its state cannot be read",
+            "the item could not be found without interaction",
         )),
         StepRun::Abandoned(reaper) => {
             // The reaper keeps running detached; dropping its handle never stops the child.
@@ -173,17 +174,17 @@ pub fn bounded_output_within(command: &mut Command, deadline: Duration, unlocked
 /// How one bounded step ended.
 enum StepRun {
     Finished(io::Result<Output>),
-    /// The keychain was locked, or its state could not be read: no child ran.
-    Locked,
+    /// The item could not be found without interaction just before the child would start: no child ran.
+    NotFound,
     /// The child outlived the deadline. It was neither killed nor signalled;
     /// it ends by itself and the background reaper (when one could start)
     /// collects it and its output.
     Abandoned(Option<JoinHandle<io::Result<Output>>>),
 }
 
-fn run_step(command: &mut Command, deadline: Duration, unlocked: &dyn Fn() -> bool) -> StepRun {
-    if !unlocked() {
-        return StepRun::Locked;
+fn run_step(command: &mut Command, deadline: Duration, still_found: &dyn Fn() -> bool) -> StepRun {
+    if !still_found() {
+        return StepRun::NotFound;
     }
     let mut child = match command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(child) => child,
@@ -217,17 +218,17 @@ fn reap_in_background(child: std::process::Child) -> Option<JoinHandle<io::Resul
 
 /// The Keychain with its user interface turned off: whether an item exists
 /// (its attributes only, never its value) and its removal. Neither can show
-/// a dialog: a locked keychain, or an item whose removal would need one, is
+/// a dialog: a search or removal that would need one is
 /// refused as unavailable.
 pub trait NoPromptItems: Send + Sync {
     fn exists(&self, service: &str, account: &str) -> Result<bool, Refusal>;
     fn remove(&self, service: &str, account: &str) -> Result<(), Refusal>;
-    /// Whether the keychain that holds the item, the one a `security` child
-    /// searching the same list would use, is unlocked now. Asked in process
-    /// with the user interface off, immediately before such a child starts:
-    /// `Ok(false)` when it is locked (or the item is gone), an error when its
-    /// state cannot be read. Either one skips the child.
-    fn unlocked(&self, service: &str, account: &str) -> Result<bool, Refusal>;
+    /// Whether the item is still present and can be found without
+    /// interaction, over the search list a `security` child would use. Asked
+    /// in process with the user interface off, immediately before such a child
+    /// starts: `Ok(false)` when it is not found, an error when the lookup
+    /// fails. Either one skips the child.
+    fn still_found(&self, service: &str, account: &str) -> Result<bool, Refusal>;
 }
 
 /// The owner's keychain search list through the Security framework.
@@ -246,7 +247,7 @@ impl SystemNoPromptItems {
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
 /// A step that would need the Keychain's user interface, which is off: for a
-/// search, the keychain is locked and only its unlock dialog could open it.
+/// search, the keychain would need its dialog before it could be searched.
 #[cfg(target_os = "macos")]
 const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
 
@@ -275,14 +276,12 @@ impl NoPromptItems for SystemNoPromptItems {
         }
     }
 
-    /// A search of a locked keychain needs its unlock dialog, so with the user
-    /// interface off it is refused (`errSecInteractionNotAllowed`) instead of
-    /// asking. The search runs over the owner's search list, as the `security`
-    /// child does, so a hit means the keychain holding the item was searched
-    /// unlocked at this moment. The crate has no unsafe code, and the Security
-    /// framework binding offers no lock-status call, so this search is the
-    /// in-process status check.
-    fn unlocked(&self, service: &str, account: &str) -> Result<bool, Refusal> {
+    /// A search that would need a dialog is refused with the user interface
+    /// off (`errSecInteractionNotAllowed`) instead of asking, and counts as not
+    /// found. The search runs over the owner's search list, as the `security`
+    /// child does, so a hit shows only that the item is present and can be
+    /// found without interaction at this moment.
+    fn still_found(&self, service: &str, account: &str) -> Result<bool, Refusal> {
         use crate::runtime::backup_schedule::keychain::with_user_interface_off;
         use security_framework::item::Limit;
         let found = with_user_interface_off(|| {
@@ -306,7 +305,7 @@ impl NoPromptItems for SystemNoPromptItems {
     fn remove(&self, _service: &str, _account: &str) -> Result<(), Refusal> {
         Err(Refusal::AnchorUnavailable)
     }
-    fn unlocked(&self, _service: &str, _account: &str) -> Result<bool, Refusal> {
+    fn still_found(&self, _service: &str, _account: &str) -> Result<bool, Refusal> {
         Err(Refusal::AnchorUnavailable)
     }
 }
@@ -318,13 +317,13 @@ pub struct AnchorStep<'a> {
     pub service: &'a str,
     pub items: &'a dyn NoPromptItems,
     /// Reads an item shown to exist, through `/usr/bin/security`, bounded.
-    /// It is handed the unlock check, which it asks immediately before its
+    /// It is handed the still-found check, which it asks immediately before its
     /// child starts ([`bounded_output`]).
     pub read_value: ReadValue<'a>,
 }
 
 /// How an [`AnchorStep`] reads a value once the item is shown to exist: the
-/// item's name, and whether its keychain is unlocked now.
+/// item's name, and whether it can still be found without interaction.
 pub type ReadValue<'a> = &'a (dyn Fn(&str, &dyn Fn() -> bool) -> Result<Option<String>, Refusal> + Sync);
 
 impl AnchorStore for AnchorStep<'_> {
@@ -332,8 +331,8 @@ impl AnchorStore for AnchorStep<'_> {
         if !self.items.exists(self.service, name)? {
             return Ok(None);
         }
-        let unlocked = || self.items.unlocked(self.service, name) == Ok(true);
-        (self.read_value)(name, &unlocked)
+        let still_found = || self.items.still_found(self.service, name) == Ok(true);
+        (self.read_value)(name, &still_found)
     }
     fn write(&self, _name: &str, _value: &str) -> Result<(), Refusal> {
         Err(Refusal::AnchorUnavailable)
@@ -494,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_keychain_defers_without_deleting_anything() {
+    fn a_keychain_that_cannot_be_read_defers_without_deleting_anything() {
         let current = Arc::new(Store::default());
         let earlier = Store::with(EARLIER_ACCOUNT, PASSWORD);
         *earlier.read_failure.lock().unwrap() = Some(KeychainFailure::Refused);
@@ -502,10 +501,10 @@ mod tests {
         assert_eq!(current.get(ACCOUNT), None);
         *earlier.read_failure.lock().unwrap() = None;
         assert_eq!(&*keychain(&current, &earlier).read(ACCOUNT).unwrap(), PASSWORD);
-        let current_locked = Arc::new(Store::default());
-        *current_locked.read_failure.lock().unwrap() = Some(KeychainFailure::Refused);
+        let current_unreadable = Arc::new(Store::default());
+        *current_unreadable.read_failure.lock().unwrap() = Some(KeychainFailure::Refused);
         let earlier = Store::with(EARLIER_ACCOUNT, PASSWORD);
-        assert_eq!(keychain(&current_locked, &earlier).read(ACCOUNT).err(), Some(KeychainFailure::Refused));
+        assert_eq!(keychain(&current_unreadable, &earlier).read(ACCOUNT).err(), Some(KeychainFailure::Refused));
         assert_eq!(earlier.get(EARLIER_ACCOUNT).as_deref(), Some(PASSWORD));
     }
 
@@ -528,7 +527,7 @@ mod tests {
     }
 
     /// An injected anchor item: each rename step can fail, as a Keychain that
-    /// is locked, needs a prompt or times out would.
+    /// needs a prompt or times out would.
     #[derive(Default)]
     struct Item {
         values: MemoryAnchor,
@@ -655,21 +654,21 @@ mod tests {
         assert_eq!(output.stdout, b"41\n");
     }
 
-    /// M08-T12 finding 5 (a): the unlock check is asked immediately before
-    /// the child would start; a locked keychain (or an unreadable state)
+    /// M08-T12 finding 5 (a): the still-found check is asked immediately before
+    /// the child would start; an item no longer found (or a failed lookup)
     /// starts no child at all.
     #[test]
-    fn a_rename_step_on_a_locked_keychain_starts_no_child() {
+    fn a_rename_step_whose_item_is_no_longer_found_starts_no_child() {
         let scratch = tempfile::tempdir().unwrap();
         let marker = scratch.path().join("ran");
         let mut touch = Command::new("/usr/bin/touch");
         touch.arg(&marker);
         let asked = std::sync::atomic::AtomicUsize::new(0);
-        let locked = || {
+        let not_found = || {
             asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             false
         };
-        let error = bounded_output_within(&mut touch, Duration::from_secs(5), &locked).unwrap_err();
+        let error = bounded_output_within(&mut touch, Duration::from_secs(5), &not_found).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert!(!marker.exists(), "no child ran");
@@ -678,16 +677,16 @@ mod tests {
     }
 
     /// An injected no-prompt Keychain: items by (service, account), and
-    /// whether it refuses (a locked keychain, or a removal needing a dialog).
+    /// whether it refuses (a search or removal needing a dialog).
     #[derive(Default)]
     struct NoPrompt {
         items: Mutex<HashMap<(String, String), String>>,
         refuses_lookup: Mutex<bool>,
         refuses_removal: Mutex<bool>,
-        /// The keychain is locked by the time the child would start.
-        locked: Mutex<bool>,
-        /// Its lock state cannot be read.
-        state_unreadable: Mutex<bool>,
+        /// The item is no longer found by the time the child would start.
+        gone: Mutex<bool>,
+        /// The lookup fails.
+        lookup_fails: Mutex<bool>,
     }
 
     impl NoPromptItems for NoPrompt {
@@ -704,11 +703,11 @@ mod tests {
             self.items.lock().unwrap().remove(&(service.to_owned(), account.to_owned()));
             Ok(())
         }
-        fn unlocked(&self, service: &str, account: &str) -> Result<bool, Refusal> {
-            if *self.state_unreadable.lock().unwrap() {
+        fn still_found(&self, service: &str, account: &str) -> Result<bool, Refusal> {
+            if *self.lookup_fails.lock().unwrap() {
                 return Err(Refusal::AnchorUnavailable);
             }
-            Ok(!*self.locked.lock().unwrap() && self.exists(service, account)?)
+            Ok(!*self.gone.lock().unwrap() && self.exists(service, account)?)
         }
     }
 
@@ -726,11 +725,11 @@ mod tests {
         let current = MemoryAnchor::new();
         let security_reads = Mutex::new(Vec::<String>::new());
         // The injected `security` read keeps the production order: it asks the
-        // unlock check first and starts its child only when that says yes.
+        // still-found check first and starts its child only when that says yes.
         let read_value = |service: &'static str| {
             let (items, reads) = (&keychain.items, &security_reads);
-            move |name: &str, unlocked: &dyn Fn() -> bool| -> Result<Option<String>, Refusal> {
-                if !unlocked() {
+            move |name: &str, still_found: &dyn Fn() -> bool| -> Result<Option<String>, Refusal> {
+                if !still_found() {
                     return Err(Refusal::AnchorUnavailable);
                 }
                 reads.lock().unwrap().push(service.to_owned());
@@ -759,15 +758,15 @@ mod tests {
         security_reads.lock().unwrap().clear();
         assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").unwrap(), None);
         assert!(security_reads.lock().unwrap().is_empty());
-        // A locked keychain: unavailable (never missing), still no `security` read.
+        // A refused lookup: unavailable (never missing), still no `security` read.
         keychain.items.lock().unwrap().insert(key(EARLIER), "41".to_owned());
         *keychain.refuses_lookup.lock().unwrap() = true;
         assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").err(), Some(Refusal::AnchorUnavailable));
         assert!(security_reads.lock().unwrap().is_empty());
         *keychain.refuses_lookup.lock().unwrap() = false;
-        // Locked between the lookup and the child, or its state unreadable:
+        // Gone between the lookup and the child, or the lookup failing:
         // unavailable, no `security` read, the earlier item kept for a later load.
-        for flag in [&keychain.locked, &keychain.state_unreadable] {
+        for flag in [&keychain.gone, &keychain.lookup_fails] {
             *flag.lock().unwrap() = true;
             assert_eq!(read_anchor(&MemoryAnchor::new(), &earlier_step, "consumed").err(), Some(Refusal::AnchorUnavailable));
             assert!(security_reads.lock().unwrap().is_empty());
