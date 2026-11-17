@@ -917,16 +917,18 @@ final class FleetSignInFlowTests: XCTestCase {
         }
         XCTAssertTrue(try confirmed(FleetFlowRunner.figures { _ in }))
         XCTAssertTrue(try confirmed(FleetFlowRunner.figures { $0["collectionIntervalSeconds"] = 300 }))
-        for (name, change) in [
-            ("cap", { (answer: inout [String: Any]) in answer["monthlyCapCents"] = 1_001 }),
-            ("driving", { answer in answer["pollingSeconds"] = ["driving": 31, "charging": 120, "updating": 300,
-                                                                 "online": 120, "stateCheck": 600, "inventory": 3_600] }),
-            ("data price", { answer in answer["requestsPerDollar"] = ["data": 400, "state": 500] }),
-            ("list not billed", { answer in answer["requestsPerDollar"] = ["data": 500, "state": NSNull()] as [String: Any] }),
-            ("unknown field", { answer in answer["wakeRequestsPerDollar"] = 500 })
-        ] as [(String, (inout [String: Any]) -> Void)] {
-            XCTAssertFalse(try confirmed(FleetFlowRunner.figures(change)), name)
-            XCTAssertFalse(fixture.controller.fleetConsentInEffect, name)
+        let polling: [String: Any] = ["driving": 31, "charging": 120, "updating": 300, "online": 120,
+                                      "stateCheck": 600, "inventory": 3_600]
+        let dataPrice: [String: Any] = ["data": 400, "state": 500]
+        let listFree: [String: Any] = ["data": 500, "state": NSNull()]
+        let changed: [(name: String, key: String, value: Any)] = [
+            ("cap", "monthlyCapCents", 1_001), ("driving", "pollingSeconds", polling),
+            ("data price", "requestsPerDollar", dataPrice), ("list not billed", "requestsPerDollar", listFree),
+            ("unknown field", "wakeRequestsPerDollar", 500)
+        ]
+        for change in changed {
+            XCTAssertFalse(try confirmed(FleetFlowRunner.figures { $0[change.key] = change.value }), change.name)
+            XCTAssertFalse(fixture.controller.fleetConsentInEffect, change.name)
             try Self.expectRefused { fixture.controller.discoverFleetVehicles(completion: $0) }
         }
         fixture.runner.figuresAnswer = .failure(HubActionError.commandExited(1, "config_unreadable: Fixed text."))
