@@ -110,7 +110,7 @@ final class BackupSettingsView: NSView {
     // MARK: Back up now
 
     @objc func backUpNowPressed() {
-        guard mutationsEnabled, mutationAllowed(), !runState.isBusy else { NSSound.beep(); return }
+        guard mutationsEnabled, mutationAllowed(), !runState.isBusy else { HubUIPresentation.playRefusalSound(); return }
         let started = Date()
         setRunState(.running)
         backend.backUpNow { [weak self] outcome in
@@ -175,7 +175,7 @@ final class BackupSettingsView: NSView {
     // MARK: Schedule
 
     @objc func chooseFolderPressed() {
-        guard mutationsEnabled, mutationAllowed() else { NSSound.beep(); return }
+        guard mutationsEnabled, mutationAllowed() else { HubUIPresentation.playRefusalSound(); return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -211,7 +211,7 @@ final class BackupSettingsView: NSView {
     }
 
     @objc func savePressed() {
-        guard mutationsEnabled, mutationAllowed() else { NSSound.beep(); return }
+        guard mutationsEnabled, mutationAllowed() else { HubUIPresentation.playRefusalSound(); return }
         let edited = editedSettings()
         let password = passwordField.stringValue.isEmpty ? nil : passwordField.stringValue
         if let problem = edited.problem(dataDirectory: backend.dataDirectory, newPassword: password) {

@@ -284,7 +284,7 @@ final class ImportAfterWindowsSheetController: NSWindowController {
     }
 
     @objc private func cancelPressed() {
-        guard !running else { NSSound.beep(); return }
+        guard !running else { HubUIPresentation.playRefusalSound(); return }
         close(with: nil)
     }
 
