@@ -76,10 +76,14 @@ fn safe_stat(stat: &rustix::fs::Stat) -> bool {
         && stat.st_mode & 0o077 == 0 && stat.st_mode & 0o400 != 0
 }
 
+// The stat fields' integer types differ between platforms and between
+// rustix's backends, so each comparison names its type; a cast that is
+// needless on one platform is needed on another.
+#[allow(clippy::unnecessary_cast)]
 fn matches_stat(metadata: &fs::Metadata, stat: &rustix::fs::Stat) -> bool {
-    metadata.dev() == stat.st_dev as u64 && metadata.ino() == stat.st_ino
-        && metadata.uid() == stat.st_uid && metadata.mode() == stat.st_mode as u32
+    metadata.dev() == stat.st_dev as u64 && metadata.ino() == stat.st_ino as u64
+        && metadata.uid() == stat.st_uid as u32 && metadata.mode() == stat.st_mode as u32
         && metadata.len() == stat.st_size as u64
-        && metadata.mtime() == stat.st_mtime
-        && metadata.mtime_nsec() == stat.st_mtime_nsec
+        && metadata.mtime() == stat.st_mtime as i64
+        && metadata.mtime_nsec() == stat.st_mtime_nsec as i64
 }
