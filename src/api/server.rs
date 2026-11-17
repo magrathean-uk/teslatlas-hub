@@ -1071,7 +1071,8 @@ where
 /// `summary_now_ms` pins the clock of the current summary on the Serve router,
 /// TLS or plain loopback when no TLS is configured (epoch milliseconds; `None`
 /// keeps the system clock): only a Fixture-mode
-/// source run passes `Some`, from the fixture's own marker. Callers that keep
+/// source run passes `Some`, from the fixture's own marker. `on_listening`
+/// runs once the listeners are bound (see [`ListeningHook`]). Callers that keep
 /// the system clock use [`serve_for_admitted_user`].
 #[cfg(unix)]
 #[doc(hidden)]
@@ -1082,6 +1083,7 @@ pub async fn serve_for_admitted_user_at<F>(
     admission: std::sync::Arc<crate::hub_user_process::AdmittedUserHub>,
     cursor_key: Option<CursorKey>,
     summary_now_ms: Option<i64>,
+    on_listening: Option<ListeningHook>,
     shutdown: F,
 ) -> std::io::Result<()>
 where
@@ -1150,6 +1152,7 @@ where
         cursor_key,
         Some(admission),
         summary_now_ms,
+        on_listening,
         shutdown,
     )
     .await;
@@ -1184,6 +1187,7 @@ async fn serve_with_cursor_key_at<F>(
     cursor_key: Option<crate::protocol::CursorKey>,
     admission: Option<ServerAdmission>,
     summary_now_ms: Option<i64>,
+    on_listening: Option<ListeningHook>,
     shutdown: F,
 ) -> std::io::Result<()>
 where
@@ -1272,6 +1276,7 @@ where
                     ),
                 ),
             );
+            run_listening_hook(on_listening);
             serve_two_owned_servers(public_task, private_task, shutdown).await
         } else {
             let listener = std::net::TcpListener::bind(config.bind)?;
@@ -1294,6 +1299,7 @@ where
                     ),
                 ),
             );
+            run_listening_hook(on_listening);
             let result = tokio::select! {
                 result = server_task.wait() => result,
                 () = shutdown => {
@@ -1343,6 +1349,7 @@ where
                 ),
             ),
         );
+        run_listening_hook(on_listening);
         let result = tokio::select! {
             result = server_task.wait() => result,
             () = shutdown => {
@@ -1350,6 +1357,17 @@ where
             }
         };
         result
+    }
+}
+
+/// Work the caller runs once Serve's listeners are bound and accepting, never
+/// before (M08-T22): it can then not delay the opening of the API.
+pub type ListeningHook = Box<dyn FnOnce() + Send>;
+
+#[cfg(unix)]
+fn run_listening_hook(on_listening: Option<ListeningHook>) {
+    if let Some(on_listening) = on_listening {
+        on_listening();
     }
 }
 

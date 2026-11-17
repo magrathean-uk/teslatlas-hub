@@ -95,7 +95,7 @@ final class DeviceListView: NSView {
         guard mutationsEnabled, mutationAllowed(),
               let device = devices.first(where: { Self.revokeIdentifier($0.id) == sender.identifier?.rawValue }),
               !revoking.contains(device.id) else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         guard confirmationPresenter(Self.revokeConfirmation(for: device), .alertFirstButtonReturn)
@@ -120,7 +120,7 @@ final class DeviceListView: NSView {
 
     @objc func pairPressed(_ sender: Any?) {
         guard mutationsEnabled, mutationAllowed(), !pairing else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         pairing = true

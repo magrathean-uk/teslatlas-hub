@@ -21,7 +21,7 @@ fn dense_stage_starts_at_the_first_bounded_retry_target() {
 
 #[test]
 fn position_projection_pool_returns_pages_in_source_order() {
-    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()));
+    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()), Arc::new(PositionDetachmentPolicy::new(&[], 1, None)));
     let mut pages = Vec::new();
     for ordinal in 0..4 {
         if let Some(page) = pool
@@ -1322,4 +1322,161 @@ fn staged_full_snapshot_uses_schema_2_1_with_an_empty_update_table() {
     manifest
         .validate_terminal_cursor(&key)
         .expect("empty update schema-2.1 manifest remains signed and valid");
+}
+
+#[test]
+fn broken_drive_staged_import_preserves_run_and_terminal_samples_in_valid_packs() {
+    let (_base_directory, base) = stage();
+    let drive = base
+        .get::<SourceDbDrive>(SourceDbStageTable::Drives, 10)
+        .unwrap()
+        .unwrap();
+    let position = base
+        .get::<SourceDbPosition>(SourceDbStageTable::Positions, 20)
+        .unwrap()
+        .unwrap();
+    let (_stage_directory, mut stage) = stage_with_sealed(false);
+    for id in [1, 2, 3, 11] {
+        let mut fragment = drive.clone();
+        fragment.id = id;
+        fragment.start_date_ms += (id - 10) * 5_000;
+        fragment.end_date_ms = None;
+        fragment.distance_km = None;
+        fragment.duration_min = None;
+        fragment.start_position_id = Some(100 + id);
+        fragment.end_position_id = None;
+        let mut sample = position.clone();
+        sample.id = 100 + id;
+        sample.drive_id = Some(id);
+        sample.date_ms = fragment.start_date_ms;
+        stage
+            .insert(SourceDbStageTable::Drives, id, &fragment)
+            .unwrap();
+        stage
+            .insert(SourceDbStageTable::Positions, sample.id, &sample)
+            .unwrap();
+    }
+    stage.seal().unwrap();
+    let packs = crate::private_tempdir().unwrap();
+    let built = write_staged_full_snapshot_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(packs.path()),
+        binding(),
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        SourceDbFragmentLimits {
+            max_rows_per_fragment: 3,
+            max_projected_json_bytes: 1024 * 1024,
+        },
+    )
+    .unwrap();
+    assert_eq!(built.report.completed_drives, 1);
+    assert_eq!(built.report.skipped_open_drives, 4);
+    assert_eq!(built.report.broken_drives, 4);
+    assert_eq!(built.report.projected_positions, 5);
+    assert_eq!(built.report.detached_positions, 4);
+    assert_eq!(built.report.skipped_unattached_positions, 0);
+    let mut samples = std::collections::BTreeMap::new();
+    for (index, chunk) in built.chunks.iter().enumerate() {
+        let bytes = zstd::stream::decode_all(File::open(&chunk.path).unwrap()).unwrap();
+        let path = packs.path().join(format!("inspection-{index}.sqlite"));
+        std::fs::write(&path, bytes).unwrap();
+        let connection = Connection::open(path).unwrap();
+        let fragments: i64 = connection
+            .query_row("SELECT count(*) FROM drives WHERE id != 10", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(fragments, 0);
+        let mut statement = connection
+            .prepare("SELECT id, drive_id FROM positions")
+            .unwrap();
+        for row in statement
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?))
+            })
+            .unwrap()
+        {
+            let (id, parent) = row.unwrap();
+            assert!(samples.insert(id, parent).is_none());
+        }
+    }
+    assert_eq!(
+        samples,
+        [
+            (20, Some(10)),
+            (101, None),
+            (102, None),
+            (103, None),
+            (111, None)
+        ]
+        .into()
+    );
+}
+
+#[test]
+fn broken_drive_staged_handover_positions_are_held_by_the_open_session() {
+    let (_template_dir, template) = stage();
+    let (_source_dir, mut source) = mutable_stage();
+    let mut open = template
+        .get::<SourceDbDrive>(SourceDbStageTable::Drives, 10)
+        .unwrap()
+        .unwrap();
+    open.id = 11;
+    open.end_date_ms = None;
+    open.start_position_id = None;
+    open.end_position_id = None;
+    source
+        .insert(SourceDbStageTable::Drives, 11, &open)
+        .unwrap();
+    let mut position = template
+        .get::<SourceDbPosition>(SourceDbStageTable::Positions, 20)
+        .unwrap()
+        .unwrap();
+    position.id = 21;
+    position.drive_id = Some(11);
+    source
+        .insert(SourceDbStageTable::Positions, 21, &position)
+        .unwrap();
+    source.seal().unwrap();
+    let packs = crate::private_tempdir().unwrap();
+    let result = write_staged_full_snapshot_with_limits(
+        &source,
+        &ProjectionPackWriter::new(packs.path()),
+        binding(),
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        SourceDbFragmentLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(result.report.held_open_session_positions, 1);
+    assert_eq!(result.report.detached_positions, 0);
+    assert_eq!(result.report.projected_positions, 1);
+}
+
+#[test]
+fn broken_drive_accounting_rejects_a_completed_parent_missing_from_the_projection_map() {
+    let (_directory, stage) = stage();
+    let drive = stage.get::<SourceDbDrive>(SourceDbStageTable::Drives, 10).unwrap().unwrap();
+    assert!(drive.end_date_ms.is_some());
+    let position = stage.page::<SourceDbPosition>(SourceDbStageTable::Positions, 0, 10).unwrap().rows;
+    let detachment = Arc::new(PositionDetachmentPolicy::new(&[drive], 1, None));
+    // Deliberately corrupt the map after the source policy was captured.
+    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()), detachment);
+    let mut results = Vec::new();
+    if let Some(result) = pool.submit(PositionProjectionJob { ordinal: 0, rows: position, car_id: 1 }).unwrap() {
+        results.push(result);
+    }
+    results.extend(pool.finish().unwrap());
+    let error = match results.pop().unwrap().rows {
+        Err(error) => error,
+        Ok(_) => panic!("detaching completed-drive positions must fail the import"),
+    };
+    assert!(matches!(error, SourceDbFragmentError::Projection(SourceDbProjectionError::PositionDetachmentAccounting)));
 }

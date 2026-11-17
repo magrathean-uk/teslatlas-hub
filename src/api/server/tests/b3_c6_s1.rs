@@ -322,6 +322,7 @@ async fn fx1_served_through_serve(pin: Option<i64>) -> serde_json::Value {
             None,
             Some(admission),
             pin,
+            None,
             async move {
                 let _ = shutdown_rx.await;
             },
@@ -413,6 +414,7 @@ async fn fx1_served_through_admitted_tls_serve(pin: Option<i64>) -> serde_json::
             admission,
             None,
             pin,
+            None,
             async move {
                 let _ = shutdown_rx.await;
             },
