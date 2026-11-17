@@ -535,6 +535,28 @@ fn provider_credentials_are_usable(
 fn configured_identity_from_plist(
     plist: &Path,
 ) -> io::Result<(crate::config::HubConfig, crate::protocol::Sha256Digest)> {
+    crate::config::HubConfig::load_with_digest(configured_config_path_from_plist(plist)?)
+        .map_err(io::Error::other)
+}
+
+/// The configuration the installed current LaunchAgent serves: its `--config`
+/// argument. The rename hand-over confirms the started service against it.
+pub fn installed_config_path() -> io::Result<PathBuf> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub configuration is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        configured_config_path_from_plist(&installed_plist()?)
+    }
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn configured_config_path_from_plist(plist: &Path) -> io::Result<PathBuf> {
     if fs::metadata(plist)?.len() > 1024 * 1024 {
         return Err(io::Error::other("installed plist is too large"));
     }
@@ -569,7 +591,7 @@ fn configured_identity_from_plist(
             "installed plist config path must be absolute",
         ));
     }
-    crate::config::HubConfig::load_with_digest(config_path).map_err(io::Error::other)
+    Ok(config_path.to_path_buf())
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]

@@ -577,3 +577,125 @@ fn print_disabled_output_is_read_exactly() {
     assert!(hand_over::print_disabled_lists(output, "com.example.other"));
     assert!(hand_over::print_disabled_lists("\t\"com.tesatlas.hub\" => true\n", CURRENT_LABEL));
 }
+
+// The start confirmation (M08-T16). `serving-check` is the Hub binary's own
+// verb (pairing and the history import use it); these stand-ins answer as it
+// does for each case, so the hand-over's judgement and fences are exercised
+// without launchctl or a running Hub.
+
+/// A stand-in Hub binary whose `serving-check` runs `answer` (a shell fragment
+/// that sees `$config` and `$wait`); anything else exits 2.
+fn fake_hub(home: &Home, answer: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let folder = home.layout.home.join("bin");
+    fs::create_dir_all(&folder).unwrap();
+    let program = folder.join("tesatlas-hub");
+    fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\n[ \"$#\" = 5 ] && [ \"$1\" = --config ] && [ \"$3\" = serving-check ] && [ \"$4\" = --wait-seconds ] || exit 2\nconfig=\"$2\"; wait=\"$5\"\n[ -f \"$config\" ] || exit 2\n{answer}\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    program
+}
+
+const SERVING_BETWEEN_WINDOWS: &str = r#"echo '{"status":"serving","readiness":"between_windows"}'"#;
+
+/// A running earlier Hub moved under the current name, its agent written by the
+/// app: what `migrate-names --complete --start` finds.
+fn prepared_for_start(home: &Home) -> (FakeLaunchd, PathBuf) {
+    home.seed_earlier();
+    let mut launchd = Home::running_earlier();
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert!(report.install && report.start, "{report:?}");
+    home.app_installs_current_agent();
+    (launchd, home.current().join("config.toml"))
+}
+
+#[test]
+fn handover_a_hub_with_a_car_between_windows_counts_as_started() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    // A configured car with no open window: `/readyz` is 503 `collector_absent`,
+    // which `serving-check` reports as serving `between_windows`.
+    let hub = fake_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let done = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert!(!home.plist(EARLIER_LABEL).exists(), "removed once the start is confirmed");
+    assert!(note_in(&home.current()).is_none());
+    assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "catalogue");
+}
+
+#[test]
+fn handover_inside_an_open_window_waits_out_the_collector_restart() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    // Inside a window the start's restart leaves the collector without its
+    // lease for about 11 s (lab); until it takes the lease again the answer can
+    // be a refusal. The check serves only when its wait covers the restart, and
+    // the hand-over waits for the check to finish.
+    let hub = fake_hub(
+        &home,
+        r#"sleep 1
+if [ "$wait" -ge 11 ]; then echo '{"status":"serving","readiness":"ready"}'
+else echo 'tesatlas-hub: the Hub service is running but cannot serve its history (collector_stale)' >&2; exit 1; fi"#,
+    );
+    let done = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert!(!home.plist(EARLIER_LABEL).exists());
+}
+
+#[test]
+fn handover_a_replacement_with_a_real_fault_is_refused_with_its_reason() {
+    for reason in [
+        "the Hub service is running but cannot serve its history (catalogue_unavailable)",
+        "the Hub service is running but cannot serve its history (lifecycle_quarantined)",
+        "the Hub service is not serving its configuration on its listener",
+    ] {
+        let home = Home::new();
+        let (_launchd, config) = prepared_for_start(&home);
+        let hub = fake_hub(&home, &format!("echo 'tesatlas-hub: {reason}' >&2; exit 1"));
+        let failed = hand_over::complete(&home.layout, true, || super::cli::confirm_serving(&hub, &config));
+        assert_eq!(failed.status, Status::Failed);
+        assert_eq!(failed.detail.as_deref(), Some(format!("the Hub service did not start under its current name: {reason}").as_str()));
+        assert!(home.plist(EARLIER_LABEL).exists(), "kept: the start is not confirmed");
+        assert!(note_in(&home.current()).is_some(), "the next attempt resumes");
+    }
+}
+
+#[test]
+fn handover_left_failed_by_the_strict_wait_completes_at_the_next_start_without_moving_data_again() {
+    let home = Home::new();
+    let (mut launchd, config) = prepared_for_start(&home);
+    // The 1ac8196a build: moved and running under the current label, but its
+    // start check refused the between-windows answer.
+    let failed = hand_over::complete(&home.layout, true, || {
+        Err(io::Error::new(io::ErrorKind::TimedOut, "replacement Hub service did not become stably ready"))
+    });
+    assert_eq!(failed.status, Status::Failed);
+    assert!(home.plist(EARLIER_LABEL).exists() && note_in(&home.current()).is_some());
+    launchd.loaded.insert(service(CURRENT_LABEL));
+    let calls = launchd.calls.clone();
+
+    // The fixed build's next start.
+    let report = hand_over::prepare(&home.layout, &mut launchd);
+    assert_eq!(report.status, Status::Prepared, "{report:?}");
+    assert_eq!(report.data, Some(FolderOutcome::AlreadyMoved), "no data moved twice");
+    assert!(report.install && report.start);
+    let new_calls = &launchd.calls[calls.len()..];
+    assert!(
+        new_calls.iter().all(|call| call == &format!("disable {}", service(EARLIER_LABEL))),
+        "the earlier service is neither stopped nor started again: {new_calls:?}"
+    );
+    assert!(!home.earlier().exists());
+    home.app_installs_current_agent();
+    let hub = fake_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let done = hand_over::complete(&home.layout, report.start, || super::cli::confirm_serving(&hub, &config));
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    assert!(!home.plist(EARLIER_LABEL).exists());
+    assert!(note_in(&home.current()).is_none());
+    assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "catalogue");
+    assert_eq!(hand_over::prepare(&home.layout, &mut launchd).status, Status::Nothing, "and stays done");
+}
