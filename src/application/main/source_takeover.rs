@@ -14,12 +14,18 @@
 //!    with `postgresPassword` and `encryptionKey`. A key naming a token is
 //!    refused `source_credential_disabled`, anything else
 //!    `setup_input_invalid`, before any connection;
-//! 5. the store and the credential vault are opened;
-//! 6. the source token row is read over the Hub's own read-only, repeatable
+//! 5. the store is opened read-only and must have a car set up, by the test
+//!    the awaiting-sign-in admission uses (a readable catalogue with a
+//!    configured car): refused `history_import_required` otherwise, since the
+//!    take-over belongs to a migration whose history import sets up the car
+//!    first (M09-T16, DEC-183). Nothing is read from the source, the key is
+//!    not used and nothing is written;
+//! 6. the store and the credential vault are opened;
+//! 7. the source token row is read over the Hub's own read-only, repeatable
 //!    read connection, which refuses `source_still_running` while another
 //!    client is connected to the source database, and is decrypted and
 //!    checked against Tesla's token grammar and issuer pin;
-//! 7. the vault's single take-over writer stores it as origin `source_token`
+//! 8. the vault's single take-over writer stores it as origin `source_token`
 //!    with the Hub as refresher, due for refresh at the next window.
 //!
 //! Every refusal keeps its stable code from the reader or the vault
@@ -57,6 +63,8 @@ const ENCRYPTION_KEY_MAX_BYTES: usize = 1024;
 pub(crate) const SERVICE_RUNNING: &str = "service_running";
 /// The refusal of a source URL that is not one password-free database URL.
 pub(crate) const SOURCE_URL_INVALID: &str = "source_url_invalid";
+/// The refusal on a Hub with no car set up: the history is imported first.
+pub(crate) const HISTORY_IMPORT_REQUIRED: &str = "history_import_required";
 
 /// The secrets the verb reads from standard input; zeroised on drop.
 pub(crate) struct TakeoverInput {
@@ -203,9 +211,21 @@ pub(crate) async fn run_take_over(config_path: &Path, source: &str) -> Result<Ta
     })?;
     let input = parse_input(&read_input(std::io::stdin().lock())?)?;
     // The existing-store lane is read-only and carries no credential
-    // connection: it proves the store exists, then the admitted write lane
-    // is opened (as sign-out does).
-    drop(HubStore::open_existing(&config.data_dir)?);
+    // connection: it proves the store exists and that a car is set up (the
+    // awaiting-sign-in admission's test), then the admitted write lane is
+    // opened (as sign-out does).
+    let existing = HubStore::open_existing(&config.data_dir)?;
+    existing.catalogue_check()?;
+    let car_set_up = !existing.configured_tesla_vehicles()?.is_empty();
+    drop(existing);
+    if !car_set_up {
+        drop(input);
+        return Err(OperatorRefusal::new(
+            HISTORY_IMPORT_REQUIRED,
+            "no car is set up on this Hub; the take-over belongs to a migration, so import the history first, then take over the source's login",
+        )
+        .into());
+    }
     let store = HubStore::initialize(&config.data_dir)?;
     let entry = open_command_credential_vault(store.clone(), admission, &config.data_dir).map_err(vault_refusal)?;
     let tokens = read_tokens(&source, &input).await.map_err(reader_refusal)?;

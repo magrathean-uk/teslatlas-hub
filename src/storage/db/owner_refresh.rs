@@ -103,10 +103,10 @@ impl HubStore {
     }
 
     /// B4 (M09-T16): whether a stored `signed_out` stop still holds the
-    /// stored Owner API pair at start. It does not when the pair is a proven
-    /// replacement: a stored generation that is neither the stopped one nor
-    /// descended from it by a completed refresh (so an owner sign-in or a
-    /// take-over wrote it after the stop), with no refresh unresolved. Any
+    /// stored Owner API pair at start. It does not when the stored generation
+    /// is neither the stopped one nor descended from it by a completed
+    /// refresh, and no refresh is unresolved. That proves non-descent only,
+    /// not when the pair was written or that its tokens differ. Any
     /// other `signed_out` row, one without a stopped generation included,
     /// still holds. Nothing is written: the unit clears the stale stop itself
     /// when it starts (R44a), and no other refusal is touched.
