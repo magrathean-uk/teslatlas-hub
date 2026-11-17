@@ -8345,22 +8345,36 @@ enum HubFleetSetupState: Equatable {
     case awaitingSignIn
     case awaitingVehicles
     case awaitingActivation
-    /// The full admission: a login, a car and a positive interval.
+    /// The full admission: a login, a car and a positive interval (no `state` key at all).
     case collecting
+    /// A `state` this app does not know, or one that is not a string: shown as that, with the
+    /// service's text, and no next step is chosen from it. Never read as "not Fleet" or as
+    /// collecting.
+    case unknown(state: String, serviceText: String)
 
     /// Reads one `preflight` answer. `configuredFleet` says whether the configuration names the
     /// Fleet provider (an `idle` answer carries no provider). Nil for an answer it cannot read.
     static func parse(_ output: String, configuredFleet: Bool) -> HubFleetSetupState? {
         guard let root = HubFleetJSON.object(in: output), root["status"] as? String == "ready" else { return nil }
         let fleet = (root["provider"] as? String).map { $0 == "fleet" } ?? configuredFleet
-        switch root["state"] as? String {
-        case "idle"?: return fleet ? .idle : .notFleet
-        case "awaiting_sign_in"?: return fleet ? .awaitingSignIn : .notFleet
-        case "awaiting_vehicles"?: return fleet ? .awaitingVehicles : .notFleet
-        case "awaiting_activation"?: return fleet ? .awaitingActivation : .notFleet
-        case nil: return fleet ? .collecting : .notFleet
-        default: return .notFleet
+        guard let value = root["state"] else { return fleet ? .collecting : .notFleet }
+        let serviceText = (root["message"] as? String) ?? Self.line(of: output)
+        guard let state = value as? String else {
+            return .unknown(state: String(describing: value is NSNull ? "null" : value), serviceText: serviceText)
         }
+        switch state {
+        case "idle": return fleet ? .idle : .notFleet
+        case "awaiting_sign_in": return fleet ? .awaitingSignIn : .notFleet
+        case "awaiting_vehicles": return fleet ? .awaitingVehicles : .notFleet
+        case "awaiting_activation": return fleet ? .awaitingActivation : .notFleet
+        default: return .unknown(state: state, serviceText: serviceText)
+        }
+    }
+
+    /// The service's answer as one bounded line, for an unknown state that carries no message.
+    private static func line(of output: String) -> String {
+        let line = output.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+        return line.count > 400 ? String(line.prefix(400)) + "…" : line
     }
 }
 

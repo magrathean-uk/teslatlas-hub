@@ -288,6 +288,31 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(state(#"{"status":"ready","version":"1","provider":"fleet"}"#), .collecting)
         XCTAssertEqual(state(#"{"status":"ready","state":"awaiting_sign_in","provider":"legacy","collectorEnabled":false}"#), .notFleet)
         XCTAssertNil(state("Fleet credentials are unusable: the key store is missing"))
+        // An unknown or malformed state is that, with the service's text: never "not Fleet" or collecting.
+        XCTAssertEqual(state(#"{"status":"ready","state":"awaiting_payment","provider":"fleet","message":"Fixed service text."}"#),
+                       .unknown(state: "awaiting_payment", serviceText: "Fixed service text."))
+        XCTAssertEqual(state(#"{"status":"ready","state":"awaiting_payment"}"#, fleet: false),
+                       .unknown(state: "awaiting_payment", serviceText: #"{"status":"ready","state":"awaiting_payment"}"#))
+        XCTAssertEqual(state(#"{"status":"ready","state":7,"provider":"fleet"}"#),
+                       .unknown(state: "7", serviceText: #"{"status":"ready","state":7,"provider":"fleet"}"#))
+        XCTAssertEqual(state(#"{"status":"ready","state":null,"provider":"fleet"}"#),
+                       .unknown(state: "null", serviceText: #"{"status":"ready","state":null,"provider":"fleet"}"#))
+    }
+
+    func testAnUnknownStateIsShownWithTheServicesTextAndOffersNoNextStep() throws {
+        let fixture = try Fixture(state: .awaitingSignIn)
+        defer { fixture.tearDown() }
+        fixture.runner.preflight = #"{"status":"ready","state":"awaiting_payment","provider":"fleet","message":"Fixed text for a newer state."}"#
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStateUnknownForTests != nil && !window.isBusyForTests }
+        XCTAssertEqual(window.fleetStateUnknownForTests,
+                       "Hub reports a set-up state this version of the app does not know (awaiting_payment), so it offers no next step. Hub's answer: Fixed text for a newer state.")
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.state-unknown"))
+        XCTAssertNil(window.fleetNoticeForTests)
+        XCTAssertFalse(window.continueEnabledForTests, "no next step")
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        XCTAssertEqual(fixture.runner.fleetVerbs, [], "nothing is sent from an unknown state")
     }
 
     // MARK: Refusals

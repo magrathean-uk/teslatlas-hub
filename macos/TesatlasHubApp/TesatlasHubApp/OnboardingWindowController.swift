@@ -299,6 +299,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var fleetStep: HubFleetStep = .prerequisites
     /// The waiting state's line (what the Hub waits for and the next step), from `preflight`.
     private var fleetNotice: String?
+    /// `preflight` named a set-up state this app does not know: shown, and no next step offered.
+    private var fleetStateUnknown: String?
     private var fleetPublicKey: HubFleetPublicKey?
     private var fleetStateReading: UInt64 = 0
     private var lastRenderedFleetStep: HubFleetStep?
@@ -612,6 +614,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         takeoverFailure = nil
         fleetStep = .prerequisites
         fleetNotice = nil
+        fleetStateUnknown = nil
         fleetPublicKey = nil
         sourceEncryptionKey.stringValue = ""
         render()
@@ -3330,6 +3333,7 @@ extension OnboardingWindowController {
     }
 
     fileprivate var fleetContinueEnabled: Bool {
+        guard fleetStateUnknown == nil else { return false }
         switch fleetStep {
         case .prerequisites: return fleetChecklist.allSatisfy { $0.state == .on }
         case .details:
@@ -3366,6 +3370,10 @@ extension OnboardingWindowController {
 
     func fleetBody() -> NSView {
         var views: [NSView] = []
+        if let fleetStateUnknown {
+            views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
+                                    message: fleetStateUnknown, identifier: "onboarding.fleet.state-unknown"))
+        }
         if let fleetNotice {
             views.append(noticeView(symbol: "info.circle.fill", tone: .neutral, title: nil, message: fleetNotice,
                                     identifier: "onboarding.fleet.notice"))
@@ -3531,9 +3539,10 @@ extension OnboardingWindowController {
     @objc fileprivate func fleetChecklistChanged() { updateFooter() }
 
     fileprivate func fleetContinue() {
+        // A step whose Continue is off offers nothing: no command starts from it.
+        guard fleetContinueEnabled else { return }
         switch fleetStep {
         case .prerequisites:
-            guard fleetContinueEnabled else { return }
             errorMessage = nil
             fleetStep = .details
             fillFleetDetails(from: controller.savedFleetApplication)
@@ -3817,6 +3826,7 @@ extension OnboardingWindowController {
     private func applyFleetSetupState(_ setupState: HubFleetSetupState) {
         let saved = controller.savedFleetApplication
         fillFleetDetails(from: saved)
+        fleetStateUnknown = nil
         switch setupState {
         case .awaitingSignIn:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingSignIn",
@@ -3837,6 +3847,12 @@ extension OnboardingWindowController {
         case .idle:
             fleetNotice = nil
             if let saved { fleetStep = saved.registered ? .signIn : .publicKey }
+        case let .unknown(state, serviceText):
+            // Shown as it is: no next step is chosen from a state this app does not know.
+            fleetNotice = nil
+            fleetStateUnknown = HubL10n.format("hub.fleetSetup.state.unknown",
+                fallback: "Hub reports a set-up state this version of the app does not know (%1$@), so it offers no next step. Hub's answer: %2$@",
+                arguments: [state, serviceText])
         case .notFleet:
             return
         }
@@ -3846,6 +3862,7 @@ extension OnboardingWindowController {
     #if DEBUG
     var fleetStepForTests: HubFleetStep { fleetStep }
     var fleetNoticeForTests: String? { fleetNotice }
+    var fleetStateUnknownForTests: String? { fleetStateUnknown }
     var errorMessageForTests: String? { errorMessage }
     var fleetSecretForTests: String { fleetClientSecret.stringValue }
     var fleetPublicKeyForTests: HubFleetPublicKey? { fleetPublicKey }
