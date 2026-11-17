@@ -949,7 +949,7 @@ fn validates_a_complete_open_session_fixture_and_rejects_cross_car_rows() {
 }
 
 #[test]
-fn mapped_history_is_accepted_by_the_typed_pack_gate() {
+fn broken_drive_mapped_history_is_accepted_by_the_typed_pack_gate() {
     let temporary = TempDir::new().unwrap();
     let projected = project_vehicle(&history(), 1).unwrap();
     let request = ProjectionPackRequest {
@@ -970,9 +970,13 @@ fn mapped_history_is_accepted_by_the_typed_pack_gate() {
         snapshot: &projected.snapshot,
     };
     let built = ProjectionPackWriter::new(temporary.path())
-        .write_full_snapshot(&request)
+        .write_full_snapshot_with_states_and_updates(
+            &request,
+            &projected.states,
+            &projected.updates,
+        )
         .unwrap();
-    assert_eq!(built.metadata.row_count, 6);
+    assert_eq!(built.metadata.row_count, 7);
 }
 
 #[test]
