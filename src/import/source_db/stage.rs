@@ -551,7 +551,7 @@ impl SourceDbStage {
             return Err(SourceDbStageError::StageNotSealed);
         }
         // One full integrity check per stage and run (M08-T19): a stage
-        // opened sealed, sealed here or copied from either has had it.
+        // opened sealed, sealed here, or made as a copy of either has had it.
         if !self.integrity_verified.get() {
             self.verify_integrity()?;
         }
