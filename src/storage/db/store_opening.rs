@@ -151,7 +151,9 @@ impl HubStore {
         configure(&connection)?;
         admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
         #[cfg(test)]
-        self.watch_sink(&connection)?;
+        let mut connection = connection;
+        #[cfg(test)]
+        self.watch_sink(&mut connection)?;
         Ok(connection)
     }
 
@@ -166,7 +168,7 @@ impl HubStore {
     /// heartbeat is left out: the renewal and release semantics are fixed by the specs
     /// (C3 R8, R47; C5 R33a) and the renewal writes until it meets the fence.
     #[cfg(test)]
-    fn watch_sink(&self, connection: &Connection) -> Result<(), StoreError> {
+    fn watch_sink(&self, connection: &mut Connection) -> Result<(), StoreError> {
         use rusqlite::hooks::{AuthAction, Authorization};
         use std::sync::atomic::Ordering;
         const LEASE: &str = "supervised_collector_lease";

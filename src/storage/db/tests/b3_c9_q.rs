@@ -985,7 +985,7 @@ fn c9_st55_failed_step_is_atomic() {
     use rusqlite::hooks::{AuthAction, Authorization};
     let test = "c9_st55_failed_step_is_atomic";
     let directory = crate::private_tempdir().unwrap();
-    let connection = Connection::open(directory.path().join("hub.sqlite")).unwrap();
+    let mut connection = Connection::open(directory.path().join("hub.sqlite")).unwrap();
     let before = g2_4_m1::schema_snapshot(&connection);
     connection
         .authorizer(Some(|context: rusqlite::hooks::AuthContext<'_>| {

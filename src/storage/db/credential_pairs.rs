@@ -1670,6 +1670,11 @@ impl CredentialConnection {
     pub(crate) fn test_connection(&self) -> &Connection {
         &self.connection
     }
+    /// rusqlite 0.41 installs hooks through `&mut Connection`.
+    #[cfg(test)]
+    pub(crate) fn test_connection_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
     #[cfg(test)]
     pub(crate) fn test_blob_bytes_read(&self) -> usize {
         self.blob_bytes_read

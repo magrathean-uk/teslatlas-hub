@@ -566,13 +566,13 @@ fn ct103_durability_recovery() {
     assert!(refused && status(root.path()).durability==Some(crate::db::CredentialDurabilityState::Unavailable),"CT103.failed ok record preserves store error");
     drop(vault); PROBE_CONTROL.with(|s|*s.borrow_mut()=None);
     PROBE_CONTROL.with(|slot| *slot.borrow_mut() = Some(Box::new(|connection| {
-        connection.test_connection().commit_hook(Some(|| true)).expect("install native COMMIT refusal");
+        connection.test_connection_mut().commit_hook(Some(|| true)).expect("install native COMMIT refusal");
     })));
     let vault = open(root.path());
     let refused = { let state = vault.lock().expect("state"); state.read_only && state.resume_error.is_some() };
     assert!(refused
         && status(root.path()).durability == Some(crate::db::CredentialDurabilityState::Unavailable), "CT103 native COMMIT refusal preserves unavailable");
-    vault.lock().expect("state").connection.test_connection().commit_hook(None::<fn() -> bool>).expect("remove native COMMIT refusal");
+    vault.lock().expect("state").connection.test_connection_mut().commit_hook(None::<fn() -> bool>).expect("remove native COMMIT refusal");
     drop(vault); PROBE_CONTROL.with(|slot| *slot.borrow_mut() = None);
     let observed=Arc::new(Mutex::new(Vec::new()));let events=Arc::clone(&observed);let data=root.path().to_owned();
     fixtures::probe_observer(Some(Box::new(move |point|{
