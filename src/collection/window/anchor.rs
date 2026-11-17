@@ -119,21 +119,22 @@ impl KeychainAnchor {
 }
 
 impl KeychainAnchor {
-    /// Runs `security`. A rename step (DEC-160) is `bounded`: its child is
-    /// stopped at a deadline, so it never holds a load or a write up.
-    fn security(&self, args: Vec<String>, bounded: bool) -> Result<std::process::Output, Refusal> {
+    /// Runs `security`. A rename step (DEC-160) passes its unlock check: the
+    /// child starts only when the keychain is unlocked just before, and the
+    /// step stops waiting for it at a deadline (the child is left to end by
+    /// itself, never killed), so it never holds a load or a write up.
+    fn security(&self, args: Vec<String>, rename_step: Option<&dyn Fn() -> bool>) -> Result<std::process::Output, Refusal> {
         let mut command = Command::new(SECURITY);
         command.args(args);
-        let output = if bounded {
-            crate::platform::name_migration::keychain::bounded_output(&mut command)
-        } else {
-            command.output()
+        let output = match rename_step {
+            Some(unlocked) => crate::platform::name_migration::keychain::bounded_output(&mut command, unlocked),
+            None => command.output(),
         };
         output.map_err(|_| Refusal::AnchorUnavailable)
     }
 
-    fn read_own(&self, name: &str, bounded: bool) -> Result<Option<String>, Refusal> {
-        let output = self.security(self.read_args(name), bounded)?;
+    fn read_own(&self, name: &str, rename_step: Option<&dyn Fn() -> bool>) -> Result<Option<String>, Refusal> {
+        let output = self.security(self.read_args(name), rename_step)?;
         match output.status.code() {
             Some(0) => Ok(Some(
                 String::from_utf8_lossy(&output.stdout).trim().to_owned(),
@@ -144,7 +145,7 @@ impl KeychainAnchor {
     }
 
     fn write_own(&self, name: &str, value: &str) -> Result<(), Refusal> {
-        if self.security(self.write_args(name, value), false)?.status.success() {
+        if self.security(self.write_args(name, value), None)?.status.success() {
             Ok(())
         } else {
             Err(Refusal::AnchorUnavailable)
@@ -158,11 +159,12 @@ impl KeychainAnchor {
     }
 
     /// Runs `step` with this service's item as a rename step: a no-prompt
-    /// existence check before any bounded `security` read, and retirement
-    /// with the Keychain's user interface off (DEC-160).
+    /// existence check, then an unlock check immediately before any bounded
+    /// `security` read, and retirement with the Keychain's user interface off
+    /// (DEC-160).
     fn rename_step<T>(&self, step: impl FnOnce(&dyn AnchorStore) -> T) -> T {
         use crate::platform::name_migration::keychain::{AnchorStep, SystemNoPromptItems};
-        let read_value = |name: &str| self.read_own(name, true);
+        let read_value = |name: &str, unlocked: &dyn Fn() -> bool| self.read_own(name, Some(unlocked));
         step(&AnchorStep { service: &self.service, items: &SystemNoPromptItems, read_value: &read_value })
     }
 }
@@ -172,7 +174,7 @@ struct OwnItem<'a>(&'a KeychainAnchor);
 
 impl AnchorStore for OwnItem<'_> {
     fn read(&self, name: &str) -> Result<Option<String>, Refusal> {
-        self.0.read_own(name, false)
+        self.0.read_own(name, None)
     }
     fn write(&self, name: &str, value: &str) -> Result<(), Refusal> {
         self.0.write_own(name, value)
@@ -188,7 +190,7 @@ impl AnchorStore for KeychainAnchor {
             Some(earlier) => earlier.rename_step(|earlier_step| {
                 crate::platform::name_migration::keychain::read_anchor(&OwnItem(self), earlier_step, name)
             }),
-            None => self.read_own(name, false),
+            None => self.read_own(name, None),
         }
     }
 
