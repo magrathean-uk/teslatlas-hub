@@ -173,6 +173,17 @@ final class HubRenameMigrationTests: XCTestCase {
         XCTAssertEqual(attempt, 2)
     }
 
+    func testAReplacementWithARealFaultIsOfferedAgainWithTheStepsOwnReason() {
+        let fault = "the Hub service did not start under its current name: "
+            + "the Hub service is running but cannot serve its history (catalogue_unavailable)"
+        let outcome = HubRenameMigration.handOver(run: { arguments in
+            arguments.count == 1
+                ? (0, self.report("prepared", install: true, start: true))
+                : (1, self.report("failed", detail: fault))
+        }, installAgent: {}, prepareLogs: {})
+        XCTAssertEqual(outcome, .retry(fault))
+    }
+
     func testOnlyTheInstalledAppRunsTheHandOver() {
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: ["XCTestConfigurationFilePath": "/x"]))
         XCTAssertFalse(HubRenameMigration.appliesTo(environment: [DevelopmentHubConfiguration.enableVariable: "1"]))

@@ -13,7 +13,10 @@ import Foundation
 ///    LaunchAgent, moves the Hub's folders and points the configuration at
 ///    them. The app then writes the current LaunchAgent with its own writer,
 ///    and `migrate-names --complete` starts it (when the earlier one was
-///    running) before the earlier property list is removed.
+///    running) before the earlier property list is removed. The start counts
+///    once the binary's `serving-check` confirms it (between collection
+///    windows included); this runs before the app finishes launching, so the
+///    owner sees no window until it ends, at most about 50 seconds.
 ///
 /// Every step is idempotent. A step that is deferred or fails changes nothing
 /// the next attempt cannot finish: the owner is offered Try Again or Quit, and
