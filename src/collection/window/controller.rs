@@ -1028,6 +1028,18 @@ impl WindowController {
                 if self.verify_persisted(inner, &loaded).is_err() {
                     return self.fault_locked(inner);
                 }
+                // A persisted tick is the last time this process is known to
+                // have been running. Exclude the unobserved interval even when
+                // this start must close for expiry, reboot or a bad clock.
+                if inner.state.phase == Phase::Open {
+                    let start = inner.state.watermark
+                        .max(inner.state.opened_at.unwrap_or(wall));
+                    let end = inner.state.grant.as_ref()
+                        .map_or(wall, |grant| wall.min(grant.body.expires_at));
+                    if end > start {
+                        inner.state.gaps.push(Gap { start, end });
+                    }
+                }
                 match self.verify_anchor(inner) {
                     Ok(()) => self.resume_active(inner, wall, mono),
                     // The authority cannot be checked now: close, keep the
