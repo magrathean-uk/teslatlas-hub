@@ -934,7 +934,7 @@ fn sc49_jitter() {
             &FailureClass::Refusal,
             &RetryState {
                 refusal_streak: 1,
-                ..RetryState::default()..RetryState::default()
+                ..RetryState::default()
             },
             0.0
         ),
@@ -945,7 +945,7 @@ fn sc49_jitter() {
             &FailureClass::Refusal,
             &RetryState {
                 refusal_streak: 2,
-                ..RetryState::default()..RetryState::default()
+                ..RetryState::default()
             },
             0.0
         ),
