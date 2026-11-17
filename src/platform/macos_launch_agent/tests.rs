@@ -1510,7 +1510,7 @@ fn doctor_admits(config: &HubConfig) -> bool {
 /// The refusal `preflight` gives when the selected pair is absent or not admitted.
 fn credential_refusal(config: &HubConfig) -> String {
     let store = HubStore::open_read_only(&config.data_dir).expect("store");
-    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_epoch_ms().expect("clock")).expect("status");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_clock_ms().expect("clock")).expect("status");
     crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).to_string()
 }
 
@@ -1695,4 +1695,103 @@ fn start_preflight_idle_with_a_catalogue_reads_neither_the_whole_store_nor_a_pac
     assert!(HubStore::open_immutable_read_only(&data).is_ok(), "the immutable snapshot opens");
     assert_eq!(crate::db::read_probe::take().1, 1, "the probe counts the immutable snapshot's hash of the whole file");
     assert_eq!(start(&config), Ok(idle), "idle without the whole-store check");
+}
+
+/// A clock before 1970 refuses Start in both branches with the words the
+/// whole-store check gave: "Hub data is unavailable: ..." where the awaiting
+/// rule reads the catalogue (any configured collecting Legacy Hub), and the
+/// clock's own refusal for a Hub that reaches the credentials-present branch
+/// directly (a Fleet Hub).
+#[test]
+fn start_preflight_refuses_a_clock_before_1970_in_both_branches() {
+    struct Clock;
+    impl Drop for Clock {
+        fn drop(&mut self) {
+            PREFLIGHT_CLOCK.with(|clock| clock.set(None));
+        }
+    }
+    let before_1970 = std::time::UNIX_EPOCH - Duration::from_secs(1);
+    let clock_refusal = crate::db::StoreError::RetiredLineageClock(
+        before_1970.duration_since(std::time::UNIX_EPOCH).expect_err("before 1970"),
+    )
+    .to_string();
+    assert!(clock_refusal.starts_with("cannot read the store clock for retired-lineage pack retention: "), "{clock_refusal}");
+    let unavailable = format!("Hub data is unavailable: {clock_refusal}");
+    let temporary = crate::private_tempdir().expect("temporary directory");
+
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    let fleet_data = temporary.path().join("fleet");
+    seed_fleet_ready_hub(&fleet_data);
+    let mut fleet = idle_start_config(&fleet_data);
+    fleet.collector.provider = CollectorProvider::Fleet;
+    fleet.collector.interval_seconds = 30;
+    assert_eq!(start(&awaiting).expect("awaiting")["state"], "awaiting_sign_in");
+    assert_eq!(start(&signed_in).expect("signed in")["status"], "ready");
+
+    let _clock = Clock;
+    PREFLIGHT_CLOCK.with(|clock| clock.set(Some(before_1970)));
+    assert_eq!(start(&awaiting), Err(unavailable.clone()), "awaiting the sign-in");
+    assert_eq!(start(&signed_in), Err(unavailable), "signed in");
+    assert_eq!(start(&fleet), Err(clock_refusal), "credentials present, Fleet");
+}
+
+/// The pack staging folder the service's start sweeps before its listener
+/// opens: one that is not the Hub's own private folder stops that start, and
+/// Start refuses it in both branches, with the old words where the old
+/// `preflight` could not list it either. A folder of the Hub's own that cannot
+/// be listed is made private by the start, so it passes.
+#[test]
+fn start_preflight_refuses_a_staging_folder_the_start_stops_on() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    for config in [&awaiting, &signed_in] {
+        let answer = start(config).expect("healthy");
+        let staging = config.data_dir.join("packs").join(".staging");
+        fs::create_dir_all(&staging).expect("staging folder");
+        let mode = |mode: u32| fs::set_permissions(&staging, fs::Permissions::from_mode(mode)).expect("staging mode");
+
+        mode(0o770);
+        let unsafe_staging = crate::db::StoreError::PackStartupRepair(crate::hub_pack::ProjectionPackError::UnsafeStaging(staging.clone())).to_string();
+        assert_eq!(start(config), Err(unsafe_staging), "group-writable, listable");
+        assert!(HubStore::initialize(&config.data_dir).is_err(), "the service's start stops on it");
+
+        mode(0o020);
+        let refusal = start(config).expect_err("group-writable, not listable");
+        assert!(refusal.starts_with(&format!("cannot inspect catalogue pack {}", staging.display())), "{refusal}");
+
+        mode(0o000);
+        assert_eq!(start(config), Ok(answer.clone()), "the Hub's own folder, not listable: the start makes it private");
+        drop(HubStore::initialize(&config.data_dir).expect("the service's start repairs it"));
+        assert_eq!(fs::metadata(&staging).expect("staging").permissions().mode() & 0o777, 0o700);
+        assert_eq!(start(config), Ok(answer), "repaired");
+    }
+}
+
+/// The import spool the service's start recovers before its listener opens:
+/// one that is not private stops that start, and Start refuses it in both
+/// branches with the start's own words.
+#[test]
+fn start_preflight_refuses_an_import_spool_the_start_stops_on() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    for config in [&awaiting, &signed_in] {
+        let answer = start(config).expect("healthy");
+        let spool = config.data_dir.join("import-spool");
+        fs::create_dir(&spool).expect("import spool");
+        fs::set_permissions(&spool, fs::Permissions::from_mode(0o700)).expect("private");
+        assert_eq!(start(config), Ok(answer.clone()), "a private spool");
+
+        fs::set_permissions(&spool, fs::Permissions::from_mode(0o755)).expect("not private");
+        let refusal = crate::db::StoreError::UnsafeImportSpool(spool.clone()).to_string();
+        assert_eq!(start(config), Err(refusal), "a spool that is not private");
+        assert!(
+            matches!(HubStore::initialize(&config.data_dir), Err(crate::db::StoreError::UnsafeImportSpool(path)) if path == spool),
+            "the service's start stops on it"
+        );
+        fs::remove_dir(&spool).expect("reset");
+        assert_eq!(start(config), Ok(answer), "no spool");
+    }
 }

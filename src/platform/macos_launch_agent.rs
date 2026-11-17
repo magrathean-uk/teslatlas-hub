@@ -152,6 +152,15 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// the listener opens, and the command-line `preflight` the Mac app's Start
 /// runs (M08-T25).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
+    awaits_owner_sign_in(config, || Ok(()))
+}
+
+/// [`hub_awaits_owner_sign_in`]'s rule; `after_readiness` runs once the
+/// catalogue's readiness is read (Start's `preflight` reads its clock there).
+fn awaits_owner_sign_in(
+    config: &crate::config::HubConfig,
+    after_readiness: impl FnOnce() -> Result<(), crate::db::StoreError>,
+) -> io::Result<bool> {
     if config.collector.provider != crate::config::CollectorProvider::Legacy
         || config.collector.interval_seconds == 0
         || !config.collector.legacy_auth.enabled
@@ -167,6 +176,7 @@ pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
     store.readiness_check().map_err(|error| unavailable(&error))?;
+    after_readiness().map_err(|error| unavailable(&error))?;
     if store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty() {
         return Ok(false);
     }
@@ -222,8 +232,9 @@ fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
 /// work left behind, never by the history or the packs: the set-up marker, the
 /// catalogue through the live read-only reader (`HubStore::open_read_only`,
 /// SQLite's own consistent read; no immutable snapshot, so no hash of the whole
-/// file), `readiness_check`, the configured cars and the selected pair's
-/// credential rows, decided as the `doctor` decides
+/// file), `readiness_check`, the clock, the configured cars, the start's own
+/// pack staging and import spool folders, and the selected pair's credential
+/// rows, decided as the `doctor` decides
 /// ([`crate::diagnostics::selected_credential_decision`]). No `PRAGMA
 /// quick_check` runs and no pack is opened. Damage that only those find is the
 /// `doctor`'s, the app's diagnostics report's (it runs `doctor`), backup's,
@@ -246,9 +257,11 @@ pub fn start_preflight(config: &crate::config::HubConfig) -> Result<serde_json::
         }));
     }
     // A configured Hub without the Hub's own login starts for the owner's
-    // sign-in, the serve admission's same rule (M09-T16, B2).
+    // sign-in, the serve admission's same rule (M09-T16, B2). The clock is read
+    // where the whole-store check read it, with the same refusal.
     #[cfg(target_os = "macos")]
-    if hub_awaits_owner_sign_in(config)? {
+    if awaits_owner_sign_in(config, || preflight_clock_ms().map(drop))? {
+        start_folders_usable(&config.data_dir)?;
         return Ok(serde_json::json!({
             "status": "ready",
             "state": "awaiting_sign_in",
@@ -266,10 +279,11 @@ pub fn start_preflight(config: &crate::config::HubConfig) -> Result<serde_json::
     }
     let store = crate::db::HubStore::open_read_only(&config.data_dir)?;
     store.readiness_check()?;
-    let now_ms = preflight_epoch_ms()?;
+    let now_ms = preflight_clock_ms()?;
     if store.configured_tesla_vehicles()?.is_empty() {
         return Err("at least one configured vehicle is required".into());
     }
+    start_folders_usable(&config.data_dir)?;
     let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, now_ms)?;
     if !crate::diagnostics::selected_credential_decision(&store, config, &status, now_ms)?.selected_admitted {
         return Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into());
@@ -281,9 +295,88 @@ pub fn start_preflight(config: &crate::config::HubConfig) -> Result<serde_json::
     }))
 }
 
-fn preflight_epoch_ms() -> io::Result<i64> {
-    let elapsed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(io::Error::other)?;
-    i64::try_from(elapsed.as_millis()).map_err(|_| io::Error::other("system clock exceeds epoch milliseconds"))
+/// The service's start reads two of its own folders before its listener opens
+/// and stops on what it finds there (`HubStore::initialize`,
+/// `src/storage/db/store_opening.rs`): the pack staging folder it sweeps
+/// (`cleanup_stale_pack_staging`) and the import spool it recovers
+/// (`recover_stale_import_projection_state_spools`). Read-only, this refuses
+/// what would stop that start: a staging folder that cannot be inspected or is
+/// not the Hub's own private folder (a folder of the Hub's own that is not
+/// private the start makes private, so it passes here), and an import spool
+/// that cannot be inspected or listed or is not private. Where the old
+/// `preflight` refused the same folder (its catalogue inventory listed the
+/// staging folder), the refusal keeps its words. The leftovers inside either
+/// folder are not read: deciding which of them the start would remove needs its
+/// own rules (M08-T25 notes).
+fn start_folders_usable(data_dir: &Path) -> Result<(), crate::db::StoreError> {
+    use crate::db::StoreError;
+    let own_uid = rustix::process::geteuid().as_raw();
+    let staging = data_dir.join("packs").join(".staging");
+    // The old `preflight`'s words for a pack folder it could not inspect.
+    let inspect = |source: io::Error| StoreError::InspectCatalogPack { path: data_dir.join("packs").join(".staging"), source };
+    match fs::symlink_metadata(&staging) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => return Err(inspect(source)),
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
+                || metadata.uid() != own_uid
+                || metadata.mode() & 0o022 != 0
+            {
+                fs::read_dir(&staging).map_err(inspect)?;
+                return Err(StoreError::PackStartupRepair(crate::hub_pack::ProjectionPackError::UnsafeStaging(staging)));
+            }
+        }
+    }
+    // The import spool: the start's private folder for an interrupted import,
+    // owned like the data folder, mode 0700 (`src/storage/db.rs`).
+    let spool = data_dir.join("import-spool");
+    let spool_metadata = match fs::symlink_metadata(&spool) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(StoreError::InspectImportSpool(error)),
+        Ok(metadata) => metadata,
+    };
+    let root = fs::symlink_metadata(data_dir).map_err(StoreError::InspectImportSpool)?;
+    if root.file_type().is_symlink() || !root.is_dir() {
+        return Err(StoreError::UnsafeImportSpool(data_dir.to_path_buf()));
+    }
+    if spool_metadata.file_type().is_symlink()
+        || !spool_metadata.is_dir()
+        || spool_metadata.uid() != root.uid()
+        || spool_metadata.gid() != root.gid()
+        || spool_metadata.mode() & 0o777 != 0o700
+    {
+        return Err(StoreError::UnsafeImportSpool(spool));
+    }
+    match fs::read_dir(&spool) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied && own_uid != root.uid() => Ok(()),
+        Err(error) => Err(StoreError::InspectImportSpool(error)),
+        Ok(_) => Ok(()),
+    }
+}
+
+/// The clock the whole-store check read before M08-T25 (the retired-lineage
+/// clock of `verify_referenced_packs`), with its refusals: a clock before 1970
+/// or past the millisecond range refuses Start with the words it had.
+fn preflight_clock_ms() -> Result<i64, crate::db::StoreError> {
+    let elapsed = preflight_now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(crate::db::StoreError::RetiredLineageClock)?;
+    i64::try_from(elapsed.as_millis()).map_err(|_| crate::db::StoreError::RetiredLineageClockOverflow)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A clock a test sets for Start's `preflight` on this thread.
+    static PREFLIGHT_CLOCK: std::cell::Cell<Option<std::time::SystemTime>> = const { std::cell::Cell::new(None) };
+}
+
+fn preflight_now() -> std::time::SystemTime {
+    #[cfg(test)]
+    if let Some(now) = PREFLIGHT_CLOCK.with(std::cell::Cell::get) {
+        return now;
+    }
+    std::time::SystemTime::now()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
