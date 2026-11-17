@@ -162,8 +162,9 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(window.fleetStepForTests, .signIn)
     }
 
-    func testTheFleetFlowMatchesTheRegisteredRedirectExactly() throws {
+    func testTheCallbackIsTheRegisteredURLUpToItsDefaultPortAndRootPathAndNothingElse() throws {
         let flow = try Self.flow()
+        // The same URL under RFC 3986 section 6.2: case of scheme and host, the scheme's default port.
         for accepted in ["\(Self.redirect)?code=1&state=2", "HTTPS://Example.COM/tesla/callback?code=1",
                          "https://example.com:443/tesla/callback"] {
             XCTAssertTrue(flow.isCallback(URL(string: accepted)!), accepted)
@@ -171,8 +172,33 @@ final class FleetSignInFlowTests: XCTestCase {
         for refused in ["https://example.com/tesla/callback/more?code=1", "https://example.com/tesla?code=1",
                         "http://example.com/tesla/callback?code=1", "https://www.example.com/tesla/callback",
                         "https://example.com:8443/tesla/callback", "tesla://auth/callback?code=1",
-                        "https://user@example.com/tesla/callback"] {
+                        "https://user@example.com/tesla/callback",
+                        "https://user:password@example.com/tesla/callback?code=1",
+                        "https://example.com:80/tesla/callback", "https://example.org/tesla/callback",
+                        "https://example.com.evil.test/tesla/callback", "https://example.com/tesla/callback/"] {
             XCTAssertFalse(flow.isCallback(URL(string: refused)!), refused)
+        }
+        // A registered address without a path is the same URL as its root path, as WebKit reports it.
+        XCTAssertTrue(FleetOAuthFlow.matches(URL(string: "https://example.com/?code=1")!, redirectURI: "https://example.com"))
+        XCTAssertTrue(FleetOAuthFlow.matches(URL(string: "https://example.com?code=1")!, redirectURI: "https://example.com/"))
+        XCTAssertTrue(FleetOAuthFlow.matches(URL(string: "http://example.com:80/cb")!, redirectURI: "http://example.com/cb"))
+        XCTAssertTrue(FleetOAuthFlow.matches(URL(string: "https://example.com/cb")!, redirectURI: "https://example.com:443/cb"))
+        // Every other address is refused, each difference on its own.
+        for (refused, registered) in [
+            ("https://example.com:8443/cb", "https://example.com/cb"),     // another port
+            ("https://example.com/cb", "https://example.com:8443/cb"),     // the registered port is not the default
+            ("http://example.com/cb", "https://example.com/cb"),           // another scheme
+            ("http://example.com:443/cb", "https://example.com/cb"),       // another scheme on the same port
+            ("https://example.net/cb", "https://example.com/cb"),          // another host
+            ("https://hub.example.com/cb", "https://example.com/cb"),      // a subdomain
+            ("https://owner@example.com/cb", "https://example.com/cb"),    // user information
+            ("https://example.com/cb/next", "https://example.com/cb"),     // a longer path
+            ("https://example.com/cb/", "https://example.com/cb"),         // `/cb/` is not `/cb`
+            ("https://example.com/cb", "https://example.com/cb/"),
+            ("https://example.com/CB", "https://example.com/cb"),          // the path keeps its case
+            ("https://example.com/c%62", "https://example.com/cb")         // and its encoding
+        ] {
+            XCTAssertFalse(FleetOAuthFlow.matches(URL(string: refused)!, redirectURI: registered), "\(refused) for \(registered)")
         }
         // The owner sign-in keeps its own callback, and does not take the Fleet one.
         let owner = try TeslaOAuthFlow()

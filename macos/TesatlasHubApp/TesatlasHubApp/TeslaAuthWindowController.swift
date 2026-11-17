@@ -198,8 +198,14 @@ struct FleetOAuthFlow: TeslaAuthCallbackFlow, Equatable {
         return components
     }
 
-    /// Whether `url` is the registered redirect URI (any query): scheme and host ignore case,
-    /// an absent port is the scheme's default, and the path matches exactly.
+    /// Whether `url` is the registered redirect URI (any query). The comparison is of URLs, not
+    /// of typed characters: under RFC 3986, section 6.2.3 (scheme-based normalisation) a URL with
+    /// its scheme's default port (443 for https, 80 for http), or with the path "/", is the same
+    /// URL as one without them, and scheme and host compare without case (section 6.2.2.1).
+    /// WebKit reports a navigation in that normal form, so comparing the typed characters could
+    /// never match a registered address that has no path. No other address is admitted: another
+    /// scheme, host (a subdomain included), port or path (a longer one, or `/cb/` for `/cb`), or
+    /// any user information, is refused.
     static func matches(_ url: URL, redirectURI: String) -> Bool {
         guard let expected = redirectComponents(redirectURI),
               let actual = URLComponents(url: url, resolvingAgainstBaseURL: false),
