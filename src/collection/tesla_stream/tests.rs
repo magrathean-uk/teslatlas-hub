@@ -821,7 +821,7 @@ fn sc48_schedules() {
     let counters = 1..=10;
     assert_eq!(
         counters.map(transport).collect::<Vec<_>>(),
-        [2, 4, 8, 16, 32, 64, 128, 256, 300, 300].map(secs)
+        [2, 4, 8, 16, 30, 30, 30, 30, 30, 30].map(secs)
     );
     let vehicle = |n: u32| {
         nominal_delay(
@@ -834,7 +834,7 @@ fn sc48_schedules() {
     };
     assert_eq!(
         (1..=6).map(vehicle).collect::<Vec<_>>(),
-        [15, 30, 60, 120, 120, 120].map(secs)
+        [15, 30, 30, 30, 30, 30].map(secs)
     );
     let refusal = |n: u32| {
         nominal_delay(
@@ -846,7 +846,7 @@ fn sc48_schedules() {
         )
     };
     assert_eq!([1, 2, 7].map(refusal), [5, 300, 300].map(secs));
-    // Unknown, Protocol and Busy take the Transport schedule (R34).
+    // The first four nominal waits are unchanged for every transport-counter class.
     let state = RetryState {
         transport_attempt: 4,
         ..RetryState::default()
@@ -859,8 +859,18 @@ fn sc48_schedules() {
         assert_eq!(nominal_delay(&class, &state), secs(16));
     }
     // The saturated counter and a counter of 0 stay inside the schedule.
-    assert_eq!(transport(32), secs(300));
-    assert_eq!(transport(u32::MAX), secs(300));
+    assert_eq!(transport(32), secs(30));
+    assert_eq!(transport(u32::MAX), secs(30));
+    assert_eq!(
+        nominal_delay(
+            &FailureClass::Protocol,
+            &RetryState {
+                transport_attempt: 32,
+                ..RetryState::default()
+            }
+        ),
+        secs(300)
+    );
     assert_eq!(transport(0), secs(2));
     assert_eq!(vehicle(0), secs(15));
     assert_eq!(refusal(0), secs(5));

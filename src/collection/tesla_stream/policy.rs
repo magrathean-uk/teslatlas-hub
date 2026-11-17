@@ -37,10 +37,9 @@ const SILENCE_MOVING_MIN: Duration = Duration::from_secs(60);
 /// Longest moving data-silence limit and the parked limit `H_park` (R30). A
 /// parked car may legitimately send nothing, so a parked limit equal to the
 /// moving one would reconnect a silent, parked, awake car about once a minute;
-/// 300 s bounds that at 12 reconnects an hour, and a subscription lost during
-/// C3's suspension hides a drive start for at most 5 min. It also equals the
-/// `Transport` cap, so a silent subscription is treated no more patiently than
-/// a failed one.
+/// 300 s bounds that at 12 silence-triggered reconnects an hour, and a
+/// subscription lost during C3's suspension hides a drive start for at most
+/// 5 min. Silence detection is separate from the reconnect wait.
 const SILENCE_PARKED: Duration = Duration::from_secs(300);
 
 /// First `Transport` delay before jitter (R34): a short home-network or server
@@ -48,20 +47,23 @@ const SILENCE_PARKED: Duration = Duration::from_secs(300);
 /// fast.
 const TRANSPORT_BASE: Duration = Duration::from_secs(2);
 
-/// Cap of the `Transport` schedule (R34): during a long server outage each
-/// vehicle makes at most 12 attempts an hour while C3's polling covers the
-/// data, and recovery is noticed within 5 min.
-const TRANSPORT_CAP: Duration = Duration::from_secs(300);
+/// M04-T12: a normal disconnect or service error must not accumulate minutes
+/// of local retry delay. Keep the existing first retry and jitter floor, but
+/// probe a restored stream within 30 s. Explicit Retry-After still wins.
+const TRANSPORT_CAP: Duration = Duration::from_secs(30);
+
+/// A genuinely malformed peer retains the original five-minute cap, rather
+/// than repeatedly feeding a parser a broken stream at the normal retry rate.
+const PROTOCOL_CAP: Duration = Duration::from_secs(300);
 
 /// First `Vehicle` delay before jitter (R34): the server has answered, so the
 /// path works and fast retries only add load; typical causes (tunnel, garage,
 /// sleep) last tens of seconds or more.
 const VEHICLE_BASE: Duration = Duration::from_secs(15);
 
-/// Cap of the `Vehicle` schedule (R34): a returning car is re-acquired within
-/// 2 min, so a connectivity drop of up to 8 min still falls inside one drive
-/// under `T_gap`.
-const VEHICLE_CAP: Duration = Duration::from_secs(120);
+/// M04-T12: a returning car is probed within 30 s, without making the
+/// existing first retry faster.
+const VEHICLE_CAP: Duration = Duration::from_secs(30);
 
 /// Delay of the first `Refusal` (R34): tests the likely race of a token
 /// rotated by another holder between read and subscribe, with a fresh
@@ -182,12 +184,10 @@ fn doubling(base: Duration, cap: Duration, counter: u32) -> Duration {
 /// for a class and the counters after their update (R37).
 pub(crate) fn nominal_delay(class: &FailureClass, state: &RetryState) -> Duration {
     match class {
-        FailureClass::Transport
-        | FailureClass::Busy { .. }
-        | FailureClass::Unknown
-        | FailureClass::Protocol => {
+        FailureClass::Transport | FailureClass::Busy { .. } | FailureClass::Unknown => {
             doubling(TRANSPORT_BASE, TRANSPORT_CAP, state.transport_attempt)
         }
+        FailureClass::Protocol => doubling(TRANSPORT_BASE, PROTOCOL_CAP, state.transport_attempt),
         FailureClass::Vehicle => doubling(VEHICLE_BASE, VEHICLE_CAP, state.vehicle_attempt),
         FailureClass::Refusal => {
             if state.refusal_streak <= 1 {

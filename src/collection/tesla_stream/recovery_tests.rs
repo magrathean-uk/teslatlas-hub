@@ -307,16 +307,16 @@ async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
         ]
     );
     peer.log.wait_for("accept", 7).await;
-    // Nominal 15, 30, 60, 120, 120 s at u = 0 (half): 7.5, 15, 30, 60, 60 s; after data
+    // M04-T12: nominal 15, 30, 30, 30, 30 s at u = 0 (half); after data
     // the counter is 0, so the next vehicle end waits 7.5 s again.
     assert_eq!(
         delays(&peer),
         vec![
             millis(7_500),
             secs(15),
-            secs(30),
-            secs(60),
-            secs(60),
+            secs(15),
+            secs(15),
+            secs(15),
             millis(7_500)
         ]
     );
@@ -1249,14 +1249,16 @@ async fn sc87_stand_in_failing_refreshes_do_not_change_the_attempt_schedule_or_r
     // Stream side of SC87. The issuer answers 503 to every token request and the peer
     // closes every session at once. The unit calls `refresh_if_due` once per attempt
     // (R40), a failed refresh does not stop the stream (R6 step 2), the attempts follow
-    // R34 (1, 2, 4, ... 128 s, then 150 s at u = 0), and nothing reports a rejection.
+    // M04-T12 (1, 2, 4, 8 s, then 15 s at u = 0), and nothing reports a rejection.
     // The spacing of the token requests at the issuer (at least 60 s, C5 R16, R19, R31)
     // is C5's and is asserted by the ignored test below.
     let issuer = Issuer::spawn_with_status(Duration::ZERO, "tok-2", "ref-2", 503).await;
     let creds = Creds::due(issuer.url.clone(), "tok-1").held_by(&issuer);
     let peer = plan_peer(vec![Plan::ends(End::Close(1000)); 60]).await;
     let started = Instant::now();
-    let mut run = Rig::for_peer(&peer, creds).start();
+    let mut rig = Rig::for_peer(&peer, creds);
+    rig.capacity = 256;
+    let mut run = rig.start();
     // The first attempt's refresh is a real HTTP exchange with the loopback issuer; let
     // it finish before the paused clock is moved (the later attempts' refreshes are
     // deferred by the manager's own gate and do no I/O).
@@ -1264,12 +1266,11 @@ async fn sc87_stand_in_failing_refreshes_do_not_change_the_attempt_schedule_or_r
     sleep(secs(30 * 60)).await;
     assert!(Instant::now() - started >= secs(30 * 60));
     let delays = delays(&peer);
-    // Counters 1 to 8 give 1, 2, 4, ... 128 s; from counter 9 the nominal 300 s gives
-    // 150 s.
-    let schedule = [1, 2, 4, 8, 16, 32, 64, 128].map(secs);
+    // M04-T12: 1, 2, 4, 8 s, then the 30 s nominal cap gives 15 s.
+    let schedule = [1, 2, 4, 8].map(secs);
     assert!(delays.len() > schedule.len() + 3, "{delays:?}");
     assert_eq!(delays[..schedule.len()], schedule);
-    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(150)));
+    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(15)));
     assert_eq!(
         peer.log.count("refresh"),
         peer.log.count("accept"),
@@ -1303,15 +1304,17 @@ async fn sc87_refresh_failure_pacing_with_the_real_credential_unit() {
     let manager = Arc::clone(&creds.manager);
     let peer = plan_peer(vec![Plan::ends(End::Close(1000)); 80]).await;
     let started = Instant::now();
-    let mut run = Rig::for_peer(&peer, creds).start();
+    let mut rig = Rig::for_peer(&peer, creds);
+    rig.capacity = 256;
+    let mut run = rig.start();
     peer.log.wait_for("accept", 1).await;
     sleep(secs(30 * 60)).await;
     assert!(Instant::now() - started >= secs(30 * 60));
     let delays = delays(&peer);
-    let schedule = [1, 2, 4, 8, 16, 32, 64, 128].map(secs);
+    let schedule = [1, 2, 4, 8].map(secs);
     assert!(delays.len() > schedule.len() + 3, "{delays:?}");
     assert_eq!(delays[..schedule.len()], schedule);
-    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(150)));
+    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(15)));
     // The token requests: the first at once, then spaced by the unit's schedule.
     let requests = manager.lock().await.injected_request_times();
     assert!(requests.len() >= 5, "{requests:?}");
@@ -1956,18 +1959,24 @@ async fn collector_m04_t12_vehicle_and_unknown_errors_have_bounded_retries() {
     }
 }
 
-
 #[tokio::test(start_paused = true)]
 async fn collector_m04_t12_reason_labels_do_not_reflect_a_short_credential() {
     for token in ["client_error", "vehicle_error", "vehicle_disconnected"] {
         let capture = LogCapture::start();
         let peer = plan_peer(vec![Plan::ends(End::Error(token)), Plan::hold()]).await;
         let mut run = Rig::for_peer(&peer, Creds::offline(token)).start();
-        let expected = if token.starts_with("vehicle_") { StreamEvent::VehicleOffline } else { StreamEvent::TransportUnavailable };
+        let expected = if token.starts_with("vehicle_") {
+            StreamEvent::VehicleOffline
+        } else {
+            StreamEvent::TransportUnavailable
+        };
         assert_eq!(run.event().await, expected);
         run.shut_down().await.expect("shutdown");
         let text = capture.text();
-        assert!(text.contains("reason_class=\"reflected_error_type\""), "{text}");
+        assert!(
+            text.contains("reason_class=\"reflected_error_type\""),
+            "{text}"
+        );
         assert!(!text.contains(token), "credential in diagnostics: {text}");
     }
 }
