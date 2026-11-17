@@ -876,11 +876,46 @@ impl WindowController {
     /// Records an interval in which the collector was not running.
     pub fn record_gap(&self, start: i64, end: i64) -> Result<(), Refusal> {
         let mut inner = self.lock();
-        if end > start && matches!(inner.state.phase, Phase::Open | Phase::Closing) {
+        if matches!(inner.state.phase, Phase::Open | Phase::Closing) {
+            self.record_gap_locked(&mut inner, start, end)?;
+        }
+        Ok(())
+    }
+
+    /// Records a gap that was still in progress when the window closed.
+    pub(super) fn record_closing_gap(&self, start: i64) -> Result<(), Refusal> {
+        let mut inner = self.lock();
+        if inner.state.phase == Phase::Closing {
+            let end = self.handback_end(&inner.state)?;
+            self.record_gap_locked(&mut inner, start, end)?;
+        }
+        Ok(())
+    }
+
+    fn record_gap_locked(&self, inner: &mut Inner, start: i64, end: i64) -> Result<(), Refusal> {
+        if end > start {
             inner.state.gaps.push(Gap { start, end });
             self.store.write_state(&inner.state)?;
         }
         Ok(())
+    }
+
+    fn handback_end(&self, state: &WindowState) -> Result<i64, Refusal> {
+        let grant = state.grant.as_ref().ok_or(Refusal::StateUnverifiable)?;
+        let observed = state.closing_at.unwrap_or_else(|| self.clock.wall());
+        // A rollback makes the observed close time unreliable for coverage.
+        // Keep coverage through the last accepted reading, within the grant.
+        // Exchange grace still uses the observed close time.
+        if let Some(opened_at) = state.opened_at {
+            let last_accepted = state.watermark.max(opened_at);
+            if observed < last_accepted {
+                return Ok(last_accepted.min(grant.body.expires_at));
+            }
+        }
+        if state.close_reason == Some(CloseReason::Expired) {
+            return Ok(observed.min(grant.body.expires_at));
+        }
+        Ok(observed)
     }
 
     /// Completes a close: writes and syncs the handback, releases the host
@@ -910,12 +945,7 @@ impl WindowController {
             .state
             .close_reason
             .unwrap_or(CloseReason::StateUnverifiable);
-        let closing_at = inner.state.closing_at.unwrap_or_else(|| self.clock.wall());
-        let closed_at = if reason == CloseReason::Expired {
-            grant.expires_at.min(closing_at)
-        } else {
-            closing_at
-        };
+        let closed_at = self.handback_end(&inner.state)?;
         let (opened_at, gaps, coverage) = match inner.state.opened_at {
             Some(opened) => {
                 let gaps: Vec<Gap> = inner
