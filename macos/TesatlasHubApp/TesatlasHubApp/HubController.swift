@@ -290,6 +290,8 @@ enum HubAccountProvider: String, Equatable {
 
 enum HubMigrationHandoverPhase: String, Codable, Equatable {
     case importing
+    case awaitingTakeover = "awaiting_takeover"
+    case awaitingSignIn = "awaiting_sign_in"
     case awaitingVerification = "awaiting_verification"
     case awaitingHandover = "awaiting_handover"
 }
@@ -735,7 +737,41 @@ extension Result: HubQuiescenceReporting where Failure == Error {
     }
 }
 
+/// Owns only the transport bytes. Framework-managed strings and JSON objects are outside
+/// this buffer's erasure guarantee. Every consumer must wipe on success and failure.
+final class HubSensitiveInput {
+    private let storage: UnsafeMutableRawPointer
+    let count: Int
+    private let lock = NSLock()
+    private(set) var isWiped = false
+
+    init(_ data: inout Data) {
+        count = data.count
+        storage = .allocate(byteCount: max(1, count), alignment: 1)
+        data.withUnsafeBytes { bytes in
+            if count > 0 { storage.copyMemory(from: bytes.baseAddress!, byteCount: count) }
+        }
+        data.resetBytes(in: 0..<data.count)
+        data.removeAll(keepingCapacity: false)
+    }
+
+    func withBytes<T>(_ body: (UnsafeRawBufferPointer) throws -> T) rethrows -> T {
+        lock.lock(); defer { lock.unlock() }
+        return try body(UnsafeRawBufferPointer(start: storage, count: count))
+    }
+
+    func wipe() {
+        lock.lock(); defer { lock.unlock() }
+        explicit_bzero(storage, count)
+        isWiped = true
+    }
+
+    deinit { wipe(); storage.deallocate() }
+}
+
 protocol HubCommandRunning {
+    func run(arguments: [String], sensitiveInput: HubSensitiveInput,
+             completion: @escaping (Result<String, Error>) -> Void)
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void)
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void)
     func run(arguments: [String],
@@ -747,6 +783,13 @@ protocol HubCommandRunning {
 }
 
 extension HubCommandRunning {
+    // A runner without secret transport support must fail closed.
+    func run(arguments: [String], sensitiveInput: HubSensitiveInput,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        sensitiveInput.wipe()
+        completion(.failure(HubActionError.commandFailed("Secret input transport is unavailable.")))
+    }
+
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
         run(arguments: arguments, completion: completion)
     }
@@ -1065,6 +1108,7 @@ enum HubProcessExecutor {
     static func run(executable: URL,
                     arguments: [String],
                     stdin: String? = nil,
+                    sensitiveInput: HubSensitiveInput? = nil,
                     environment: [String: String]? = nil,
                     maximumOutputBytes: Int = defaultMaximumOutputBytes,
                     timeout: TimeInterval = defaultTimeout,
@@ -1078,9 +1122,15 @@ enum HubProcessExecutor {
                     onOutputLine: ((String) -> Void)? = nil,
                     completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            guard (stdin?.utf8.prefix(maximumStandardInputBytes + 1).count ?? 0)
+            let deliver = completion
+            let complete: (Result<String, Error>) -> Void = { result in
+                sensitiveInput?.wipe()
+                deliver(result)
+            }
+            defer { sensitiveInput?.wipe() }
+            guard (sensitiveInput?.count ?? stdin?.utf8.prefix(maximumStandardInputBytes + 1).count ?? 0)
                     <= maximumStandardInputBytes else {
-                completion(.failure(HubActionError.commandFailed("Hub command input exceeds its size limit.")))
+                complete(.failure(HubActionError.commandFailed("Hub command input exceeds its size limit.")))
                 return
             }
             let standardInput = stdin.map { Data($0.utf8) }
@@ -1112,7 +1162,7 @@ enum HubProcessExecutor {
             }
             process.standardOutput = output
             process.standardError = output
-            if stdin != nil { process.standardInput = Pipe() }
+            if stdin != nil || sensitiveInput != nil { process.standardInput = Pipe() }
             process.terminationHandler = { [weak process] _ in
                 if let process { statusLifecycle.finished(process) }
                 quiescence.childReaped()
@@ -1151,6 +1201,19 @@ enum HubProcessExecutor {
                     lineDecoder.finish()
                     readerDone.signal()
                 }
+                if let sensitiveInput, let input = process.standardInput as? Pipe {
+                    do {
+                        try sensitiveInput.withBytes {
+                            try writeStandardInput($0, to: input.fileHandleForWriting,
+                                                   deadline: deadline, now: primitives.now)
+                        }
+                        sensitiveInput.wipe()
+                        try input.fileHandleForWriting.close()
+                    } catch {
+                        sensitiveInput.wipe()
+                        throw error
+                    }
+                }
                 if let standardInput, let input = process.standardInput as? Pipe {
                     try writeStandardInput(standardInput, to: input.fileHandleForWriting,
                                            deadline: deadline, now: primitives.now)
@@ -1164,26 +1227,27 @@ enum HubProcessExecutor {
                     pipeReader.cancel()
                     _ = primitives.wait(readerDone, cleanupDeadline(outputDrainTimeout))
                     let unclosed = HubActionError.outputDidNotClose
-                    completion(.failure(quiescence.isQuiescent ? unclosed : HubActionError.commandNotQuiescent(unclosed, quiescence)))
+                    complete(.failure(quiescence.isQuiescent ? unclosed : HubActionError.commandNotQuiescent(unclosed, quiescence)))
                     return
                 }
                 callbackGate.cancel()
                 guard pipeReader.outcome == .endOfFile else {
-                    completion(.failure(HubActionError.commandFailed(
+                    complete(.failure(HubActionError.commandFailed(
                         HubL10n.text("hub.HubController.781.380", fallback: "Hub command output could not be read.")
                     )))
                     return
                 }
                 let text = String(decoding: retained.snapshot(), as: UTF8.self)
                 if process.terminationStatus == 0 {
-                    completion(.success(text))
+                    complete(.success(text))
                 } else {
-                    completion(.failure(HubActionError.commandExited(
+                    complete(.failure(HubActionError.commandExited(
                         process.terminationStatus,
                         text.isEmpty ? HubL10n.text("hub.HubController.791.381", fallback: "Hub command failed.") : text
                     )))
                 }
             } catch {
+                sensitiveInput?.wipe()
                 callbackGate.cancel()
                 if let input = process.standardInput as? Pipe {
                     try? input.fileHandleForWriting.close()
@@ -1207,12 +1271,17 @@ enum HubProcessExecutor {
                 // child has been reaped; until then it is reported as "not quiescent" and the owner of
                 // the work keeps its place.
                 if launchAttempted && !launched { quiescence.childReaped() }
-                completion(.failure(quiescence.isQuiescent ? error : HubActionError.commandNotQuiescent(error, quiescence)))
+                complete(.failure(quiescence.isQuiescent ? error : HubActionError.commandNotQuiescent(error, quiescence)))
             }
         }
     }
 
     private static func writeStandardInput(_ data: Data, to handle: FileHandle,
+                                           deadline: UInt64, now clock: () -> UInt64) throws {
+        try data.withUnsafeBytes { try writeStandardInput($0, to: handle, deadline: deadline, now: clock) }
+    }
+
+    private static func writeStandardInput(_ storage: UnsafeRawBufferPointer, to handle: FileHandle,
                                            deadline: UInt64, now clock: () -> UInt64) throws {
         let descriptor = handle.fileDescriptor
         let flags = fcntl(descriptor, F_GETFL)
@@ -1220,7 +1289,7 @@ enum HubProcessExecutor {
               fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
-        try data.withUnsafeBytes { storage in
+        do {
             var offset = 0
             while offset < storage.count {
                 guard clock() < deadline else { throw HubActionError.commandTimedOut }
@@ -1246,6 +1315,18 @@ enum HubProcessExecutor {
 }
 
 final class EmbeddedHubCommandRunner: HubCommandRunning {
+    func run(arguments: [String], sensitiveInput: HubSensitiveInput,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        guard let executable = Bundle.main.url(forResource: "tesatlas-hub", withExtension: nil) else {
+            sensitiveInput.wipe()
+            completion(.failure(HubActionError.missingResource("tesatlas-hub")))
+            return
+        }
+        HubProcessExecutor.run(executable: executable, arguments: arguments, sensitiveInput: sensitiveInput,
+                               maximumOutputBytes: Self.maximumOutputBytes(for: arguments),
+                               timeout: Self.timeout(for: arguments), completion: completion)
+    }
+
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         runProcess(arguments: arguments, stdin: nil, onOutputLine: nil, completion: completion)
     }
@@ -1978,6 +2059,12 @@ final class HubLifecycleOperation {
               stale: Self.staleFailure, completion: completion)
     }
 
+    func run(_ arguments: [String], sensitiveInput: HubSensitiveInput,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        child({ done in commandRunner.run(arguments: arguments, sensitiveInput: sensitiveInput, completion: done) },
+              stale: Self.staleFailure, completion: completion)
+    }
+
     func run(_ arguments: [String], stdin: String,
              completion: @escaping (Result<String, Error>) -> Void) {
         child({ done in commandRunner.run(arguments: arguments, stdin: stdin, completion: done) },
@@ -2162,29 +2249,50 @@ enum HubSourceTakeoverReport {
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return false
             }
-            return root["status"] as? String == "taken_over"
+            return ["taken_over", "already_taken_over"].contains(root["status"] as? String ?? "")
                 && root["origin"] as? String == "source_token"
-                && root["firstRefresh"] as? String == "next_window"
+                && (root["firstRefresh"] as? String == "next_window"
+                    || (root["status"] as? String == "already_taken_over"
+                        && root["firstRefresh"] is NSNull
+                        && ["attempt_recorded", "completed", "sign_in_required"].contains(root["refreshProgress"] as? String ?? "")))
                 && (root["sourceSessionsSeen"] as? NSNumber)?.intValue == 0
                 && root["sourceNeverMutated"] as? Bool == true
         }
     }
 }
 
-/// Whether the taken-over login still waits for the Hub's first refresh, from `status`
-/// `legacyCredentials` and the time the app recorded the takeover (seconds). The takeover
-/// writes the pair due at once; the first refresh moves `nextRefreshAt` past that time.
-enum HubSourceTakeoverStatus {
+/// Facts from the service's durable credential store, never from a caption or clock.
+enum HubSourceTakeoverStatus: Equatable {
+    case unknown, absent, otherLogin
+    case takenOver(progress: String)
+
+    static func read(legacy: [String: Any]?) -> Self {
+        guard let legacy, let present = legacy["present"] as? Bool else { return .unknown }
+        if !present { return .absent }
+        guard legacy["origin"] as? String == "source_token" else { return .otherLogin }
+        return .takenOver(progress: legacy["refreshProgress"] as? String ?? "unknown")
+    }
+
+    var isTakenOver: Bool {
+        if case .takenOver = self { return true }
+        return false
+    }
+
     static let awaitingFirstRefreshText = HubL10n.text(
         "hub.sourceTakeover.statusAwaitingRefresh",
         fallback: "Taken over from the source application; first refresh at the next window")
 
-    static func awaitingFirstRefresh(legacy: [String: Any]?, takenOverAt: Int64) -> Bool {
-        guard let legacy, legacy["present"] as? Bool == true,
-              legacy["origin"] as? String == "source_token",
-              (legacy["storeState"] as? String ?? "ok") == "ok",
-              let next = (legacy["nextRefreshAt"] as? NSNumber)?.int64Value else { return false }
-        return next <= takenOverAt + 60
+    var accountText: String? {
+        guard case let .takenOver(progress) = self else { return nil }
+        switch progress {
+        case "none_sent": return Self.awaitingFirstRefreshText
+        case "completed": return HubL10n.text("hub.sourceTakeover.refreshCompleted",
+            fallback: "Hub now holds the login; the source application's copy no longer works")
+        case "attempt_recorded", "sign_in_required": return HubL10n.text("hub.sourceTakeover.refreshUncertain",
+            fallback: "A refresh may have been sent. Sign in again in Hub; returning to the source application also needs a new sign-in.")
+        default: return HubL10n.text("hub.sourceTakeover.refreshUnknown",
+            fallback: "Hub holds the taken-over login. Refresh progress is unavailable; keep the source application stopped.")
+        }
     }
 }
 
@@ -3260,6 +3368,7 @@ final class HubController {
     private let staleImportCleaner: () -> SourceServerImporter.StaleTemporaryCleanup
     private let migrationConnector: HubMigrationConnector
     private let sourceStopChecker: HubSourceStopChecker
+    private let importedHistoryHealthCheck: (URL, @escaping (Result<Void, Error>) -> Void) -> Void
     /// Background reconciliation requested while another owner held the lifecycle.
     private let deferredLock = NSLock()
     private var deferredReconciles: [(completion: (() -> Void)?, intent: UInt64)] = []
@@ -3343,7 +3452,8 @@ final class HubController {
                                              authentication: authentication,
                                              usePasswordlessSudo: sudo, completion: completion)
          },
-         sourceStopChecker: @escaping HubSourceStopChecker = HubController.sshSourceStopChecker) {
+         sourceStopChecker: @escaping HubSourceStopChecker = HubController.sshSourceStopChecker,
+         importedHistoryHealthCheck: @escaping (URL, @escaping (Result<Void, Error>) -> Void) -> Void = HubController.waitForSignInHealth) {
         self.statusLifecycle = statusLifecycle
         self.statusPauseBound = statusPauseBound
         self.observesCollectionWindow = observesCollectionWindow
@@ -3351,6 +3461,7 @@ final class HubController {
         self.staleImportCleaner = staleImportCleaner
         self.migrationConnector = migrationConnector
         self.sourceStopChecker = sourceStopChecker
+        self.importedHistoryHealthCheck = importedHistoryHealthCheck
         let scene = HubPreviewScene(environmentValue: environment["TESATLAS_HUB_PREVIEW_SCENE"])
         let isPreview = environment["TESATLAS_HUB_UI_PREVIEW"] == "1" || scene != nil
         let previewRoute = isPreview
@@ -3925,6 +4036,7 @@ final class HubController {
                                carID: String,
                                passwordFile: String,
                                acceptSchemaEvidence: Bool,
+                               awaitingTakeover: Bool = false,
                                progress: @escaping (HubMigrationProgress) -> Void = { _ in },
                                completion: @escaping (Result<Void, Error>) -> Void) {
         HubAppLog.shared.record("import.requested", category: "history_import",
@@ -3972,6 +4084,7 @@ final class HubController {
                                        carID: carID,
                                        passwordFile: passwordFile,
                                        historyOnly: false,
+                                       awaitingTakeover: awaitingTakeover,
                                        progress: progress,
                                        completion: { op.finish($0, completion: completion) })
             }
@@ -4845,8 +4958,8 @@ final class HubController {
     // MARK: Source stop check and token takeover (M09-T05)
 
     /// Runs the stop check over the import tunnel's own SSH connection (its control socket):
-    /// no new sign-in to the server and no prompt. Without a live socket it fails, never
-    /// reporting "stopped".
+    /// no prompt. If multiplexing fails, OpenSSH may try ordinary batch authentication.
+    /// Only an explicit stopped answer is accepted; a socket alone does not prove liveness.
     static let sshSourceStopChecker: HubSourceStopChecker = { request, completion in
         guard let socket = SourceStopCheck.controlSocket(inSessionDirectory: request.sessionDirectory) else {
             completion(.failure(HubActionError.commandFailed(HubL10n.text(
@@ -4927,93 +5040,89 @@ final class HubController {
                 fallback: "Enter the source application's encryption key."))))
             return
         }
-        let standardInput: String
+        let standardInput: HubSensitiveInput
         do {
             try Self.validateMigrationSource(session.source)
-            guard let password = HubAppLog.regularFileData(of: session.passwordFile, maximumBytes: 4_096)
-                    .flatMap({ String(data: $0, encoding: .utf8) }), !password.isEmpty else {
-                throw HubActionError.commandFailed(HubL10n.text(
-                    "hub.sourceTakeover.connectionClosed",
+            guard var passwordData = HubAppLog.regularFileData(of: session.passwordFile, maximumBytes: 4_096),
+                  !passwordData.isEmpty else {
+                throw HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.connectionClosed",
                     fallback: "The connection to the source server has closed. Connect to the server again."))
             }
-            standardInput = try Self.sourceTakeoverInput(postgresPassword: password, encryptionKey: encryptionKey)
-        } catch {
-            deliver(.failure(error))
+            defer { passwordData.resetBytes(in: 0..<passwordData.count) }
+            standardInput = try Self.sourceTakeoverInput(
+                postgresPassword: String(decoding: passwordData, as: UTF8.self), encryptionKey: encryptionKey)
+        } catch { deliver(.failure(error)); return }
+        guard let op = admit(.migration, phase: "takeover", completion: deliver) else {
+            standardInput.wipe()
             return
         }
-        guard let op = admit(.migration, phase: "takeover", completion: deliver) else { return }
         let arguments = ["--config", configPath.path, "take-over-source-token",
                          "--source", session.source, "--accept-source-stopped"]
-        HubAppLog.shared.record("source_takeover.started", category: "history_import")
-        op.run(arguments, stdin: standardInput) { [self] result in
-            let outcome: Result<Void, Error>
-            switch result {
-            case let .success(output) where HubSourceTakeoverReport.isComplete(output):
-                do {
-                    try writeSourceTakeoverRecord(takenOverAt: Int64(Date().timeIntervalSince1970))
-                } catch {
-                    // The login is taken over; only the Status line waiting for the first
-                    // refresh is lost.
-                    HubAppLog.shared.record("source_takeover.record_failed", category: "history_import",
-                                            level: "WARN", fields: ["error_code": HubAppLog.errorCode(error)])
-                }
-                HubAppLog.shared.record("source_takeover.completed", category: "history_import")
-                outcome = .success(())
-            case .success:
-                HubAppLog.shared.record("source_takeover.invalid_report", category: "history_import",
-                                        level: "ERROR")
-                outcome = .failure(HubSourceTakeoverRefusal(
-                    code: "takeover_failed", message: HubSourceTakeoverRefusal.message(code: "takeover_failed")))
-            case let .failure(error):
-                let refusal = HubSourceTakeoverRefusal.from(error)
-                HubAppLog.shared.record("source_takeover.failed", category: "history_import",
-                                        level: "ERROR", fields: ["reason": refusal.code])
-                outcome = .failure(HubActionError.keepingQuiescence(of: error, in: refusal))
+        op.run(arguments, sensitiveInput: standardInput) { [self] result in
+            standardInput.wipe()
+            // An unreaped command may still commit. Do not race it with a status read.
+            if case let .failure(error) = result, HubActionError.pendingQuiescence(of: error) != nil {
+                sourceTakeoverStatus = .unknown
+                op.finish(.failure(error), completion: deliver)
+                return
             }
-            op.finish(outcome, completion: deliver)
+            op.run(["--config", configPath.path, "status"]) { [self] statusResult in
+                applyTakeoverStatus(statusResult)
+                if sourceTakeoverStatus.isTakenOver {
+                    do {
+                        try advanceTakeoverPhase(to: .awaitingVerification)
+                        op.finish(.success(()), completion: deliver)
+                    } catch { op.finish(.failure(error), completion: deliver) }
+                } else {
+                    let refusal: Error
+                    if case let .failure(error) = result { refusal = HubSourceTakeoverRefusal.from(error) }
+                    else { refusal = HubSourceTakeoverRefusal(code: "takeover_failed",
+                        message: HubSourceTakeoverRefusal.message(code: "takeover_failed")) }
+                    op.finish(.failure(refusal), completion: deliver)
+                }
+            }
         }
     }
 
-    /// The takeover's standard input: exactly `postgresPassword` and `encryptionKey`.
-    static func sourceTakeoverInput(postgresPassword: String, encryptionKey: String) throws -> String {
-        let data = try JSONSerialization.data(
-            withJSONObject: ["postgresPassword": postgresPassword, "encryptionKey": encryptionKey],
-            options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
+    static func sourceTakeoverInput(postgresPassword: String, encryptionKey: String) throws -> HubSensitiveInput {
+        var data = try JSONSerialization.data(
+            withJSONObject: ["postgresPassword": postgresPassword, "encryptionKey": encryptionKey], options: [.sortedKeys])
+        return HubSensitiveInput(&data)
     }
 
-    private var sourceTakeoverRecordPath: URL {
-        configPath.deletingLastPathComponent().appendingPathComponent(".source-takeover-first-refresh")
+    private(set) var sourceTakeoverStatus: HubSourceTakeoverStatus = .unknown
+
+    private func applyTakeoverStatus(_ result: Result<String, Error>) {
+        guard case let .success(output) = result,
+              let root = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else {
+            sourceTakeoverStatus = .unknown
+            return
+        }
+        sourceTakeoverStatus = .read(legacy: root["legacyCredentials"] as? [String: Any])
     }
 
-    /// When this app took over the source login (seconds), while the first refresh is
-    /// outstanding; nil without a readable record. The record holds no secret.
-    var sourceTakeoverRecordedAt: Int64? {
-        guard !previewMode,
-              let data = HubAppLog.regularFileData(of: sourceTakeoverRecordPath, maximumBytes: 1_024),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let value = (root["takenOverAt"] as? NSNumber)?.int64Value, value > 0 else { return nil }
-        return value
+    func reconcileSourceTakeover(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let op = admit(.migration, phase: "takeover-status", completion: completion) else { return }
+        op.run(["--config", configPath.path, "status"]) { [self] result in
+            applyTakeoverStatus(result)
+            if sourceTakeoverStatus == .unknown {
+                op.finish(.failure(HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.statusUnavailable",
+                    fallback: "Hub could not confirm whether the login was taken over. Keep the source application stopped and check again."))), completion: completion)
+            } else {
+                op.finish(.success(()), completion: completion)
+            }
+        }
     }
 
-    private func writeSourceTakeoverRecord(takenOverAt: Int64) throws {
-        let folder = configPath.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(withJSONObject: ["takenOverAt": takenOverAt])
-        try data.write(to: sourceTakeoverRecordPath, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
-                                              ofItemAtPath: sourceTakeoverRecordPath.path)
+    func advanceTakeoverPhase(to phase: HubMigrationHandoverPhase) throws {
+        guard var handover = migrationHandoverState else { return }
+        handover.phase = phase
+        try writeMigrationHandoverMarker(handover)
     }
 
-    /// Status after the takeover: the waiting line until `status` shows the first refresh,
-    /// then the record is retired.
     private func sourceTakeoverAccountText(legacy: [String: Any]?) -> String? {
-        guard let takenOverAt = sourceTakeoverRecordedAt else { return nil }
-        if HubSourceTakeoverStatus.awaitingFirstRefresh(legacy: legacy, takenOverAt: takenOverAt) {
-            return HubSourceTakeoverStatus.awaitingFirstRefreshText
-        }
-        try? FileManager.default.removeItem(at: sourceTakeoverRecordPath)
-        return nil
+        sourceTakeoverStatus = .read(legacy: legacy)
+        return sourceTakeoverStatus.accountText
     }
 
     private func prepareOnlineMigration(_ op: HubLifecycleOperation,
@@ -5021,6 +5130,7 @@ final class HubController {
                                         carID: String,
                                         passwordFile: String,
                                         historyOnly: Bool,
+                                        awaitingTakeover: Bool = false,
                                         progress: @escaping (HubMigrationProgress) -> Void,
                                         completion: @escaping (Result<Void, Error>) -> Void) {
         let previousInterval = historyOnly ? 0 : (migrationHandoverState?.previousIntervalSeconds
@@ -5090,7 +5200,7 @@ final class HubController {
                     do {
                         if historyOnly { try writeHistoryOnlyControl() }
                         try writeMigrationHandoverMarker(
-                            HubMigrationHandoverState(phase: .awaitingVerification,
+                            HubMigrationHandoverState(phase: awaitingTakeover ? .awaitingTakeover : .awaitingVerification,
                                                       previousIntervalSeconds: previousInterval,
                                                       previousProvider: previousProvider,
                                                       historyOnly: historyOnly)
@@ -5567,6 +5677,10 @@ final class HubController {
         _ op: HubLifecycleOperation,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        if pendingMigrationHandoverPhase == .awaitingSignIn {
+            prepareImportedHistoryOwnerSignIn(op, completion: completion)
+            return
+        }
         guard ownerSignInStartIsPossible, let launchAgent else {
             requireOpenCollectionWindow(op, completion: completion)
             return
@@ -5596,6 +5710,128 @@ final class HubController {
                 }
             }
         }
+    }
+
+    /// M09-T16 interface section 3: collecting configuration, awaiting-sign-in
+    /// preflight, ordinary start, healthz, then the existing window-gated sign-in.
+    private func prepareImportedHistoryOwnerSignIn(_ op: HubLifecycleOperation,
+                                                    completion: @escaping (Result<Void, Error>) -> Void) {
+        do {
+            try ensureConfig(provider: "legacy", collectorIntervalSeconds:
+                max(1, migrationHandoverState?.previousIntervalSeconds ?? 300))
+            guard let original = try readConfigIfPresent() else { throw Self.unsupportedImportConfig }
+            let updated = try Self.enablingImportedHistoryLegacyAuth(in: original)
+            try Self.writeDurablePrivateFile(Data(updated.utf8), to: configPath)
+        } catch { completion(.failure(error)); return }
+        op.run(["--config", configPath.path, "preflight"]) { [self] preflight in
+            guard case let .success(output) = preflight,
+                  let root = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
+                  root["status"] as? String == "ready",
+                  root["state"] as? String == "awaiting_sign_in",
+                  root["collectorEnabled"] as? Bool == false else {
+                completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.signInPreflightFailed",
+                    fallback: "Hub could not prepare the imported history for Tesla sign-in. Your imported history is unchanged. Try again."))))
+                return
+            }
+            op.service(["service", "start"]) { [self] result in
+                if case let .failure(error) = result { completion(.failure(error)); return }
+                op.track({ (done: @escaping (Result<Void, Error>) -> Void) in
+                    importedHistoryHealthCheck(configPath, done)
+                }, stale: .failure(HubActionError.preview)) { health in
+                    if case let .failure(error) = health { completion(.failure(error)); return }
+                    requireOpenCollectionWindow(op, completion: completion)
+                }
+            }
+        }
+    }
+
+    /// Change only the supported legacy-auth table, refusing ambiguous TOML forms.
+    static func enablingImportedHistoryLegacyAuth(in content: String) throws -> String {
+        var table: [String] = []
+        var output: [String] = []
+        var header: Int?
+        var enabled = false
+        for line in content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if let found = try tomlHeader(line) {
+                table = found.path
+                if table == ["collector", "legacy_auth"] {
+                    guard !found.isArray, header == nil else { throw unsupportedImportConfig }
+                    header = output.count
+                }
+            } else if let key = try tomlAssignmentKey(line) {
+                let full = table + key.key
+                if full == ["collector", "legacy_auth", "enabled"] {
+                    guard table == ["collector", "legacy_auth"], key.key == ["enabled"], !enabled else {
+                        throw unsupportedImportConfig
+                    }
+                    output.append("enabled = true")
+                    enabled = true
+                    continue
+                }
+                if full == ["collector", "legacy_auth"] || full == ["collector"] {
+                    throw unsupportedImportConfig
+                }
+            }
+            output.append(line)
+        }
+        if !enabled {
+            if let header { output.insert("enabled = true", at: header + 1) }
+            else { output.append(contentsOf: ["[collector.legacy_auth]", "enabled = true"]) }
+        }
+        return output.joined(separator: "\n") + "\n"
+    }
+
+    /// This probe uses only the configured loopback health endpoint and never readiness
+    /// (a credential-empty Hub has no collector yet). Tests inject the probe.
+    static func waitForSignInHealth(configPath: URL,
+                                    completion: @escaping (Result<Void, Error>) -> Void) {
+        let failure = HubActionError.commandFailed(HubL10n.text("hub.sourceTakeover.signInHealthFailed",
+            fallback: "Hub did not answer its health check. Your history stays imported. Try connecting again."))
+        guard let data = HubAppLog.regularFileData(of: configPath, maximumBytes: 1_048_576),
+              let content = String(data: data, encoding: .utf8) else { completion(.failure(failure)); return }
+        var bind = "127.0.0.1:8080"
+        for line in content.split(whereSeparator: \.isNewline).map(String.init) {
+            if (try? tomlHeader(line)) != nil { break }
+            if let key = try? tomlAssignmentKey(line), key.key == ["bind"] {
+                let raw = key.value.trimmingCharacters(in: .whitespaces)
+                guard raw.hasPrefix("\""), let end = raw.dropFirst().firstIndex(of: "\"") else {
+                    completion(.failure(failure)); return
+                }
+                bind = String(raw[raw.index(after: raw.startIndex)..<end])
+            }
+        }
+        guard let url = URL(string: "http://\(bind)/healthz"),
+              ["127.0.0.1", "[::1]", "::1", "localhost"].contains(url.host ?? ""),
+              url.user == nil, url.password == nil else { completion(.failure(failure)); return }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.connectionProxyDictionary = [:]
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        let session = URLSession(configuration: configuration)
+        let deadline = Date().addingTimeInterval(45)
+        func probe() {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = max(0.1, min(2, deadline.timeIntervalSinceNow))
+            session.dataTask(with: request) { _, response, _ in
+                if (response as? HTTPURLResponse)?.statusCode == 200 {
+                    session.invalidateAndCancel()
+                    DispatchQueue.main.async { completion(.success(())) }
+                } else if Date() < deadline {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { probe() }
+                } else {
+                    session.invalidateAndCancel()
+                    DispatchQueue.main.async { completion(.failure(failure)) }
+                }
+            }.resume()
+        }
+        probe()
+    }
+
+    /// Own sign-in is already running. Finish its migration handover without another
+    /// import or service restart, then use the ordinary running-service verification.
+    func completeImportedHistorySignIn() throws {
+        guard pendingMigrationHandoverPhase == .awaitingSignIn else { return }
+        try Self.removeDurably(migrationHandoverMarker)
     }
 
     private func refuseOwnerSignInStart(_ error: Error, reason: String,

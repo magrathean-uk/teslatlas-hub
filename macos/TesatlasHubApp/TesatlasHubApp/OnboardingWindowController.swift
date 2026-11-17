@@ -286,8 +286,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var importedAwaitingTakeover = false
     /// The takeover after a finished import failed: Retry, or Sign in with Tesla instead.
     private var takeoverFailure: HubSourceTakeoverRefusal?
-    /// The owner chose Sign in with Tesla instead of the takeover: the Hub's own sign-in
-    /// page follows the Start.
+    /// The owner chose Sign in with Tesla instead; resume the ordinary sign-in page.
     private var takeoverDeclined = false
     private var accountSignIn: HubAccountSignIn?
     /// Hears the controller drop the held discovery retry at its deadline, to update the page.
@@ -333,6 +332,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 route = .migration
                 shouldAutoVerify = false
                 resumeMessage = HubL10n.text("hub.OnboardingWindowController.252.1859", fallback: "The previous import did not finish. Check the source application and run the import again.")
+            case .awaitingTakeover:
+                route = .migration
+                shouldAutoVerify = false
+                resumeMessage = nil
+                importedAwaitingTakeover = true
+            case .awaitingSignIn:
+                route = .legacy
+                shouldAutoVerify = false
+                resumeMessage = nil
+                takeoverDeclined = true
             case .awaitingVerification:
                 route = .verify
                 shouldAutoVerify = true
@@ -402,7 +411,26 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         configureFields()
         render()
         updateWindowCloseAvailability()
-        if shouldAutoVerify {
+        if resumeMigrationHandoverPhase != nil && !controller.pendingMigrationHandoverIsHistoryOnly {
+            setBusy(true, operation: .takingOver)
+            controller.reconcileSourceTakeover { [weak self] result in
+                guard let self else { return }
+                self.setBusy(false)
+                if case let .failure(error) = result { self.errorMessage = error.localizedDescription }
+                if self.importedAwaitingTakeover && controller.sourceTakeoverStatus.isTakenOver {
+                    do {
+                        try controller.advanceTakeoverPhase(to: .awaitingVerification)
+                        self.importedAwaitingTakeover = false
+                        self.state.route = .verify
+                        self.render()
+                        self.runVerification()
+                    } catch { self.showInlineError(error.localizedDescription) }
+                } else {
+                    self.render()
+                    if shouldAutoVerify { self.runVerification() }
+                }
+            }
+        } else if shouldAutoVerify {
             DispatchQueue.main.async { [weak self] in self?.runVerification() }
         }
         lifecycleObservation = controller.observeLifecycle { [weak self] _ in self?.updateFooter() }
@@ -476,6 +504,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// The prepared session and any preparation still running belong to the controller:
     /// a window going away cancels its interest and the controller closes what remains.
     private func closeMigrationSession() {
+        sourceEncryptionKey.stringValue = ""
         sourceRunState = nil
         sourceStopCheckError = nil
         migrationPreparation?.cancel()
@@ -981,6 +1010,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if let migrationSession {
             return connectedMigrationBody(migrationSession)
         }
+        return migrationConnectionBody()
+    }
+
+    private func migrationConnectionBody() -> NSView {
         migrationPort.widthAnchor.constraint(equalToConstant: 72).isActive = true
         let portLabel = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.822.1978", fallback: "Port"))
         portLabel.font = HubTypography.label
@@ -1010,12 +1043,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             fields.append((HubL10n.text("hub.OnboardingWindowController.password_label", fallback: "Password"), migrationSSHPassword))
             migrationKeyViews.append(migrationSSHPassword)
         }
-        var views: [NSView] = [sourceImportIntroduction(), migrationUseLocalHistory, onboardingForm(fields)]
+        var views: [NSView] = importedAwaitingTakeover
+            ? [NSTextField(wrappingLabelWithString: HubL10n.text("hub.sourceTakeover.reconnect",
+                fallback: "History is already imported. Reconnect to the source server to finish taking over the login; history will not be imported again.")), onboardingForm(fields)]
+            : [sourceImportIntroduction(), migrationUseLocalHistory, onboardingForm(fields)]
         views.append(wrappingCheckbox(
             migrationUseSudo,
             title: HubL10n.text("hub.OnboardingWindowController.446.1897", fallback: "This user needs sudo to read the source database")
         ))
-        migrationKeyViews.append(contentsOf: [migrationUseSudo, migrationUseLocalHistory])
+        migrationKeyViews.append(migrationUseSudo)
+        if !importedAwaitingTakeover { migrationKeyViews.append(migrationUseLocalHistory) }
 
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1050,6 +1087,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     #if DEBUG
     func configureLocalHistoryForTests(source: String, carID: String, passwordFile: String) {
         migrationUseLocalHistory.state = .on
+        localHistorySelectionChanged()
         migrationSource.stringValue = source
         migrationCarID.stringValue = carID
         migrationPasswordFile.stringValue = passwordFile
@@ -1086,6 +1124,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     func continueForTests() { continuePressed() }
     func checkSourceAgainForTests() { checkSourceStoppedPressed() }
     func declineTakeoverForTests() { declineTakeover() }
+    func reconnectTakeoverForTests() { reconnectTakeover() }
+    func abandonSourceForTests() { closeMigrationSession() }
     var takeoverDeclinedForTests: Bool { takeoverDeclined }
     func showFinishForTests() { state.route = .finish; render() }
 
@@ -1156,7 +1196,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         if compatibility?.mayImport == true {
             views.append(sourceStopRow())
-            views.append(sourceKeyField())
+            if migrationSession == nil {
+                views.append(migrationConnectionBody())
+            } else {
+                views.append(sourceKeyField())
+                let reconnect = HubActionButton(title: HubL10n.text("hub.sourceTakeover.reconnectButton", fallback: "Reconnect to Server"),
+                    target: self, action: #selector(reconnectTakeover))
+                configureFlatButton(reconnect)
+                views.append(reconnect)
+            }
             migrationKeyViews.append(sourceEncryptionKey)
         }
 
@@ -1235,6 +1283,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// (with the key entered again) and Sign in with Tesla instead. History stays imported.
     private func takeoverBody() -> NSView {
         migrationConnectButton = nil
+        migrationKeyViews = []
         var views: [NSView] = []
         if busyOperation == .takingOver {
             spinner.style = .spinning
@@ -1246,10 +1295,19 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             views.append(running)
             migrationKeyViews = []
         } else {
+            if let sourceStopCheckError {
+                views.append(NSTextField(wrappingLabelWithString: sourceStopCheckError))
+            } else if sourceRunState == .running {
+                views.append(NSTextField(wrappingLabelWithString: HubL10n.text("hub.sourceTakeover.retrySourceRunning",
+                    fallback: "The source application is still running. Stop it before trying the take-over again.")))
+            }
             let failure = takeoverFailure ?? HubSourceTakeoverRefusal(
                 code: "takeover_failed", message: HubSourceTakeoverRefusal.message(code: "takeover_failed"))
+            let title = controller.sourceTakeoverStatus == .absent
+                ? HubL10n.text("hub.sourceTakeover.failedTitle", fallback: "History imported; Tesla login not taken over")
+                : HubL10n.text("hub.sourceTakeover.pendingTitle", fallback: "History imported; confirm the Tesla login take-over")
             views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning,
-                                    title: HubL10n.text("hub.sourceTakeover.failedTitle", fallback: "History imported; Tesla login not taken over"),
+                                    title: title,
                                     message: failure.message,
                                     identifier: "onboarding.takeover-failure"))
             views.append(sourceKeyField())
@@ -1258,7 +1316,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             signIn.identifier = NSUserInterfaceItemIdentifier("onboarding.takeover-sign-in")
             configureFlatButton(signIn)
             views.append(signIn)
-            migrationKeyViews = [sourceEncryptionKey, signIn]
+            migrationKeyViews.append(signIn)
+            if migrationSession != nil { migrationKeyViews.append(sourceEncryptionKey) }
         }
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -1267,7 +1326,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         for view in views where !(view is NSButton) {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
-        return stack
+        return withError(stack)
     }
 
     private var isPreviewConnectedMigration: Bool {
@@ -1540,10 +1599,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.alignment = .leading
         stack.spacing = 14
         if state.path == .migration {
-            let tookOver = migrationUseLocalHistory.state != .on && !takeoverDeclined
-                && controller.sourceTakeoverRecordedAt != nil
+            let tookOver = migrationUseLocalHistory.state != .on
+                && (controller.sourceTakeoverStatus.isTakenOver || controller.sourceTakeoverStatus == .unknown)
             if tookOver {
-                for (identifier, text) in Self.takeoverFinishCopy {
+                for (identifier, text) in takeoverFinishCopy {
                     let label = NSTextField(wrappingLabelWithString: text)
                     label.identifier = NSUserInterfaceItemIdentifier(identifier)
                     label.font = HubTypography.body
@@ -1583,20 +1642,23 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return withError(stack)
     }
 
-    /// The finish page after a takeover (design A.2): never start the source application
-    /// again, and how to go back.
-    static var takeoverFinishCopy: [(String, String)] {
-        [
-            ("onboarding.takeover.holds", HubL10n.text(
-                "hub.sourceTakeover.finishHolds",
-                fallback: "Hub now holds your Tesla login. Do not start the source application again: after Hub's first refresh its stored login no longer works, and running both on one login can lock you out.")),
-            ("onboarding.takeover.backBefore", HubL10n.text(
-                "hub.sourceTakeover.finishBackBefore",
-                fallback: "To go back before Hub's first refresh: sign out in Hub, then start the source application. Its stored login still works.")),
-            ("onboarding.takeover.backAfter", HubL10n.text(
-                "hub.sourceTakeover.finishBackAfter",
-                fallback: "To go back after the first refresh: sign out in Hub, start the source application and sign it in again with its own sign-in page. Hub never writes to the source database and never exports a login."))
-        ]
+    private var takeoverFinishCopy: [(String, String)] {
+        var copy = [("onboarding.takeover.holds", HubL10n.text("hub.sourceTakeover.keepStopped",
+            fallback: "Keep the source application stopped. Running both on one login can lock you out."))]
+        if let progress = controller.sourceTakeoverStatus.accountText {
+            copy.append(("onboarding.takeover.progress", progress))
+        } else {
+            copy.append(("onboarding.takeover.progress", HubL10n.text("hub.sourceTakeover.confirmOwnership",
+                fallback: "Hub could not confirm the login state. Keep the source application stopped and check again.")))
+        }
+        if controller.sourceTakeoverStatus == .takenOver(progress: "none_sent") {
+            copy.append(("onboarding.takeover.backBefore", HubL10n.text("hub.sourceTakeover.untouched",
+                fallback: "No refresh has been sent: the source login is untouched. To go back, sign out in Hub before starting the source application.")))
+        } else if controller.sourceTakeoverStatus == .takenOver(progress: "completed") {
+            copy.append(("onboarding.takeover.backAfter", HubL10n.text("hub.sourceTakeover.returnAfterRefresh",
+                fallback: "To go back, sign out in Hub, start the source application and sign in there again.")))
+        }
+        return copy
     }
 
     private func footerView() -> NSView {
@@ -1691,8 +1753,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             } else if isPreviewConnectedMigration {
                 continueButton.isEnabled = migrationVersionAcknowledgement.state == .on && !blocked
             } else if importedAwaitingTakeover {
-                continueButton.isEnabled = migrationSession != nil
-                    && !sourceEncryptionKey.stringValue.isEmpty && !blocked
+                continueButton.isEnabled = !blocked && (migrationSession == nil
+                    ? migrationConnectionInputsValid : !sourceEncryptionKey.stringValue.isEmpty)
             } else if migrationSession != nil {
                 continueButton.isEnabled = compatibility?.mayImport == true
                     && sourceRunState == .stopped
@@ -1704,6 +1766,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             continueButton.isEnabled = verificationFinished && !blocked
         case .finish where state.path == .migration:
             continueButton.isEnabled = handoverAcknowledged && !blocked
+                && (migrationUseLocalHistory.state == .on || controller.sourceTakeoverStatus != .unknown)
         default:
             continueButton.isEnabled = !blocked
         }
@@ -1759,7 +1822,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 return compatibility?.mayImport == true ? HubL10n.text("hub.OnboardingWindowController.1359.2044", fallback: "Import History") : HubL10n.text("hub.OnboardingWindowController.1359.2045", fallback: "Check Snapshot")
             }
             if importedAwaitingTakeover {
-                return HubL10n.text("hub.sourceTakeover.retry", fallback: "Retry")
+                return migrationSession == nil
+                    ? HubL10n.text("hub.OnboardingWindowController.1362.2047", fallback: "Connect to Server")
+                    : HubL10n.text("hub.sourceTakeover.retry", fallback: "Retry")
             }
             return isPreviewConnectedMigration || migrationSession != nil
                 ? HubL10n.text("hub.OnboardingWindowController.1362.2046", fallback: "Import Data") : HubL10n.text("hub.OnboardingWindowController.1362.2047", fallback: "Connect to Server")
@@ -2130,6 +2195,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         setBusy(false)
         switch result {
         case .success:
+            if takeoverDeclined && controller.pendingMigrationHandoverPhase == .awaitingSignIn {
+                do { try controller.completeImportedHistorySignIn() }
+                catch { showInlineError(error.localizedDescription); return }
+                state.path = .newInstallation
+                takeoverDeclined = false
+            }
             stopObservingDiscoveryRetryExpiry()
             configuredCarsNote = controller.lastVehiclesConfigured.map {
                 HubL10n.format("hub.signIn.discovery.configured", fallback: "Cars configured: %d", arguments: [$0])
@@ -2246,7 +2317,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.migrationSource.stringValue = session.source
                 self.migrationCarID.stringValue = session.carID
                 self.migrationPasswordFile.stringValue = session.passwordFile.path
-                self.checkConnectedMigrationSession(session)
+                if self.importedAwaitingTakeover {
+                    self.setBusy(false)
+                    self.runSourceStopCheck(session)
+                } else { self.checkConnectedMigrationSession(session) }
             case let .failure(error):
                 HubAppLog.shared.record("connection.failed", category: "history_import",
                                         level: "ERROR",
@@ -2359,6 +2433,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                          carID: session.carID,
                                          passwordFile: session.passwordFile.path,
                                          acceptSchemaEvidence: versionAccepted,
+                                         awaitingTakeover: true,
                                          progress: { [weak self] update in
                                              self?.updateMigrationProgress(update)
                                          }) { [weak self, controller] result in
@@ -2409,6 +2484,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                     completion(false)
                     return
                 }
+                self.closeMigrationSession()
+                self.connectedMigrationIdentity = nil
                 self.sourceStopCheckError = HubActionError.settingQuiescenceAside(error).localizedDescription
             }
             self.render()
@@ -2421,25 +2498,35 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         runSourceStopCheck(session)
     }
 
-    /// The takeover after a successful import. The key is read once and the field cleared
-    /// as the call starts, so nothing keeps it afterwards. A failure never undoes the import.
+    /// Recheck immediately before every send, including after the history import.
     private func runTakeover(_ session: SourceServerImportSession) {
-        let key = sourceEncryptionKey.stringValue
-        sourceEncryptionKey.stringValue = ""
+        runSourceStopCheck(session) { [weak self] stopped in
+            guard let self else { return }
+            guard stopped, session === self.migrationSession else {
+                self.sourceEncryptionKey.stringValue = ""
+                self.render()
+                return
+            }
+            self.sendTakeover(session)
+        }
+    }
+
+    private func sendTakeover(_ session: SourceServerImportSession) {
+        // Read only for the synchronous serialisation. Framework strings cannot be wiped.
+        defer { sourceEncryptionKey.stringValue = "" }
         takeoverFailure = nil
         errorMessage = nil
         setBusy(true, operation: .takingOver)
-        render()
-        controller.takeOverSourceToken(session: session, encryptionKey: key) { [weak self, controller] result in
+        controller.takeOverSourceToken(session: session, encryptionKey: sourceEncryptionKey.stringValue) { [weak self, controller] result in
             guard let self, self.migrationSession === session else {
                 controller.closeMigrationSession(session)
                 return
             }
+            self.sourceEncryptionKey.stringValue = ""
             switch result {
             case .success:
                 self.importedAwaitingTakeover = false
-                controller.closeMigrationSession(session)
-                self.migrationSession = nil
+                self.closeMigrationSession()
                 self.connectedMigrationIdentity = nil
                 self.setupFinished(.success(()))
             case let .failure(error):
@@ -2450,26 +2537,58 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.render()
             }
         }
+        render()
+    }
+
+    @objc private func reconnectTakeover() {
+        guard importedAwaitingTakeover, !interactionBlocked else { return }
+        closeMigrationSession()
+        connectedMigrationIdentity = nil
+        render()
     }
 
     private func retryTakeover() {
-        guard importedAwaitingTakeover, let session = migrationSession,
-              !sourceEncryptionKey.stringValue.isEmpty else { return }
-        runTakeover(session)
+        guard importedAwaitingTakeover else { return }
+        if let session = migrationSession {
+            guard !sourceEncryptionKey.stringValue.isEmpty else { return }
+            runTakeover(session)
+        } else { checkMigrationCompatibility() }
     }
 
-    /// Sign in with Tesla instead: the imported history stays, nothing is taken over, and the
-    /// Hub's own sign-in page follows the Start.
+    /// Reconcile before declining: a lost reply must never offer a second login over a
+    /// committed takeover. Persist only the missing step; the imported history stays put.
     @objc private func declineTakeover() {
         guard importedAwaitingTakeover, !interactionBlocked else { return }
-        HubAppLog.shared.record("source_takeover.declined", category: "history_import")
-        importedAwaitingTakeover = false
-        takeoverFailure = nil
-        takeoverDeclined = true
         sourceEncryptionKey.stringValue = ""
-        closeMigrationSession()
-        connectedMigrationIdentity = nil
-        setupFinished(.success(()))
+        setBusy(true, operation: .takingOver)
+        controller.reconcileSourceTakeover { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            guard case .success = result else {
+                if case let .failure(error) = result { self.showInlineError(error.localizedDescription) }
+                return
+            }
+            do {
+                if self.controller.sourceTakeoverStatus.isTakenOver {
+                    try self.controller.advanceTakeoverPhase(to: .awaitingVerification)
+                    self.importedAwaitingTakeover = false
+                    self.closeMigrationSession()
+                    self.setupFinished(.success(()))
+                } else if self.controller.sourceTakeoverStatus == .absent {
+                    try self.controller.advanceTakeoverPhase(to: .awaitingSignIn)
+                    self.importedAwaitingTakeover = false
+                    self.takeoverFailure = nil
+                    self.takeoverDeclined = true
+                    self.closeMigrationSession()
+                    self.connectedMigrationIdentity = nil
+                    self.state.route = .legacy
+                    self.render()
+                    self.refreshCollectionWindowState()
+                } else {
+                    self.showInlineError(HubSourceTakeoverRefusal.message(code: "slot_occupied"))
+                }
+            } catch { self.showInlineError(error.localizedDescription) }
+        }
     }
 
     private var migrationInputsComplete: Bool {
@@ -2551,10 +2670,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             guard let self else { return }
             self.setBusy(false)
             switch result {
-            case .success where self.takeoverDeclined:
-                // Sign in with Tesla instead: the existing sign-in page, now the Hub runs.
-                self.takeoverDeclined = false
-                self.navigate(to: .legacy)
             case .success: self.onComplete(.hubStarted)
             case let .failure(error): self.showInlineError(error.localizedDescription)
             }

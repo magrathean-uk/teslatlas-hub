@@ -52,8 +52,8 @@ final class SourceTakeoverFlowTests: XCTestCase {
         let order = fixture.events.all
         let migrate = try XCTUnwrap(order.firstIndex(of: "migrate"))
         // Connect, Import (refused), Check Again twice, then the check Import runs itself.
-        XCTAssertEqual(order.filter { $0 == "stop-check" }.count, 5, "\(order)")
-        XCTAssertLessThan(try XCTUnwrap(order.lastIndex(of: "stop-check")), migrate, "\(order)")
+        XCTAssertEqual(order.filter { $0 == "stop-check" }.count, 6, "\(order)")
+        XCTAssertEqual(order[migrate + 1], "stop-check", "\(order)")
         XCTAssertEqual(order.filter { $0 == "migrate" }.count, 1)
         // The check ran over the session's own directory and the destination it was opened for.
         let request = try XCTUnwrap(fixture.stops.requests.last)
@@ -178,7 +178,7 @@ final class SourceTakeoverFlowTests: XCTestCase {
         XCTAssertFalse(String(describing: UserDefaults.standard.dictionaryRepresentation()).contains(Self.key))
         XCTAssertFalse(try fixture.anyFileUnderHomeContains(Self.key))
         XCTAssertEqual(fixture.controller.registeredMigrationSessionCount, 0)
-        XCTAssertNotNil(fixture.controller.sourceTakeoverRecordedAt)
+        XCTAssertTrue(fixture.controller.sourceTakeoverStatus.isTakenOver)
     }
 
     func testTakeoverRefusesAnEmptyKeyBeforeAnyCommand() throws {
@@ -198,7 +198,8 @@ final class SourceTakeoverFlowTests: XCTestCase {
 
     func testTakeoverInputCarriesExactlyTheTwoContractKeys() throws {
         let input = try HubController.sourceTakeoverInput(postgresPassword: "p\"w", encryptionKey: "k\\y")
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: String])
+        defer { input.wipe() }
+        let object = try XCTUnwrap(input.withBytes { try JSONSerialization.jsonObject(with: Data($0)) } as? [String: String])
         XCTAssertEqual(Set(object.keys), ["postgresPassword", "encryptionKey"])
         XCTAssertEqual(object["postgresPassword"], "p\"w")
         XCTAssertEqual(object["encryptionKey"], "k\\y")
@@ -263,8 +264,8 @@ final class SourceTakeoverFlowTests: XCTestCase {
         XCTAssertFalse(fixture.window.continueEnabledForTests)
 
         // The import stands: its handover gate is in place and nothing was rolled back.
-        XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingVerification)
-        XCTAssertNil(fixture.controller.sourceTakeoverRecordedAt)
+        XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingTakeover)
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .absent)
         XCTAssertTrue(fixture.window.hasMigrationSessionForTests)
         XCTAssertEqual(fixture.service.calls, [])
 
@@ -274,7 +275,7 @@ final class SourceTakeoverFlowTests: XCTestCase {
         fixture.window.continueForTests()
         try fixture.waitUntil { !fixture.window.isBusyForTests }
         XCTAssertEqual(fixture.window.takeoverFailureCodeForTests, "takeover_failed")
-        XCTAssertNil(fixture.controller.sourceTakeoverRecordedAt)
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .absent)
 
         // Retry runs the takeover alone: no second import.
         fixture.window.enterSourceKeyForTests(Self.key)
@@ -282,133 +283,254 @@ final class SourceTakeoverFlowTests: XCTestCase {
         try fixture.waitUntil { fixture.window.currentRoute == .verify }
         XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
         XCTAssertEqual(fixture.events.all.filter { $0 == "takeover" }.count, 3)
-        XCTAssertNotNil(fixture.controller.sourceTakeoverRecordedAt)
+        XCTAssertTrue(fixture.controller.sourceTakeoverStatus.isTakenOver)
         XCTAssertEqual(fixture.controller.registeredMigrationSessionCount, 0)
     }
 
-    func testSignInInsteadKeepsTheImportAndLeadsToTheOwnSignIn() throws {
+    func testSignInInsteadKeepsTheImportAndFollowsTheRealTransition() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
-        fixture.runner.takeoverResults = [
-            .failure(HubActionError.commandExited(1, #"{"error":"source_still_running"}"#))
-        ]
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "source_token_key_mismatch"))]
         try fixture.connectAndAcknowledge()
         fixture.window.enterSourceKeyForTests(Self.key)
         fixture.window.continueForTests()
         try fixture.waitUntil { fixture.window.takeoverFailureCodeForTests != nil }
-        XCTAssertEqual(fixture.window.takeoverFailureCodeForTests, "source_still_running")
-        XCTAssertTrue(fixture.labels().contains { $0.contains("still connected to its database") })
-
         fixture.window.declineTakeoverForTests()
-        XCTAssertEqual(fixture.window.currentRoute, .verify)
+        try fixture.waitUntil { fixture.window.currentRoute == .legacy }
         XCTAssertTrue(fixture.window.takeoverDeclinedForTests)
         XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
-        XCTAssertEqual(fixture.controller.registeredMigrationSessionCount, 0)
+        XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingSignIn)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
+        // Use the very same owner sign-in context the ordinary Connect Tesla button uses.
+        // Stop at a closed window so no authentication UI or Tesla traffic can occur.
+        let signIn = try fixture.controller.beginLegacySignIn().get()
+        let checked = expectation(description: "sign-in window checked")
+        signIn.requireOpenWindow { result in
+            XCTAssertThrowsError(try result.get())
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 3)
+        signIn.cancel()
+        XCTAssertTrue(fixture.service.calls.contains("service start"))
+        XCTAssertTrue(fixture.runner.calls.contains { $0.arguments.contains("window") })
+        XCTAssertTrue(fixture.runner.calls.contains { $0.arguments.contains("preflight") })
+        XCTAssertTrue(fixture.events.all.contains("healthz"))
+        let config = try String(contentsOf: fixture.folder.appendingPathComponent("config.toml"), encoding: .utf8)
+        XCTAssertTrue(config.contains("enabled = true"))
+        XCTAssertTrue(config.contains("interval_seconds = 60"))
+        XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
+        try fixture.restartWindow()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertEqual(fixture.window.currentRoute, .legacy)
+    }
+
+    func testLostReplyReconcilesCommittedLoginAndCaptionFailureCannotHideWarning() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        fixture.runner.commitEvenOnFailure = true
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "lost reply"))]
+        let caption = fixture.folder.appendingPathComponent(".source-takeover-first-refresh")
+        try FileManager.default.createDirectory(at: caption, withIntermediateDirectories: true)
+        try fixture.connectAndAcknowledge()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.currentRoute == .verify }
+        XCTAssertTrue(fixture.controller.sourceTakeoverStatus.isTakenOver)
         XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingVerification)
-        XCTAssertNil(fixture.controller.sourceTakeoverRecordedAt)
-        XCTAssertEqual(fixture.events.all.filter { $0 == "takeover" }.count, 1)
-
-        // The finish page says the Tesla sign-in comes next and keeps the earlier acknowledgement.
-        fixture.window.showFinishForTests()
-        let text = fixture.labels()
-        XCTAssertTrue(text.contains("After Hub starts, sign in with Tesla on the next page so Hub has its own login."))
-        XCTAssertFalse(text.contains { $0.hasPrefix("Hub now holds your Tesla login") })
-        XCTAssertTrue(fixture.acknowledgements().contains(
-            "I have disabled Tesla access in the source application to avoid duplicate requests"))
-    }
-
-    // MARK: Finish copy
-
-    func testFinishPageAfterTakeoverCarriesTheGoingBackCopyAndNewAcknowledgement() throws {
-        let (rig, window) = try Self.resumedFinish(takenOverAt: 1_800_000_000)
-        defer { window.close(); rig.tearDown() }
-        let page = PageReader(window)
-        XCTAssertEqual(window.currentRoute, .finish)
-
-        let text = page.labels()
-        XCTAssertTrue(text.contains("Hub now holds your Tesla login. Do not start the source application again: after Hub's first refresh its stored login no longer works, and running both on one login can lock you out."))
-        XCTAssertTrue(text.contains("To go back before Hub's first refresh: sign out in Hub, then start the source application. Its stored login still works."))
-        XCTAssertTrue(text.contains("To go back after the first refresh: sign out in Hub, start the source application and sign it in again with its own sign-in page. Hub never writes to the source database and never exports a login."))
-        XCTAssertEqual(page.acknowledgements(), ["I will keep the source application stopped"])
-        XCTAssertFalse(text.contains("I have disabled Tesla access in the source application to avoid duplicate requests"))
-
-        // Start Hub waits for the acknowledgement.
-        XCTAssertEqual(window.continueTitleForTests, "Start Hub")
-        XCTAssertFalse(window.continueEnabledForTests)
-        let checkbox = try XCTUnwrap(page.checkbox(label: "I will keep the source application stopped"))
+        try fixture.controller.advanceTakeoverPhase(to: .awaitingHandover)
+        try fixture.restartWindow()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertEqual(fixture.window.currentRoute, .finish)
+        XCTAssertTrue(fixture.labels().contains { $0.contains("Running both on one login can lock you out") })
+        XCTAssertEqual(fixture.acknowledgements(), ["I will keep the source application stopped"])
+        XCTAssertFalse(fixture.window.continueEnabledForTests)
+        let checkbox = try XCTUnwrap(PageReader(fixture.window).checkbox(label: "I will keep the source application stopped"))
         checkbox.performClick(nil)
-        XCTAssertTrue(window.continueEnabledForTests)
+        XCTAssertTrue(fixture.window.continueEnabledForTests)
     }
 
-    func testFinishPageWithoutATakeoverKeepsTheEarlierAcknowledgement() throws {
-        let (rig, window) = try Self.resumedFinish(takenOverAt: nil)
-        defer { window.close(); rig.tearDown() }
-        let page = PageReader(window)
-        XCTAssertEqual(page.acknowledgements(),
-                       ["I have disabled Tesla access in the source application to avoid duplicate requests"])
-        XCTAssertFalse(page.labels().contains { $0.hasPrefix("Hub now holds your Tesla login") })
-    }
-
-    /// A Hub resumed at its finish page (the shared rig writes the handover gate), with or
-    /// without this app's takeover record.
-    private static func resumedFinish(takenOverAt: Int64?) throws -> (OwnerRig, OnboardingWindowController) {
-        let rig = try OwnerRig(OwnerRig.Options(installed: false, marker: "awaiting_handover", markerInterval: 60))
-        if let takenOverAt {
-            try #"{"takenOverAt":\#(takenOverAt)}"#.write(
-                to: rig.configPath.deletingLastPathComponent().appendingPathComponent(".source-takeover-first-refresh"),
-                atomically: true, encoding: .utf8)
+    func testEmptyAndInvalidRepliesUseDurableOwnershipRatherThanTheReport() throws {
+        for reply in ["", "not a report", TakeoverRunner.report.replacingOccurrences(of: "taken_over", with: "already_taken_over")] {
+            let fixture = try Fixture()
+            defer { fixture.tearDown() }
+            fixture.runner.commitEvenOnFailure = true
+            fixture.runner.takeoverResults = [.success(reply)]
+            try fixture.connectAndAcknowledge()
+            fixture.window.enterSourceKeyForTests(Self.key)
+            fixture.window.continueForTests()
+            try fixture.waitUntil { fixture.window.currentRoute == .verify }
+            XCTAssertTrue(fixture.controller.sourceTakeoverStatus.isTakenOver)
         }
-        let window = OnboardingWindowController(controller: rig.controller,
-                                                resumeMigrationHandoverPhase: .awaitingHandover,
-                                                onComplete: { _ in })
-        return (rig, window)
+        XCTAssertTrue(HubSourceTakeoverReport.isComplete(TakeoverRunner.report.replacingOccurrences(of: "taken_over", with: "already_taken_over")))
     }
 
-    // MARK: Status until the first refresh
-
-    func testStatusShowsTakenOverUntilTheFirstRefresh() throws {
-        let takenOverAt: Int64 = 1_800_000_000
-        let fixture = try Fixture(takenOverAt: takenOverAt, migrationWindow: false)
+    func testUnknownStatusNeverClaimsAbsenceOrAllowsDeclining() throws {
+        let fixture = try Fixture()
         defer { fixture.tearDown() }
-        fixture.runner.statusOutputs = [
-            Fixture.status(origin: "source_token", nextRefreshAt: takenOverAt - 5),
-            Fixture.status(origin: "source_token", nextRefreshAt: takenOverAt + 25_000),
-            Fixture.status(origin: "source_token", nextRefreshAt: takenOverAt - 5)
-        ]
-        XCTAssertEqual(try fixture.refreshedAccount(), "Taken over from the source application; first refresh at the next window")
-        XCTAssertNotNil(fixture.controller.sourceTakeoverRecordedAt)
-
-        // The first refresh moved the schedule on: the ordinary line, and the record retires.
-        XCTAssertEqual(try fixture.refreshedAccount(), "Connected")
-        XCTAssertNil(fixture.controller.sourceTakeoverRecordedAt)
-        XCTAssertEqual(try fixture.refreshedAccount(), "Connected")
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "lost reply"))]
+        fixture.runner.statusOutputs = ["invalid status", "invalid status"]
+        try fixture.connectAndAcknowledge()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.takeoverFailureCodeForTests != nil }
+        XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .unknown)
+        XCTAssertFalse(fixture.labels().contains { $0.contains("login not taken over") })
+        fixture.window.declineTakeoverForTests()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertEqual(fixture.window.currentRoute, .migration)
+        XCTAssertEqual(fixture.controller.pendingMigrationHandoverPhase, .awaitingTakeover)
     }
 
-    func testStatusLineNeedsTheTakenOverOriginAndAHealthyPair() throws {
-        let takenOverAt: Int64 = 1_800_000_000
-        let due = [String: Any]()
-        XCTAssertTrue(HubSourceTakeoverStatus.awaitingFirstRefresh(
-            legacy: ["present": true, "origin": "source_token", "storeState": "ok", "nextRefreshAt": takenOverAt],
-            takenOverAt: takenOverAt))
-        for legacy: [String: Any]? in [
-            nil, due,
-            ["present": false, "origin": "source_token", "nextRefreshAt": takenOverAt],
-            ["present": true, "origin": "hub_login", "storeState": "ok", "nextRefreshAt": takenOverAt],
-            ["present": true, "origin": "source_token", "storeState": "refresh_token_spent", "nextRefreshAt": takenOverAt],
-            ["present": true, "origin": "source_token", "storeState": "ok"],
-            ["present": true, "origin": "source_token", "storeState": "ok", "nextRefreshAt": takenOverAt + 61]
-        ] {
-            XCTAssertFalse(HubSourceTakeoverStatus.awaitingFirstRefresh(legacy: legacy, takenOverAt: takenOverAt),
-                           String(describing: legacy))
+    func testRestartResumesOnlyTakeoverAndReconnectsAfterDeadSession() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "source_token_key_mismatch"))]
+        try fixture.connectAndAcknowledge()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.takeoverFailureCodeForTests != nil }
+        let history = fixture.folder.appendingPathComponent("imported-history-fixture")
+        try Data("unchanged imported history".utf8).write(to: history)
+        let before = try Data(contentsOf: history)
+        try fixture.restartWindow()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertEqual(fixture.window.currentRoute, .migration)
+        XCTAssertTrue(fixture.window.awaitingTakeoverForTests)
+        XCTAssertEqual(fixture.window.continueTitleForTests, "Connect to Server")
+        fixture.window.connectToSourceForTests(server: "server.local")
+        try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.stops.results = [.failure(HubActionError.commandExited(255, "dead session"))]
+        fixture.window.continueForTests()
+        try fixture.waitUntil { !fixture.window.isBusyForTests }
+        XCTAssertFalse(fixture.window.hasMigrationSessionForTests)
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+        fixture.window.connectToSourceForTests(server: "server.local")
+        try fixture.waitUntil { fixture.window.hasMigrationSessionForTests && !fixture.window.isBusyForTests }
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.currentRoute == .verify }
+        XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "takeover" }.count, 2)
+        XCTAssertEqual(try Data(contentsOf: history), before)
+        XCTAssertGreaterThanOrEqual(fixture.connections, 3)
+        let lastTakeover = try XCTUnwrap(fixture.events.all.lastIndex(of: "takeover"))
+        XCTAssertEqual(fixture.events.all[lastTakeover - 1], "stop-check")
+    }
+
+    func testRestartAfterCommitBeforeReplyResumesWithoutImportOrSecret() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        fixture.runner.takeoverResults = [.failure(HubActionError.commandExited(1, "before commit"))]
+        try fixture.connectAndAcknowledge()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.continueForTests()
+        try fixture.waitUntil { fixture.window.takeoverFailureCodeForTests != nil }
+        fixture.runner.durableOrigin = "source_token"  // store committed while app was gone
+        try fixture.restartWindow()
+        try fixture.waitUntil { fixture.window.currentRoute == .verify }
+        XCTAssertEqual(fixture.events.all.filter { $0 == "migrate" }.count, 1)
+        XCTAssertEqual(fixture.events.all.filter { $0 == "takeover" }.count, 1)
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+        XCTAssertTrue(fixture.controller.sourceTakeoverStatus.isTakenOver)
+    }
+
+    func testKeyIsClearedOnModeSwitchSessionCloseBackAndWindowClose() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        try fixture.connectAndAcknowledge()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.configureLocalHistoryForTests(source: Self.source, carID: "1", passwordFile: "/tmp/fake")
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+        fixture.window.showSourceConnectionFormForTests()
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.abandonSourceForTests()
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.navigate(to: .choose)
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+        fixture.window.enterSourceKeyForTests(Self.key)
+        fixture.window.close()
+        XCTAssertEqual(fixture.window.sourceKeyFieldValueForTests, "")
+    }
+
+    func testRefreshProgressDrivesStatusAndFinishAdviceWithoutClockComparison() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        for progress in ["none_sent", "attempt_recorded", "sign_in_required", "completed"] {
+            fixture.runner.statusOutputs = [Fixture.status(origin: "source_token", progress: progress)]
+            let account = try fixture.refreshedAccount()
+            XCTAssertEqual(fixture.controller.sourceTakeoverStatus, .takenOver(progress: progress))
+            XCTAssertEqual(account, fixture.controller.sourceTakeoverStatus.accountText)
+            try fixture.writeMarker(.awaitingHandover)
+            fixture.runner.durableOrigin = "source_token"
+            fixture.runner.progress = progress
+            try fixture.restartWindow()
+            try fixture.waitUntil { !fixture.window.isBusyForTests }
+            let text = fixture.labels().joined(separator: "\n")
+            XCTAssertEqual(fixture.acknowledgements(), ["I will keep the source application stopped"])
+            switch progress {
+            case "none_sent":
+                XCTAssertTrue(text.contains("source login is untouched"))
+                XCTAssertTrue(text.contains("first refresh at the next window"))
+            case "completed":
+                XCTAssertTrue(text.contains("copy no longer works"))
+                XCTAssertFalse(text.contains("untouched"))
+            default:
+                XCTAssertTrue(text.contains("A refresh may have been sent"))
+                XCTAssertTrue(text.contains("also needs a new sign-in"))
+                XCTAssertFalse(text.contains("first refresh at the next window"))
+                XCTAssertFalse(text.contains("untouched"))
+            }
         }
-
-        // A signed-out Hub retires the record as well.
-        let fixture = try Fixture(takenOverAt: takenOverAt, migrationWindow: false)
-        defer { fixture.tearDown() }
-        fixture.runner.statusOutputs = [Fixture.status(origin: nil, nextRefreshAt: nil)]
-        _ = try fixture.refreshedAccount()
-        XCTAssertNil(fixture.controller.sourceTakeoverRecordedAt)
     }
+
+    func testDurableAbsenceAndOtherOriginDoNotAcquireTakeoverWarningsFromCaption() throws {
+        let fixture = try Fixture(migrationWindow: false)
+        defer { fixture.tearDown() }
+        try Data(#"{"takenOverAt":1800000000}"#.utf8).write(to: fixture.folder.appendingPathComponent(".source-takeover-first-refresh"))
+        for origin: String? in [nil, "hub_login"] {
+            fixture.runner.durableOrigin = origin
+            try fixture.writeMarker(.awaitingHandover)
+            try fixture.restartWindow()
+            try fixture.waitUntil { !fixture.window.isBusyForTests }
+            XCTAssertFalse(fixture.controller.sourceTakeoverStatus.isTakenOver)
+            XCTAssertEqual(fixture.acknowledgements(), ["I have disabled Tesla access in the source application to avoid duplicate requests"])
+        }
+    }
+
+    func testSensitiveTransportWipesBeforeWaitingForChildAndOnSpawnError() throws {
+        for executable in ["/bin/cat", "/missing/test-only-executable"] {
+            var data = Data("synthetic secret".utf8)
+            let input = HubSensitiveInput(&data)
+            XCTAssertTrue(data.isEmpty)
+            let done = expectation(description: "secret transport completed")
+            var primitives = HubProcessPrimitives.live
+            primitives.wait = { semaphore, deadline in
+                XCTAssertTrue(input.isWiped, "bytes must be wiped before waiting for process exit")
+                return HubProcessPrimitives.live.wait(semaphore, deadline)
+            }
+            HubProcessExecutor.run(executable: URL(fileURLWithPath: executable), arguments: [],
+                sensitiveInput: input, primitives: primitives) { result in
+                    XCTAssertTrue(input.isWiped)
+                    XCTAssertTrue(input.withBytes { $0.allSatisfy { $0 == 0 } })
+                    if executable == "/bin/cat" { XCTAssertNoThrow(try result.get()) }
+                    else { XCTAssertThrowsError(try result.get()) }
+                    done.fulfill()
+                }
+            wait(for: [done], timeout: 5)
+        }
+    }
+
+    func testInitialDiscoveryFindsStoppedSourceAndRefusesNoneOrAmbiguity() throws {
+        let stopped = try StopCheckScriptHarness.run(running: "false", discovery: true)
+        XCTAssertEqual(stopped.status, 0, stopped.output)
+        XCTAssertEqual(try SourceDiscovery.parse(stopped.output)["car"], "42")
+        XCTAssertTrue(stopped.calls.contains { $0.contains("ps") && $0.contains("-a") })
+        XCTAssertEqual(try StopCheckScriptHarness.run(running: "false", withSource: false, discovery: true).status, 20)
+        XCTAssertEqual(try StopCheckScriptHarness.run(running: "false", discovery: true, duplicateSource: true).status, 27)
+    }
+
 }
 
 // MARK: - Fixture
@@ -431,6 +553,10 @@ private final class TakeoverRunner: HubCommandRunning {
     private let events: Events
     var takeoverResults: [Result<String, Error>] = []
     var statusOutputs: [String] = []
+    var durableOrigin: String?
+    var progress = "none_sent"
+    var commitEvenOnFailure = false
+
 
     init(events: Events) { self.events = events }
 
@@ -441,15 +567,22 @@ private final class TakeoverRunner: HubCommandRunning {
         lock.lock(); recorded.append(Call(arguments: arguments, stdin: stdin)); lock.unlock()
         if arguments.contains("take-over-source-token") {
             events.append("takeover")
-            completion(takeoverResults.isEmpty ? .success(Self.report) : takeoverResults.removeFirst())
+            let result = takeoverResults.isEmpty ? .success(Self.report) : takeoverResults.removeFirst()
+            if commitEvenOnFailure { durableOrigin = "source_token" }
+            else if case let .success(output) = result, HubSourceTakeoverReport.isComplete(output) { durableOrigin = "source_token" }
+            completion(result)
         } else if arguments.contains("source-check") {
             events.append("check")
             completion(.success(Self.compatible))
         } else if arguments.contains("migrate") {
             events.append("migrate")
             completion(.success(#"{"status":"imported","captureMode":"online-snapshot"}"#))
-        } else if arguments.contains("status"), !statusOutputs.isEmpty {
-            completion(.success(statusOutputs.removeFirst()))
+        } else if arguments.contains("preflight") {
+            completion(.success(#"{"status":"ready","state":"awaiting_sign_in","provider":"legacy","collectorEnabled":false}"#))
+        } else if arguments.contains("window") {
+            completion(.success(#"{"phase":"closed","faulted":false}"#))
+        } else if arguments.contains("status") {
+            completion(.success(statusOutputs.isEmpty ? Fixture.status(origin: durableOrigin, progress: progress) : statusOutputs.removeFirst()))
         } else {
             completion(.failure(HubActionError.commandFailed("unexpected command")))
         }
@@ -457,6 +590,13 @@ private final class TakeoverRunner: HubCommandRunning {
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         answer(arguments, stdin: nil, completion: completion)
+    }
+
+    func run(arguments: [String], sensitiveInput: HubSensitiveInput,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        let text = sensitiveInput.withBytes { String(decoding: $0, as: UTF8.self) }
+        sensitiveInput.wipe()
+        answer(arguments, stdin: text, completion: completion)
     }
 
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
@@ -520,7 +660,8 @@ private final class Fixture {
     let runner: TakeoverRunner
     let stops: StopChecks
     let service = TakeoverService()
-    let controller: HubController
+    var controller: HubController!
+    var connections = 0
     var window: OnboardingWindowController!
 
     var folder: URL { home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true) }
@@ -538,19 +679,40 @@ private final class Fixture {
                 to: home.appendingPathComponent("Library/Application Support/Tesatlas Hub/.source-takeover-first-refresh"),
                 atomically: true, encoding: .utf8)
         }
-        controller = HubController(commandRunner: runner,
-                                   serviceRunner: service,
-                                   homeDirectory: home,
-                                   serviceInstalledOverride: false,
-                                   migrationConnector: { _, _, _, _, _, completion in
-                                       do { completion(.success(try Fixture.makeSession())) }
-                                       catch { completion(.failure(error)) }
-                                   },
-                                   sourceStopChecker: stops.checker)
+        makeController()
         if migrationWindow {
             window = OnboardingWindowController(controller: controller, initialRoute: .migration,
                                                 onComplete: { _ in })
         }
+    }
+
+    private func makeController() {
+        controller = HubController(commandRunner: runner,
+                                   serviceRunner: service,
+                                   homeDirectory: home,
+                                   serviceInstalledOverride: false,
+                                   migrationConnector: { [unowned self] _, _, _, _, _, completion in
+                                       self.connections += 1
+                                       do { completion(.success(try Fixture.makeSession())) }
+                                       catch { completion(.failure(error)) }
+                                   },
+                                   sourceStopChecker: stops.checker,
+                                   importedHistoryHealthCheck: { [unowned self] _, completion in
+                                       self.events.append("healthz")
+                                       completion(.success(()))
+                                   })
+    }
+
+    func writeMarker(_ phase: HubMigrationHandoverPhase) throws {
+        try Data("{\"phase\":\"\(phase.rawValue)\",\"previousIntervalSeconds\":60,\"previousProvider\":\"legacy\",\"historyOnly\":false}".utf8)
+            .write(to: folder.appendingPathComponent(".teslamate-handover-pending"))
+    }
+
+    func restartWindow() throws {
+        window?.close()
+        makeController()
+        let phase = try XCTUnwrap(controller.pendingMigrationHandoverPhase)
+        window = OnboardingWindowController(controller: controller, resumeMigrationHandoverPhase: phase, onComplete: { _ in })
     }
 
     static func makeSession() throws -> SourceServerImportSession {
@@ -563,9 +725,10 @@ private final class Fixture {
                                          directoryOwner: owner)
     }
 
-    static func status(origin: String?, nextRefreshAt: Int64?) -> String {
+    static func status(origin: String?, nextRefreshAt: Int64? = nil, progress: String = "none_sent") -> String {
         var legacy: [String: Any] = ["present": origin != nil, "storeState": "ok"]
-        if let origin { legacy["origin"] = origin; legacy["refreshOwner"] = "hub" }
+        if let origin { legacy["origin"] = origin; legacy["refreshOwner"] = "hub"; legacy["refreshProgress"] = progress }
+        else { legacy["refreshProgress"] = NSNull() }
         if let nextRefreshAt { legacy["nextRefreshAt"] = nextRefreshAt; legacy["expiresAt"] = nextRefreshAt + 28_800 }
         let root: [String: Any] = [
             "status": "ok", "version": HubRelease.bundledVersion, "ready": false,
@@ -672,7 +835,8 @@ private enum StopCheckScriptHarness {
         let calls: [[String]]
     }
 
-    static func run(running: String, withSource: Bool = true) throws -> Observation {
+    static func run(running: String, withSource: Bool = true, discovery: Bool = false,
+                    duplicateSource: Bool = false) throws -> Observation {
         let root = HubTestScratch.fixtureRoot("source-stop-check")
         let bin = root.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true,
@@ -680,7 +844,7 @@ private enum StopCheckScriptHarness {
         defer { try? FileManager.default.removeItem(at: root) }
         let scenario = root.appendingPathComponent("scenario.json")
         let calls = root.appendingPathComponent("calls.jsonl")
-        let containers: [String: Any] = [
+        var containers: [String: Any] = [
             "db-1": ["project": "fictional-project", "running": "true",
                      "env": ["POSTGRES_PASSWORD": "fictional-env-secret"]],
             "source-1": ["project": "fictional-project", "running": running,
@@ -691,6 +855,7 @@ private enum StopCheckScriptHarness {
             "dashboards-1": ["project": "fictional-project", "running": "true",
                              "env": ["DATABASE_USER": "u", "DATABASE_PASS": "fictional-env-secret"]]
         ]
+        if duplicateSource { containers["source-2"] = containers["source-1"] }
         try JSONSerialization.data(withJSONObject: ["databases": ["db-1"], "containers": containers])
             .write(to: scenario)
         try Data().write(to: calls)
@@ -702,7 +867,7 @@ private enum StopCheckScriptHarness {
         let done = DispatchSemaphore(value: 0)
         var outcome: Result<String, Error>?
         HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-s"],
-                               stdin: SourceStopCheck.script,
+                               stdin: discovery ? SourceDiscovery.script : SourceStopCheck.script,
                                environment: [
                                    "PATH": bin.path + ":/usr/bin:/bin",
                                    "SCENARIO": scenario.path, "CALLS": calls.path,
@@ -740,13 +905,22 @@ if name=='id':
 if name!='docker':reject()
 c=s['containers']
 if a==['ps','--filter','label=com.docker.compose.service=database','--format','{{.ID}}']:out('\n'.join(s['databases']))
-if len(a)==6 and a[:3]==['ps','-a','--filter'] and a[3].startswith('label=com.docker.compose.project=') and a[4:]==['--format','{{.ID}}']:
- project=a[3].split('=',2)[2];out('\n'.join(k for k,v in sorted(c.items()) if v['project']==project))
+if a and a[0]=='ps':
+ filters=[a[i+1] for i,v in enumerate(a[:-1]) if v=='--filter']
+ project=next((f.split('=',2)[2] for f in filters if f.startswith('label=com.docker.compose.project=')),None)
+ if project is None:reject()
+ if 'label=com.docker.compose.service=database' in filters:out('\n'.join(s['databases']))
+ out('\n'.join(k for k,v in sorted(c.items()) if v['project']==project and ('-a' in a or v['running']=='true')))
+if a and a[0]=='exec':out('42')
 if len(a)==4 and a[:2]==['inspect','-f'] and a[3] in c:
  t=a[2];v=c[a[3]]
  if t=='{{index .Config.Labels "com.docker.compose.project"}}':out(v['project'])
  if t=='{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}':out('\n'.join(v['env']))
  if t=='{{.State.Running}}':out(v['running'])
+ if t.startswith('{{range .Config.Env}}{{if eq '):out('\n'.join(k+'='+val for k,val in v['env'].items() if k in ['DATABASE_USER','DATABASE_PASS','DATABASE_NAME']))
+ if t=='{{index .Config.Labels "org.opencontainers.image.version"}}':out('4.4.0')
+ if t=='{{range $name, $value := .NetworkSettings.Networks}}{{println $name}}{{end}}':out('fake-network')
+ if t=='{{with index .NetworkSettings.Networks "fake-network"}}{{.IPAddress}}{{end}}':out('172.20.0.9')
 reject()
 """#
 }

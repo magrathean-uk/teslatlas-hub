@@ -49,7 +49,7 @@ EOF_DATABASE_IDS
 candidate_rows=
 while IFS= read -r project_name; do
     [ -n "$project_name" ] || continue
-    src_container_ids=$(docker_run ps --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}')
+    src_container_ids=$(docker_run ps -a --filter "label=com.docker.compose.project=$project_name" --format '{{.ID}}')
     while IFS= read -r src_container_id; do
         [ -n "$src_container_id" ] || continue
         environment_names=$(docker_run inspect -f '{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}' "$src_container_id")
@@ -69,7 +69,7 @@ $project_names
 EOF_PROJECT_NAMES
 src_container_count=$(printf '%s\n' "$candidate_rows" | awk 'NF {count += 1} END {print count + 0}')
 [ "$src_container_count" -gt 0 ] || { printf '%s\n' 'No matching source container was found.' >&2; exit 20; }
-[ "$src_container_count" -eq 1 ] || { printf '%s\n' 'Several matching source containers are running.' >&2; exit 27; }
+[ "$src_container_count" -eq 1 ] || { printf '%s\n' 'Several matching source containers were found.' >&2; exit 27; }
 candidate_row=$(printf '%s\n' "$candidate_rows" | sed -n '1p')
 src_container_id=${candidate_row%%|*}
 project_name=${candidate_row#*|}
@@ -258,8 +258,8 @@ printf 'running=%s\n' "$running"
             fallback: "Hub could not read whether the source application is stopped. Check the server connection, then check again."))
     }
 
-    /// The live control socket the import tunnel opened in its private directory, if any.
-    /// Only a socket owned by this user counts.
+    /// A control socket in the import tunnel's private directory, if any.
+    /// Ownership and socket type are checked here; liveness is not established.
     static func controlSocket(inSessionDirectory directory: URL) -> URL? {
         for name in ["c2", "c1", "c0"] {
             let candidate = directory.appendingPathComponent(name, isDirectory: false)
@@ -272,8 +272,9 @@ printf 'running=%s\n' "$running"
         return nil
     }
 
-    /// The ssh arguments that run the script over that socket. No password, key or agent is
-    /// offered and nothing prompts (BatchMode); host keys stay strictly checked.
+    /// Prefer the tunnel's control socket without prompting (BatchMode). If the master
+    /// is gone, OpenSSH can try configured keys or its agent in batch mode. ForwardAgent
+    /// only prevents forwarding; host keys stay strictly checked.
     static func arguments(controlSocket: URL,
                           destination: String,
                           port: Int,
