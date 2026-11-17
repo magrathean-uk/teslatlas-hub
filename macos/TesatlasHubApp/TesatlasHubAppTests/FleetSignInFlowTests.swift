@@ -308,6 +308,58 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(fixture.controller.savedFleetApplication?.registered, true)
     }
 
+    // MARK: Hub not running (note 4)
+
+    func testAStoppedInstalledServiceIsStartedThroughTheStartActionBeforeTheRouteContinues() throws {
+        let fixture = try Fixture(state: .awaitingVehicles, consented: true, serviceStopped: true)
+        defer { fixture.tearDown() }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .vehicles && !fixture.window.isBusyForTests }
+        XCTAssertEqual(fixture.service.calls, ["service start"])
+        XCTAssertNil(fixture.window.errorMessageForTests)
+    }
+
+    func testAStepRefusedBecauseHubIsNotRunningStartsHubAndContinues() throws {
+        let fixture = try Fixture(state: .awaitingVehicles, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .vehicles && !window.isBusyForTests }
+        fixture.runner.results["discover"] = [.failure(HubActionError.commandExited(
+            1, "service_not_running: the Hub service is not running"))]
+        window.continueForTests()
+        try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
+        XCTAssertEqual(fixture.service.calls, ["service start"])
+        XCTAssertEqual(fixture.runner.fleetVerbs, ["discover", "discover"], "the step runs again once Hub runs")
+    }
+
+    func testASignInRefusedBecauseHubIsNotRunningStartsHubAndAsksForTheSecretAgain() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        window.presentFleetSignIn = { _, _ in XCTFail("no browser after a refused begin") }
+        fixture.runner.results["begin"] = [.failure(HubActionError.commandExited(
+            1, "service_not_running: the Hub service is not running"))]
+        window.enterFleetSecretForTests(Self.secret)
+        window.continueForTests()
+        try fixture.waitUntil { fixture.service.calls == ["service start"] && !window.isBusyForTests }
+        XCTAssertEqual(window.fleetStepForTests, .signIn)
+        XCTAssertEqual(window.fleetNoticeForTests, "Hub was not running, so Hub started it. Continue from this step.")
+        XCTAssertEqual(fixture.runner.fleetVerbs, ["begin"], "a step that carried the secret is not repeated")
+        XCTAssertEqual(window.fleetSecretForTests, "")
+        XCTAssertFalse(window.continueEnabledForTests, "the owner types the secret again")
+    }
+
+    func testAFailedStartIsShownWithTheServicesText() throws {
+        let fixture = try Fixture(state: .awaitingVehicles, consented: true, serviceStopped: true)
+        defer { fixture.tearDown() }
+        fixture.service.startResults = [.failure(HubActionError.commandFailed("Fixed text the service wrote for its start."))]
+        let window = fixture.window
+        try fixture.waitUntil { window.errorMessageForTests != nil && !window.isBusyForTests }
+        XCTAssertTrue(window.errorMessageForTests?.contains("Fixed text the service wrote for its start.") == true,
+                      window.errorMessageForTests ?? "")
+        XCTAssertEqual(fixture.runner.fleetVerbs, [])
+    }
+
     // MARK: Evidence of consent (B4)
 
     func testAFleetHubWithAPositiveIntervalAndNoConsentRecordCannotResumeThroughTheRedeemOrDiscovery() throws {
@@ -885,10 +937,19 @@ private final class FleetFlowRunner: HubCommandRunning {
 
 private final class FleetFlowService: HubServiceControlling {
     private(set) var calls: [String] = []
-    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) { completion(.unloaded) }
+    /// What launchd reports for the installed service; a test sets `.unloaded` for a stopped one.
+    var loaded: HubServiceLoadState = .loaded
+    /// Answers for `service start`, first to last; then success.
+    var startResults: [Result<String, Error>] = []
+    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) { completion(loaded) }
     func run(arguments: [String], owner: HubLifecycleToken,
              completion: @escaping (Result<String, Error>) -> Void) {
         calls.append(arguments.joined(separator: " "))
+        if arguments.last == "start", !startResults.isEmpty {
+            completion(startResults.removeFirst())
+            return
+        }
+        if arguments.last == "start" || arguments.last == "pause" { loaded = arguments.last == "start" ? .loaded : .unloaded }
         completion(.success(""))
     }
     func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
@@ -921,13 +982,14 @@ private final class Fixture {
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
     init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false,
-         registered: Bool = true) throws {
+         registered: Bool = true, serviceStopped: Bool = false) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: home.appendingPathComponent("Desktop"), withIntermediateDirectories: true)
         let runner = FleetFlowRunner()
         let service = FleetFlowService()
+        if serviceStopped { service.loaded = .unloaded }
         let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
                                        serviceInstalledOverride: state != nil)
         if let state {

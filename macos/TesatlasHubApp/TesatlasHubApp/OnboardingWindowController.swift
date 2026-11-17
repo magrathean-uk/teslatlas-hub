@@ -3727,15 +3727,19 @@ extension OnboardingWindowController {
             guard let self else { return }
             self.setBusy(false)
             switch result {
-            case .success:
+            case let .success(preparation):
                 do { try self.controller.saveFleetApplication(application) } catch {
                     self.showInlineError(error.localizedDescription)
                     return
                 }
-                self.errorMessage = nil
-                self.fleetNotice = nil
-                self.fleetStep = application.registered ? self.fleetStepAfterRegistration() : .publicKey
-                self.render()
+                let next = { [weak self] in
+                    guard let self else { return }
+                    self.errorMessage = nil
+                    self.fleetNotice = nil
+                    self.fleetStep = application.registered ? self.fleetStepAfterRegistration() : .publicKey
+                    self.render()
+                }
+                if preparation == .serviceStopped { self.fleetStartService(then: next) } else { next() }
             case let .failure(error):
                 self.fleetFailed(error)
             }
@@ -3753,19 +3757,25 @@ extension OnboardingWindowController {
             guard let self else { return }
             self.filePanelOpen = false
             guard let url else { return }
-            self.setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.key", fallback: "Saving the public key…"),
-                         operation: .fleet)
-            self.controller.saveFleetPublicKey(to: url) { [weak self] result in
-                guard let self else { return }
-                self.setBusy(false)
-                switch result {
-                case let .success(key):
-                    self.fleetPublicKey = key
-                    self.errorMessage = nil
-                    self.render()
-                case let .failure(error):
-                    self.fleetFailed(error)
-                }
+            self.fleetSavePublicKey(to: url, afterStart: false)
+        }
+    }
+
+    private func fleetSavePublicKey(to url: URL, afterStart: Bool) {
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.key", fallback: "Saving the public key…"),
+                operation: .fleet)
+        controller.saveFleetPublicKey(to: url) { [weak self] result in
+            guard let self else { return }
+            self.setBusy(false)
+            switch result {
+            case let .success(key):
+                self.fleetPublicKey = key
+                self.errorMessage = nil
+                self.render()
+            case let .failure(error):
+                self.fleetFailed(error, retry: afterStart ? nil : { [weak self] in
+                    self?.fleetSavePublicKey(to: url, afterStart: true)
+                })
             }
         }
     }
@@ -3885,7 +3895,7 @@ extension OnboardingWindowController {
         }
     }
 
-    private func fleetDiscover() {
+    private func fleetDiscover(afterStart: Bool = false) {
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.discover", fallback: "Finding your car…"), operation: .fleet)
         controller.discoverFleetVehicles { [weak self] result in
             guard let self else { return }
@@ -3899,7 +3909,7 @@ extension OnboardingWindowController {
             case .success:
                 self.showInlineError(HubFleetRefusal.message(code: "discovery_no_vehicles") ?? "")
             case let .failure(error):
-                self.fleetFailed(error)
+                self.fleetFailed(error, retry: afterStart ? nil : { [weak self] in self?.fleetDiscover(afterStart: true) })
             }
         }
     }
@@ -3918,7 +3928,7 @@ extension OnboardingWindowController {
 
     /// Section 10, step 6: the last page runs `setup-fleet activate`, only with the owner's
     /// consent on record.
-    private func fleetActivate() {
+    private func fleetActivate(afterStart: Bool = false) {
         guard controller.fleetConsentInEffect else {
             fleetStep = fleetStepBehindConsent(.start)
             render()
@@ -3933,7 +3943,7 @@ extension OnboardingWindowController {
                 self.setupFinished(.success(()))
             case let .failure(error):
                 self.setBusy(false)
-                self.fleetFailed(error)
+                self.fleetFailed(error, retry: afterStart ? nil : { [weak self] in self?.fleetActivate(afterStart: true) })
             }
         }
     }
@@ -3946,10 +3956,42 @@ extension OnboardingWindowController {
 
     /// Shows a refusal. When the outcome is unknown (the answer was lost), the state is read
     /// again and the page moves to the step it names.
-    private func fleetFailed(_ error: Error, readsState: Bool = true) {
+    /// `retry` repeats a step that carries no secret once Hub is running again; a step that
+    /// carried the client secret asks for it again instead.
+    private func fleetFailed(_ error: Error, readsState: Bool = true, retry: (() -> Void)? = nil) {
         let underlying = HubActionError.settingQuiescenceAside(error)
+        if (underlying as? HubFleetRefusal)?.code == "service_not_running" {
+            fleetStartService { [weak self] in
+                guard let self else { return }
+                if let retry { return retry() }
+                self.errorMessage = nil
+                self.fleetNotice = HubL10n.text("hub.fleetSetup.serviceStarted",
+                    fallback: "Hub was not running, so Hub started it. Continue from this step.")
+                self.render()
+            }
+            return
+        }
         showInlineError(error.localizedDescription)
         if readsState, (underlying as? HubFleetRefusal)?.outcomeUnknown == true { refreshFleetSetupState() }
+    }
+
+    /// Hub's service is not running (a step refused with `service_not_running`, or the
+    /// preparation found the installed service stopped): the route starts it through the app's
+    /// start action and continues with `next`. A failed start is shown with the service's text.
+    private func fleetStartService(then next: @escaping () -> Void) {
+        HubAppLog.shared.record("fleet_setup.service_start_requested", category: "account")
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.start", fallback: "Starting Hub…"), operation: .fleet)
+        controller.startHub { [weak self] result in
+            let deliver = {
+                guard let self else { return }
+                self.setBusy(false)
+                switch result {
+                case .success: next()
+                case let .failure(error): self.showInlineError(error.localizedDescription)
+                }
+            }
+            if Thread.isMainThread { deliver() } else { DispatchQueue.main.async(execute: deliver) }
+        }
     }
 
     // MARK: Waiting states
@@ -3971,11 +4013,14 @@ extension OnboardingWindowController {
         controller.prepareFleetHub { [weak self] prepared in
             guard let self, reading == self.fleetStateReading, self.state.route == .fleet else { return }
             self.setBusy(false)
-            if case let .failure(error) = prepared {
+            switch prepared {
+            case let .failure(error):
                 self.fleetFailed(error, readsState: false)
-                return
+            case .success(.serviceStopped):
+                self.fleetStartService { [weak self] in self?.readFleetSetupState(reading) }
+            case .success(.ready):
+                self.readFleetSetupState(reading)
             }
-            self.readFleetSetupState(reading)
         }
     }
 

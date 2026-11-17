@@ -8582,6 +8582,13 @@ struct HubFleetConsentFigures: Equatable {
     }
 }
 
+/// What the Fleet preparation found. `serviceStopped`: the installed service is not loaded; the
+/// Fleet route starts it through the app's start action before it continues.
+enum HubFleetPreparation: Equatable {
+    case ready
+    case serviceStopped
+}
+
 /// The owner's acceptance of the consent page: when, and the figures accepted. It holds no
 /// secret and is kept owner-only beside the application record (`fleet-consent.json`).
 struct HubFleetConsentRecord: Equatable {
@@ -8861,9 +8868,10 @@ extension HubController {
     /// service and for a configuration that is already Fleet: an installed Hub is paused,
     /// reconfigured and started again, and a failure runs the typed recovery. Only a Fleet Hub
     /// with consent on record (a new sign-in after a sign-out) keeps its interval and is not
-    /// paused; so is a Fleet Hub whose interval is already 0.
-    func prepareFleetHub(completion: @escaping (Result<Void, Error>) -> Void) {
-        let deliver: (Result<Void, Error>) -> Void = { result in
+    /// paused; so is a Fleet Hub whose interval is already 0. When nothing changes, an installed
+    /// service that is not loaded is reported as `serviceStopped`.
+    func prepareFleetHub(completion: @escaping (Result<HubFleetPreparation, Error>) -> Void) {
+        let deliver: (Result<HubFleetPreparation, Error>) -> Void = { result in
             if Thread.isMainThread { completion(result) } else { DispatchQueue.main.async { completion(result) } }
         }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
@@ -8882,12 +8890,14 @@ extension HubController {
             "already_fleet": alreadyFleet ? "true" : "false",
             "consent_in_effect": consented ? "true" : "false"
         ])
-        let finish: (Result<Void, Error>) -> Void = { [self] result in
+        let finish: (Result<HubFleetPreparation, Error>) -> Void = { [self] result in
             DispatchQueue.main.async { [self] in
                 switch result {
-                case .success:
-                    HubAppLog.shared.record("fleet_setup.prepared", category: "account")
-                    refresh { _ in op.finish(.success(()), completion: deliver) }
+                case let .success(preparation):
+                    HubAppLog.shared.record("fleet_setup.prepared", category: "account", fields: [
+                        "service_stopped": preparation == .serviceStopped ? "true" : "false"
+                    ])
+                    refresh { _ in op.finish(.success(preparation), completion: deliver) }
                 case let .failure(error):
                     HubAppLog.shared.record("fleet_setup.prepare_failed", category: "account", level: "ERROR",
                                             fields: ["error_code": HubAppLog.errorCode(error)])
@@ -8895,20 +8905,28 @@ extension HubController {
                 }
             }
         }
+        // The typed recovery reports through a Void result; it always ends in its failure.
+        let failed: (Result<Void, Error>) -> Void = { finish($0.map { .ready }) }
         guard installed else {
             do {
                 op.phase("configuration")
                 try ensureConfig(provider: "fleet", collectorIntervalSeconds: interval)
             } catch { finish(.failure(error)); return }
             op.phase("start")
-            op.service(["service", "start"]) { finish($0.map { _ in () }) }
+            op.service(["service", "start"]) { finish($0.map { _ in .ready }) }
             return
         }
-        guard !unchanged else { finish(.success(())); return }
+        guard !unchanged else {
+            op.phase("service-state")
+            op.loadedState { state in
+                if case .unloaded = state { finish(.success(.serviceStopped)) } else { finish(.success(.ready)) }
+            }
+            return
+        }
         op.phase("pause")
         op.service(["service", "pause"]) { [self] pauseResult in
             if case let .failure(error) = pauseResult {
-                recoverThenFail(op, error, finish: finish)
+                recoverThenFail(op, error, finish: failed)
                 return
             }
             do {
@@ -8917,20 +8935,20 @@ extension HubController {
             } catch {
                 do {
                     try restoreConfig(originalConfig)
-                    recoverThenFail(op, error, finish: finish)
+                    recoverThenFail(op, error, finish: failed)
                 } catch let recoveryError {
                     recoverThenFail(op, HubActionError.commandFailed(HubL10n.format(
                         "hub.HubController.1966.689",
                         fallback: "Fleet setup failed: %1$@ Hub configuration recovery also failed: %2$@",
-                        arguments: [error.localizedDescription, recoveryError.localizedDescription])), finish: finish)
+                        arguments: [error.localizedDescription, recoveryError.localizedDescription])), finish: failed)
                 }
                 return
             }
             op.phase("start")
             op.service(["service", "start"]) { [self] startResult in
                 switch startResult {
-                case .success: finish(.success(()))
-                case let .failure(error): recoverThenFail(op, error, finish: finish)
+                case .success: finish(.success(.ready))
+                case let .failure(error): recoverThenFail(op, error, finish: failed)
                 }
             }
         }
