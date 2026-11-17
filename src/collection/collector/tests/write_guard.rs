@@ -1301,8 +1301,10 @@ fn p3bf2_resident_fleet(point: &'static str) {
     bed.assert_untouched(point);
 }
 
+// DEC-187, DEC-194: vehicle commands are not offered, so at each fence point
+// the action ends in the product's refusal and the store stays untouched
+// (M09-T11 S1: this checks the prohibition itself and runs).
 #[test]
-#[ignore = "DEC-187, DEC-194: vehicle commands are not offered; this test drives a Fleet vehicle action"]
 fn p3bf2_a_resident_fleet_action_writes_no_receipt_after_the_fence() {
     for point in ["resident-begin", "resident-cancel", "resident-complete"] {
         p3bf2_resident_fleet(point);
