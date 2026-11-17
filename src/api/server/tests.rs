@@ -2759,6 +2759,7 @@ async fn verified_pack_body_preserves_selected_bytes() {
         PackDeviceSlot {
             device_id: Uuid::nil(),
             counts: counts.clone(),
+            authorization: None,
         },
         Duration::from_secs(2),
     );
