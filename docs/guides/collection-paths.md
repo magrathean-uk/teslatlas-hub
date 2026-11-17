@@ -39,12 +39,33 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 5. Wait for the first observation. Status shows "recording" and the last data time.
 
 **Migrating from the source application.** Use Import History instead of a new sign-in.
-Stop the source application and its dashboards first and leave it stopped.
-After the history import, Hub takes over its stored Tesla login using the encryption key
+The app can find a deployment that is already stopped. Stop its application
+containers and disconnect its dashboards and other database clients, leaving
+PostgreSQL running. Disable automatic restart and keep the application stopped;
+closing its web page or pausing collection is insufficient.
+The history import sets up the selected car first. With no car, take-over
+refuses with `history_import_required` and asks you to import history first.
+Hub then takes over its stored Tesla login using the encryption key
 you paste once. Hub stores the pair encrypted and becomes its only refresher;
 it does not keep the key or change the source database. Take-over sends nothing
-to Tesla. The first refresh waits for a collection window, and your cars appear
-once that first window opens, with no new sign-in. See the
+to Tesla. The car is already set up; the first refresh waits for a collection
+window, without a new sign-in. Repeating take-over for the same login reports
+`already_taken_over` and writes nothing; a different login in the slot is refused.
+After an app restart or a dropped connection, take-over resumes without another
+import. Reconnect and pass the stop check again; a server sign-in password is
+asked for again and is not kept.
+
+If take-over fails or you decline it, **Sign in with Tesla Instead** opens the
+ordinary sign-in route. Hub starts with collection off and waits for sign-in
+inside an open window, then collects without a restart.
+
+The app's `none_sent` status says the source login is untouched until the first
+refresh; sign out in Hub before returning to the source. `attempt_recorded`
+says a refresh is in progress: keep the source stopped until the outcome is
+known, and use a new sign-in if returning there. `completed` says Hub holds the
+login and the source copy no longer works. `sign_in_required` asks for a new
+Hub sign-in and says returning to the source also needs a new sign-in. Sign out
+in Hub before returning to the source in either of those last two states. See the
 [migration guide](../releases/migration.md) for key errors, retries and how to
 go back before or after the first refresh.
 
