@@ -613,12 +613,15 @@ const SERVING_BETWEEN_WINDOWS: &str = r#"echo '{"status":"serving","readiness":"
 struct FakeService {
     job: LoadedJob,
     restart_fails: bool,
+    /// How long decoding the installed file takes (a decoder that hangs).
+    decoding: Duration,
+    identity: Option<(PathBuf, PathBuf)>,
     calls: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl FakeService {
     fn new(job: LoadedJob) -> Self {
-        Self { job, restart_fails: false, calls: Arc::default() }
+        Self { job, restart_fails: false, decoding: Duration::ZERO, identity: None, calls: Arc::default() }
     }
 
     fn calls(&self) -> Vec<&'static str> {
@@ -627,8 +630,20 @@ impl FakeService {
 }
 
 impl CurrentService for FakeService {
+    fn identity(&mut self) -> io::Result<(PathBuf, PathBuf)> {
+        self.calls.lock().unwrap().push("decode");
+        std::thread::sleep(self.decoding);
+        self.identity.clone().ok_or_else(|| io::Error::other("no identity"))
+    }
+
     fn job(&mut self) -> io::Result<LoadedJob> {
+        self.calls.lock().unwrap().push("print");
         Ok(self.job)
+    }
+
+    fn start(&mut self) -> io::Result<()> {
+        self.calls.lock().unwrap().push("start");
+        Ok(())
     }
 
     fn reload(&mut self) -> io::Result<()> {
@@ -642,13 +657,17 @@ impl CurrentService for FakeService {
     }
 }
 
-/// `migrate-names --complete --start`'s confirmation with a stand-in Hub
-/// binary and launchd, bounded by `limit`.
+/// `migrate-names --complete --start`'s confirmation, in the step's own order,
+/// with a stand-in Hub binary and launchd, bounded by `limit`.
 fn complete_with(home: &Home, hub: &Path, config: &Path, service: &FakeService, limit: Duration) -> Report {
-    let (hub, config, mut service) = (hub.to_owned(), config.to_owned(), service.clone());
-    hand_over::complete(&home.layout, true, move || {
-        cli::within(limit, move |given_up| cli::confirm_start(&mut service, &hub, &config, given_up))
-    })
+    let mut service = service.clone();
+    service.identity = Some((hub.to_owned(), config.to_owned()));
+    hand_over::complete(&home.layout, true, move || cli::confirm_installed(limit, service))
+}
+
+/// The requests made of launchd, without the read-only ones.
+fn changes(service: &FakeService) -> Vec<&'static str> {
+    service.calls().into_iter().filter(|call| !matches!(*call, "decode" | "print")).collect()
 }
 
 fn complete(home: &Home, hub: &Path, config: &Path, service: &FakeService) -> Report {
@@ -692,7 +711,7 @@ fn handover_a_hub_with_a_car_between_windows_counts_as_started() {
     let service = FakeService::new(LoadedJob::Absent);
     let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(service.calls(), ["restart"], "a job that is not loaded is started");
+    assert_eq!(changes(&service), ["start"], "a job that is not loaded is loaded, and not restarted after");
     assert_eq!(checks_run(&home), ["45"]);
     assert!(!home.plist(EARLIER_LABEL).exists(), "removed once the start is confirmed");
     assert!(note_in(&home.current()).is_none());
@@ -790,7 +809,7 @@ fn handover_an_already_serving_current_job_is_not_restarted() {
     let service = FakeService::new(LoadedJob::Installed);
     let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(service.calls(), Vec::<&str>::new(), "no restart: its window and collector carry on");
+    assert_eq!(changes(&service), Vec::<&str>::new(), "no restart: its window and collector carry on");
     assert_eq!(checks_run(&home), [cli::SERVING_PROBE_SECONDS.to_string()], "the short check only");
     assert!(!home.plist(EARLIER_LABEL).exists() && note_in(&home.current()).is_none());
 }
@@ -808,7 +827,7 @@ echo '{"status":"serving","readiness":"ready"}'"#,
     let service = FakeService::new(LoadedJob::Installed);
     let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(service.calls(), ["restart"]);
+    assert_eq!(changes(&service), ["restart"]);
     assert_eq!(checks_run(&home), ["2", "45"]);
 
     // The restart keeps its fail-closed refusal: nothing is confirmed or retired.
@@ -832,7 +851,7 @@ fn handover_a_stale_loaded_definition_is_replaced_before_it_is_confirmed() {
     let service = FakeService::new(LoadedJob::Stale);
     let done = complete(&home, &hub, &config, &service);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(service.calls(), ["reload"], "the installed definition is loaded, not restarted twice");
+    assert_eq!(changes(&service), ["reload"], "the installed definition is loaded, not restarted twice");
     assert_eq!(checks_run(&home), ["45"], "even a serving earlier binary is not confirmed");
 }
 
@@ -858,11 +877,11 @@ fn handover_a_check_that_hangs_is_refused_at_the_limit_and_left_to_end_by_itself
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(ended.exists(), "the late check ran to its end");
-    assert_eq!(service.calls(), ["restart"], "the running service is left as it is");
+    assert_eq!(changes(&service), ["start"], "the running service is left as it is");
 }
 
 #[test]
-fn handover_no_launchd_request_starts_after_the_limit() {
+fn handover_no_restart_is_begun_after_the_limit() {
     let home = Home::new();
     let (_launchd, config) = prepared_for_start(&home);
     // The short check of a loaded job hangs past the limit, then says it is
@@ -878,8 +897,43 @@ fn handover_no_launchd_request_starts_after_the_limit() {
     }
     std::thread::sleep(Duration::from_millis(300));
     assert!(ended.exists());
-    assert_eq!(service.calls(), Vec::<&str>::new());
+    assert_eq!(changes(&service), Vec::<&str>::new());
     assert_kept_for_the_next_attempt(&home);
+}
+
+#[test]
+fn handover_a_decoder_that_hangs_is_inside_the_limit() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    // Decoding the installed file is the step's first call; it outlasts the
+    // limit, as a `plutil` that never returns would.
+    let mut service = FakeService::new(LoadedJob::Absent);
+    service.decoding = Duration::from_secs(3);
+    let started = Instant::now();
+    let refused = complete_with(&home, &hub, &config, &service, Duration::from_millis(200));
+    assert!(started.elapsed() < Duration::from_millis(1_500), "the limit counts from before the decoding");
+    assert_eq!(refused.status, Status::Failed);
+    assert_eq!(
+        refused.detail.as_deref(),
+        Some(format!("the Hub service did not start under its current name: {}", cli::NOT_CONFIRMED_IN_TIME).as_str())
+    );
+    assert_eq!(service.calls(), ["decode"], "nothing else is asked of launchd while it decodes");
+    assert!(checks_run(&home).is_empty());
+    assert_kept_for_the_next_attempt(&home);
+}
+
+#[test]
+fn handover_a_job_that_is_not_loaded_is_loaded_and_not_restarted() {
+    let home = Home::new();
+    let (_launchd, config) = prepared_for_start(&home);
+    let hub = recording_hub(&home, SERVING_BETWEEN_WINDOWS);
+    let service = FakeService::new(LoadedJob::Absent);
+    let done = complete(&home, &hub, &config, &service);
+    assert_eq!(done.status, Status::Done, "{done:?}");
+    // In order: decode the file, ask launchd what it holds, load, confirm.
+    assert_eq!(service.calls(), ["decode", "print", "start"]);
+    assert_eq!(checks_run(&home), [cli::SERVING_WAIT_SECONDS.to_string()], "the full confirmation, no probe");
 }
 
 #[test]
@@ -914,7 +968,7 @@ fn handover_left_failed_by_the_strict_wait_completes_at_the_next_start_without_m
     let current = FakeService::new(LoadedJob::Installed);
     let done = complete(&home, &hub, &config, &current);
     assert_eq!(done.status, Status::Done, "{done:?}");
-    assert_eq!(current.calls(), Vec::<&str>::new(), "not restarted");
+    assert_eq!(changes(&current), Vec::<&str>::new(), "not restarted");
     assert!(!home.plist(EARLIER_LABEL).exists());
     assert!(note_in(&home.current()).is_none());
     assert_eq!(fs::read_to_string(home.current().join("data/hub.sqlite")).unwrap(), "catalogue");

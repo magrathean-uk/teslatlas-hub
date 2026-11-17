@@ -588,7 +588,8 @@ pub fn installed_job() -> io::Result<LoadedJob> {
 
 /// Loads the installed definition in place of a stale one: `bootout`, wait
 /// until it is unloaded, then `bootstrap` (the agent runs at load). A
-/// transient stop: nothing is disabled.
+/// transient stop: nothing is disabled. When the new definition cannot be
+/// loaded after the unload, the error says so ([`RELOAD_LEFT_UNLOADED`]).
 pub fn reload_installed() -> io::Result<()> {
     #[cfg(feature = "credential-relocation-fixture")]
     {
@@ -604,6 +605,47 @@ pub fn reload_installed() -> io::Result<()> {
         reload_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
     }
 }
+
+/// Loads the installed definition of a job that is not loaded: `bootstrap`
+/// (the agent runs at load), then check it is loaded. It is not restarted
+/// after: a `kickstart -k` straight after the load would wait out launchd's
+/// throttle. A job already loaded is left as it is.
+pub fn load_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let plist = installed_plist()?;
+        let (domain, service) = service_identifiers();
+        load_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+    }
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn load_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    if !service_is_loaded_with_runner(service, runner)? {
+        run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])?;
+    }
+    if !service_is_loaded_with_runner(service, runner)? {
+        return Err(io::Error::other("Hub LaunchAgent is not loaded after start"));
+    }
+    Ok(())
+}
+
+/// The refusal when a reload unloaded the job and could not load the new
+/// definition: nothing runs the Hub until the next attempt loads it.
+pub const RELOAD_LEFT_UNLOADED: &str =
+    "the Hub service is not running now: it was stopped to load its new definition, which could not be loaded. Try Again starts it";
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
 fn loaded_job(print: Option<&str>, installed_program: &Path) -> LoadedJob {
@@ -635,11 +677,13 @@ fn reload_installed_with_runner(
 ) -> io::Result<()> {
     let _ = runner(&[OsStr::new("bootout"), OsStr::new(service)])?;
     wait_for_service_unloaded_with_runner(service, runner)?;
-    run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])?;
-    if !service_is_loaded_with_runner(service, runner)? {
-        return Err(io::Error::other("Hub LaunchAgent is not loaded after start"));
+    let loaded = run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])
+        .and_then(|()| service_is_loaded_with_runner(service, runner));
+    match loaded {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(io::Error::other(format!("{RELOAD_LEFT_UNLOADED} (Hub LaunchAgent is not loaded after start)"))),
+        Err(error) => Err(io::Error::other(format!("{RELOAD_LEFT_UNLOADED} ({error})"))),
     }
-    Ok(())
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]

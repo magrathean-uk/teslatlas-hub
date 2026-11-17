@@ -18,20 +18,24 @@
 //! collector has started again. Every other readiness reason is a fault,
 //! reported in the step's detail.
 //!
-//! Before anything is started (see [`confirm_start`]): a loaded job that runs
-//! another program than the installed file names is replaced by the installed
-//! definition; a loaded job that already serves is confirmed without a
-//! restart; only a job that is not serving is restarted. The whole
-//! confirmation has one wall-clock limit, [`CONFIRM_LIMIT`]; past it the step
-//! is refused with the note, the earlier LaunchAgent file and the running
-//! service left as they are, and a late child is left to end by itself.
+//! Before anything is started (see [`confirm_start`]): a job that is not
+//! loaded is loaded from the installed file (it runs at load) and not
+//! restarted after; a loaded job that runs another program than the installed
+//! file names is replaced by the installed definition; a loaded job that
+//! already serves is confirmed without a restart; only a loaded job that is
+//! not serving is restarted. The whole confirmation, from decoding the
+//! installed file on, has one wall-clock limit, [`CONFIRM_LIMIT`]; past it the
+//! step is refused with the note and the earlier LaunchAgent file left as they
+//! are. The limit bounds the wait, not what a helper already started may
+//! still do: nothing is killed or signalled, so a launchd request or check
+//! already under way may still complete after it.
 
 use std::process::ExitCode;
 #[cfg(any(test, target_os = "macos"))]
 use std::{
     ffi::OsString,
     io,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Arc,
@@ -102,11 +106,7 @@ fn run(step: Step) -> Report {
     match step {
         Step::Prepare => hand_over::prepare(&layout, &mut hand_over::SystemLaunchd),
         Step::Complete { start } => hand_over::complete(&layout, start, || {
-            let config = crate::macos_launch_agent::installed_config_path()?;
-            let program = std::env::current_exe()?;
-            within(CONFIRM_LIMIT, move |given_up| {
-                confirm_start(&mut SystemCurrentService, &program, &config, given_up)
-            })
+            confirm_installed(CONFIRM_LIMIT, SystemCurrentService)
         }),
     }
 }
@@ -117,12 +117,21 @@ struct SystemCurrentService;
 
 #[cfg(target_os = "macos")]
 impl CurrentService for SystemCurrentService {
+    fn identity(&mut self) -> io::Result<(PathBuf, PathBuf)> {
+        let config = crate::macos_launch_agent::installed_config_path()?;
+        Ok((std::env::current_exe()?, config))
+    }
+
     fn job(&mut self) -> io::Result<LoadedJob> {
         crate::macos_launch_agent::installed_job()
     }
 
     fn reload(&mut self) -> io::Result<()> {
         crate::macos_launch_agent::reload_installed()
+    }
+
+    fn start(&mut self) -> io::Result<()> {
+        crate::macos_launch_agent::load_installed()
     }
 
     fn restart(&mut self) -> io::Result<()> {
@@ -148,8 +157,8 @@ pub const SERVING_WAIT_SECONDS: u64 = 45;
 pub const SERVING_PROBE_SECONDS: u64 = 2;
 
 #[cfg(any(test, target_os = "macos"))]
-/// The wall-clock limit of the whole confirmation: launchd's requests and every
-/// `serving-check` child together. Its worst case otherwise is the probe
+/// The wall-clock limit of the whole confirmation: decoding the installed file,
+/// launchd's requests and every `serving-check` child together. Its worst case otherwise is the probe
 /// (2 s plus its last request), the start, and the wait (45 s plus its last
 /// request of at most 2.5 s).
 pub const CONFIRM_LIMIT: Duration = Duration::from_secs(60);
@@ -161,19 +170,39 @@ pub const NOT_CONFIRMED_IN_TIME: &str = "the Hub service did not confirm in time
 #[cfg(any(test, target_os = "macos"))]
 /// launchd's side of the confirmation, for the installed current job.
 pub(super) trait CurrentService {
+    /// The Hub binary that runs `serving-check` and the configuration the
+    /// installed LaunchAgent file names (decoding that file runs a helper).
+    fn identity(&mut self) -> io::Result<(PathBuf, PathBuf)>;
     /// What launchd holds for the job (read only).
     fn job(&mut self) -> io::Result<LoadedJob>;
     /// Loads the installed definition in place of a stale one.
     fn reload(&mut self) -> io::Result<()>;
-    /// Starts the job, or restarts it when it is loaded (the existing
-    /// fail-closed start).
+    /// Loads a job that is not loaded (it runs at load); no restart follows.
+    fn start(&mut self) -> io::Result<()>;
+    /// Restarts a loaded job (the existing fail-closed start).
     fn restart(&mut self) -> io::Result<()>;
 }
 
 #[cfg(any(test, target_os = "macos"))]
-/// Confirms the current service, restarting it only when it is not serving.
-/// A stale loaded definition is replaced first, so the confirmed service runs
-/// the installed binary. No launchd request starts once `given_up` is set.
+/// The step's confirmation in its real order, all of it inside `limit`: the
+/// installed file is decoded, then [`confirm_start`] runs.
+pub(super) fn confirm_installed(
+    limit: Duration,
+    service: impl CurrentService + Send + 'static,
+) -> io::Result<()> {
+    within(limit, move |given_up| {
+        let mut service = service;
+        let (program, config) = service.identity()?;
+        confirm_start(&mut service, &program, &config, given_up)
+    })
+}
+
+#[cfg(any(test, target_os = "macos"))]
+/// Confirms the current service, restarting it only when it is loaded and not
+/// serving. A job that is not loaded is loaded and not restarted after; a stale
+/// loaded definition is replaced first, so the confirmed service runs the
+/// installed binary. Once `given_up` is set no load, reload or restart is
+/// begun; one already begun, with its own launchd requests, may still finish.
 pub(super) fn confirm_start(
     service: &mut dyn CurrentService,
     program: &Path,
@@ -195,7 +224,11 @@ pub(super) fn confirm_start(
         LoadedJob::Installed if confirm_serving(program, config, SERVING_PROBE_SECONDS).is_ok() => {
             return Ok(());
         }
-        LoadedJob::Installed | LoadedJob::Absent => {
+        LoadedJob::Absent => {
+            still_wanted()?;
+            service.start()?;
+        }
+        LoadedJob::Installed => {
             still_wanted()?;
             service.restart()?;
         }
@@ -205,10 +238,11 @@ pub(super) fn confirm_start(
 
 #[cfg(any(test, target_os = "macos"))]
 /// Runs `work` on its own thread and waits for it at most `limit`. Past the
-/// limit `given_up` is set and the wait ends with [`NOT_CONFIRMED_IN_TIME`];
-/// the thread and any child it waits for are neither killed nor signalled:
-/// the thread keeps reaping its child while this process lives, and the
-/// system collects it once this process has ended.
+/// limit `given_up` is set and the wait ends with [`NOT_CONFIRMED_IN_TIME`].
+/// It bounds the wait only: the thread and any child it waits for are neither
+/// killed nor signalled, and what they already started may still take effect.
+/// The thread keeps reaping its child while this process lives; a child still
+/// running when this process ends runs on to its own end.
 pub(super) fn within(
     limit: Duration,
     work: impl FnOnce(&AtomicBool) -> io::Result<()> + Send + 'static,

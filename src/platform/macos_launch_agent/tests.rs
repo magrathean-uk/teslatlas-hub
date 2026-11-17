@@ -1131,6 +1131,42 @@ fn a_stale_loaded_definition_is_replaced_without_disabling_the_service() {
         calls += 1;
         answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
     };
-    assert!(reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).is_err());
+    let refused = reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).unwrap_err();
     assert_eq!(calls, 3);
+    // Unloaded and not loaded again: the owner is told so, and what Try Again does.
+    assert_eq!(refused.to_string(), format!("{RELOAD_LEFT_UNLOADED} (launchctl failed)"));
+    assert!(refused.to_string().starts_with("the Hub service is not running now"));
+    assert!(refused.to_string().contains("Try Again starts it"));
+}
+
+#[test]
+fn a_job_that_is_not_loaded_is_loaded_without_a_restart() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // print (absent), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("load");
+    assert_eq!(
+        calls,
+        [
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+    assert!(calls.iter().all(|call| !call.starts_with("kickstart")), "RunAtLoad starts it; no throttled restart");
+
+    // A bootstrap that is refused is reported, with no further request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    assert!(load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).is_err());
+    assert_eq!(calls, 2);
 }
