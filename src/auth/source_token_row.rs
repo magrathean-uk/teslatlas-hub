@@ -436,6 +436,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn source_token_row_refuses_a_login_issued_to_another_client() {
+        let claims = Zeroizing::new(serde_json::json!({
+            "iss": "https://auth.tesla.com/oauth2/v3",
+            "exp": 1_900_000_000,
+            "azp": "synthetic-other-client",
+            "synthetic": true,
+        }).to_string());
+        let access = Zeroizing::new(format!(
+            "e30.{}.synthetic-signature",
+            URL_SAFE_NO_PAD.encode(claims.as_bytes()),
+        ));
+        let (result, events) = run(FakeSnapshot::new(vec![encrypted_row(
+            access.as_bytes(), SYNTHETIC_REFRESH,
+        )])).await;
+        assert_eq!(result.unwrap_err(), SourceTokenRowError::Invalid);
+        assert_eq!(*events.borrow(), ["prepare", "sessions", "rows", "rollback"]);
+    }
+
+    #[tokio::test]
     async fn source_token_row_other_clients_refused_before_row_read() {
         for count in [1, 2, i64::MAX] {
             let mut fake = FakeSnapshot::new(vec![valid_row()]);
