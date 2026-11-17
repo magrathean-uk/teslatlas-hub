@@ -411,7 +411,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         configureFields()
         render()
         updateWindowCloseAvailability()
-        if resumeMigrationHandoverPhase != nil && !controller.pendingMigrationHandoverIsHistoryOnly {
+        if let resumeMigrationHandoverPhase, resumeMigrationHandoverPhase != .importing,
+           !controller.previewMode && !controller.pendingMigrationHandoverIsHistoryOnly {
             setBusy(true, operation: .takingOver)
             controller.reconcileSourceTakeover { [weak self] result in
                 guard let self else { return }

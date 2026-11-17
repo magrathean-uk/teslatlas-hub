@@ -3468,6 +3468,8 @@ final class HubController {
             ? (scene?.onboardingRoute ?? environment["TESATLAS_HUB_ONBOARDING_PREVIEW"])
             : nil
         previewMode = isPreview
+        // Preview fixtures have no stored login and never inspect the owner's vault.
+        if isPreview { sourceTakeoverStatus = .absent }
         previewScene = scene
         onboardingPreviewRoute = previewRoute
         self.developmentConfiguration = developmentConfiguration
