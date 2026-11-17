@@ -39,8 +39,13 @@ use std::path::Path;
 #[inline(always)]
 pub(crate) fn note(_path: &Path) {}
 
+/// Record an attempt at the directory-sync syscall boundary.
+#[cfg(not(test))]
+#[inline(always)]
+pub(crate) fn note_directory_sync(_path: &Path) {}
+
 #[cfg(test)]
-pub(crate) use counted::{count_under, entries_under, note};
+pub(crate) use counted::{count_under, directory_syncs_at, entries_under, note, note_directory_sync};
 
 #[cfg(test)]
 mod counted {
@@ -53,6 +58,29 @@ mod counted {
     fn registry() -> &'static Mutex<HashMap<PathBuf, usize>> {
         static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
         REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn directory_sync_registry() -> &'static Mutex<HashMap<PathBuf, usize>> {
+        static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
+        REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    pub(crate) fn note_directory_sync(path: &Path) {
+        note(path);
+        *directory_sync_registry()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(resolved(path))
+            .or_insert(0) += 1;
+    }
+
+    pub(crate) fn directory_syncs_at(path: &Path) -> usize {
+        directory_sync_registry()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&resolved(path))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// The path with its deepest existing ancestor resolved, so that a path under a

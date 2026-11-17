@@ -111,6 +111,40 @@ fn a_root_user_may_use_its_own_writable_ancestors() {
 // ---- opening and creating ------------------------------------------------
 
 #[test]
+fn directory_parent_persistence_private_walk() {
+    let base = tempdir().unwrap();
+    let wanted = base.path().join("first/second/leaf");
+    let parents = [
+        base.path().to_path_buf(),
+        base.path().join("first"),
+        base.path().join("first/second"),
+    ];
+    let before = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+
+    open_for_test(&wanted, true).unwrap();
+
+    for (parent, before) in parents.iter().zip(before) {
+        assert_eq!(
+            crate::platform::file_attempts::directory_syncs_at(parent),
+            before + 1,
+            "a newly created child needs its containing directory synced"
+        );
+    }
+    let synced = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+    open_for_test(&wanted, false).unwrap();
+    assert_eq!(
+        parents
+            .each_ref()
+            .map(|path| crate::platform::file_attempts::directory_syncs_at(path)),
+        synced
+    );
+}
+
+#[test]
 fn a_missing_path_is_created_one_private_directory_at_a_time() {
     let base = tempdir().unwrap();
     let wanted = base.path().join("a/b/leaf");

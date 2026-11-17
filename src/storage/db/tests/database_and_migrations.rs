@@ -260,6 +260,40 @@ fn initializes_a_checked_wal_database() {
 }
 
 #[test]
+fn directory_parent_persistence_store_ancestors() {
+    let temporary = crate::private_tempdir().expect("temporary parent");
+    let data_dir = temporary.path().join("first/second/hub");
+    let parents = [
+        temporary.path().to_path_buf(),
+        temporary.path().join("first"),
+        temporary.path().join("first/second"),
+    ];
+    let before = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+
+    let store = HubStore::initialize(&data_dir).expect("initialise nested store");
+    store.quick_check().expect("healthy catalogue");
+    for (parent, before) in parents.iter().zip(before) {
+        assert!(
+            crate::platform::file_attempts::directory_syncs_at(parent) > before,
+            "every new ancestor of the store needs its containing directory synced"
+        );
+    }
+    let synced = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+    drop(store);
+    HubStore::initialize(&data_dir).expect("reopen nested store");
+    assert_eq!(
+        parents
+            .each_ref()
+            .map(|path| crate::platform::file_attempts::directory_syncs_at(path)),
+        synced
+    );
+}
+
+#[test]
 fn inventory_counts_physical_pack_and_staging_bytes_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");
