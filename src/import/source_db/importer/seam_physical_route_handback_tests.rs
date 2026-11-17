@@ -2085,6 +2085,26 @@ mod m08_t19_lab {
         .expect("physical publication")
         .expect("physical head");
         assert_eq!(first.kind, PhysicalV3PublicationKind::FirstHead);
+        {
+            let vehicle = fixture.binding.vehicle_id.to_string();
+            let mut connection = fixture.store.open().expect("catalogue");
+            let transaction = connection.transaction().expect("transaction");
+            for drive in &projected.snapshot.drives {
+                transaction
+                    .execute(
+                        "INSERT OR REPLACE INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            vehicle.as_str(),
+                            drive.id,
+                            CAR,
+                            serde_json::to_string(drive).expect("drive json")
+                        ],
+                    )
+                    .expect("imported drive");
+            }
+            transaction.commit().expect("commit");
+        }
         collect(&fixture);
         assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
         close_window(&fixture, 2, T + 2 * HOUR, drive);
