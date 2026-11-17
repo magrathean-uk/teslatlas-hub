@@ -41,6 +41,17 @@ fn owner_code_request_body_preserves_maximum_material() {
     }));
 }
 
+#[test]
+fn owner_code_request_body_is_built_at_its_exact_length() {
+    // A body that outgrew its first buffer would have freed an unwiped earlier
+    // allocation holding part of the code or verifier.
+    let code: String = "synthetic-".chars().chain([char::from(92u8), char::from(34u8)])
+        .cycle().take(MAX_OWNER_CODE_BYTES).collect();
+    let verifier = "~".repeat(128);
+    let body = request_body(&code, &verifier).expect("bounded body");
+    assert_eq!(body.capacity(), body.len());
+}
+
 /// How the stub answers one request.
 #[derive(Clone)]
 enum Reply {
