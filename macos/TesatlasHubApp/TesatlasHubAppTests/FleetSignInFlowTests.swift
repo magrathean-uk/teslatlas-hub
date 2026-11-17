@@ -451,6 +451,32 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertTrue(fixture.controller.fleetConsentInEffect)
     }
 
+    /// R3: figures that change while the consent page is open are never recorded without having
+    /// been shown and ticked. The page shows the new figures, clears the tick and asks again.
+    func testFiguresThatChangeWhileThePageIsOpenAreShownAndAskedForAgain() throws {
+        let fixture = try Fixture(state: .awaitingActivation)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        XCTAssertTrue(fixture.labels().joined().contains("when its requests reach $10.00"))
+        fixture.changeFigures(monthlyCapCents: 2_000)
+        window.acceptFleetConsentForTests()
+        window.continueForTests()
+        try fixture.waitUntil { fixture.labels().joined().contains("when its requests reach $20.00") && !window.isBusyForTests }
+        XCTAssertNil(fixture.controller.fleetConsentRecord, "the $10.00 shown is not what is in effect; $20.00 was not shown")
+        XCTAssertEqual(window.fleetStepForTests, .consent)
+        XCTAssertEqual(window.fleetNoticeForTests, OnboardingWindowController.fleetFiguresChangedText)
+        XCTAssertFalse(window.continueEnabledForTests, "the tick is cleared")
+        window.continueForTests()
+        XCTAssertNil(fixture.controller.fleetConsentRecord)
+
+        window.acceptFleetConsentForTests()
+        window.continueForTests()
+        try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
+        XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures.monthlyCapCents, 2_000)
+        XCTAssertEqual(fixture.runner.fleetVerbs.filter { $0 != "figures" }, [])
+    }
+
     func testTheConsentRecordHoldsTheTimeAndTheFiguresAndNoSecret() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
@@ -1280,6 +1306,12 @@ private final class Fixture {
         self.service = service
         self.controller = controller
         window = OnboardingWindowController(controller: controller, initialRoute: .fleet, onComplete: { _ in })
+    }
+
+    /// Changes the figures in effect, as an edit of the configuration would.
+    func changeFigures(monthlyCapCents: Int) {
+        let text = configText + "\n[collector.fleet_polling]\nmonthly_cap_cents = \(monthlyCapCents)\n"
+        try? text.write(to: controller.maintenanceConfigPath, atomically: true, encoding: .utf8)
     }
 
     var configText: String {

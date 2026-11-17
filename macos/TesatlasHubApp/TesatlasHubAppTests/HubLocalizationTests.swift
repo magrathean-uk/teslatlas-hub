@@ -21,8 +21,8 @@ final class HubLocalizationTests: XCTestCase {
         // M09-T12 adds the Fleet set-up lines in English only: every other language falls back to
         // English for them until they are translated.
         let englishOnly = englishKeys.filter { $0.hasPrefix("hub.fleetSetup.") }
-        XCTAssertEqual(englishOnly.count, 116)
-        XCTAssertEqual(englishKeys.count, 737 + 116, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
+        XCTAssertEqual(englishOnly.count, 117)
+        XCTAssertEqual(englishKeys.count, 737 + 117, "M02-T22 adds six first-start lines and drops four, then three window-state lines")
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")

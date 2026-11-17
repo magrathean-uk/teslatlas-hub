@@ -893,6 +893,7 @@
 "hub.fleetSetup.consentRequired" = "Accept the cost of polling on the consent page first. Nothing was sent to Tesla.";
 "hub.fleetSetup.prepareLeftStopped" = "%1$@ Hub is left stopped, so it does not poll Tesla before you accept the cost. Try the preparation again.";
 "hub.fleetSetup.tryAgain" = "Try Again";
+"hub.fleetSetup.consent.figuresChanged" = "Hub's figures changed while this page was open, so nothing was accepted. Read the figures below and accept them again.";
 "hub.fleetSetup.detailsMissing" = "Enter your Tesla developer application's details again to continue.";
 "hub.fleetSetup.domainLabel" = "Domain";
 "hub.fleetSetup.every.hours" = "every %d hours";

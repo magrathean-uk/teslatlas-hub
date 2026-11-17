@@ -306,6 +306,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var fleetStateUnknown: String?
     /// The Fleet preparation failed (R1): its text is shown and Continue offers to try it again.
     private var fleetPreparationFailed: String?
+    /// The figures the consent page rendered (R3): acceptance records exactly these, and only
+    /// while they are still the figures in effect.
+    private var fleetConsentShown: HubFleetConsentFigures?
     /// Where an accepted consent page continues: the sign-in on a first set-up, or the step a
     /// waiting state names on a return.
     private var fleetResumeAfterConsent: HubFleetStep = .signIn
@@ -646,6 +649,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fleetNotice = nil
         fleetStateUnknown = nil
         fleetPreparationFailed = nil
+        fleetConsentShown = nil
         fleetPublicKey = nil
         sourceEncryptionKey.stringValue = ""
         render()
@@ -3369,6 +3373,12 @@ extension OnboardingWindowController {
             arguments: [setting])
     }
 
+    /// The figures in effect changed while the consent page was open (R3): nothing was recorded.
+    static var fleetFiguresChangedText: String {
+        HubL10n.text("hub.fleetSetup.consent.figuresChanged",
+            fallback: "Hub's figures changed while this page was open, so nothing was accepted. Read the figures below and accept them again.")
+    }
+
     /// Set-up itself lists the cars (the redeem and `discover`): Tesla bills those as state checks.
     static var fleetSetUpRequestsText: String {
         HubL10n.text("hub.fleetSetup.consent.setUp",
@@ -3670,12 +3680,16 @@ extension OnboardingWindowController {
         var views: [NSView] = []
         switch controller.fleetConsentReading {
         case let .figures(figures):
+            // A tick given to other figures is not a tick for these.
+            if fleetConsentShown != figures { fleetConsent.state = .off }
+            fleetConsentShown = figures
             views += fleetFigureRows(figures)
             views.append(featureRow(Self.fleetSetUpRequestsText, "list.bullet"))
             views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
         case let .unreadable(setting):
             // A figure that cannot be read exactly is not stated, and nothing can be accepted.
             fleetConsent.state = .off
+            fleetConsentShown = nil
             views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
                                     message: Self.fleetUnreadableText(setting: setting),
                                     identifier: "onboarding.fleet.consent-unreadable"))
@@ -3737,15 +3751,26 @@ extension OnboardingWindowController {
         return controller.fleetConsentInEffect ? step : .consent
     }
 
-    /// Accepting the consent page records the time and the figures accepted; nothing is sent.
+    /// Accepting the consent page records the time and exactly the figures the page showed;
+    /// nothing is sent. When the figures in effect differ from the shown ones, nothing is
+    /// recorded: the page shows the new figures, clears the tick and asks again (R3).
     private func fleetAcceptConsent() {
-        guard fleetConsent.state == .on, let figures = fleetConsentFigures else { return }
-        do { try controller.recordFleetConsent(figures) } catch {
+        guard fleetConsent.state == .on, let shown = fleetConsentShown else { return }
+        guard fleetConsentFigures == shown else {
+            HubAppLog.shared.record("fleet_setup.consent_figures_changed", category: "account")
+            fleetConsent.state = .off
+            errorMessage = nil
+            fleetNotice = Self.fleetFiguresChangedText
+            render()
+            return
+        }
+        do { try controller.recordFleetConsent(shown) } catch {
             showInlineError(error.localizedDescription)
             return
         }
         HubAppLog.shared.record("fleet_setup.consent_accepted", category: "account")
         fleetConsent.state = .off
+        fleetConsentShown = nil
         errorMessage = nil
         fleetNotice = nil
         fleetStep = fleetResumeAfterConsent
