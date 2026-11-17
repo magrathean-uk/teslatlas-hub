@@ -112,11 +112,9 @@ impl HubStore {
     /// token again, so on macOS, where a plain `fsync` does not flush the drive's
     /// cache, the connection asks SQLite for `F_FULLFSYNC` at commit and at
     /// checkpoint (`fullfsync`, `checkpoint_fullfsync`; B2 round 3, C5-R3-03). The
-    /// cost is one cache flush per credential commit, which is rare (a refresh a few
-    /// hours apart). Ordinary connections keep the cheaper default at commit, and
-    /// every writable connection flushes at checkpoint (`configure`, B2 apply,
-    /// R3C-02), so the frames of a credential commit that another connection's
-    /// checkpoint copies into the database file reach the drive too.
+    /// same barriers apply to every ordinary writer (`configure`), so acknowledged
+    /// identity, audit and vehicle data also reach the drive. This entry point keeps
+    /// the credential-specific instrumentation and explicitly requests its barriers.
     pub(crate) fn open_for_credential_commit(&self) -> Result<Connection, StoreError> {
         let connection = self.open()?;
         #[cfg(target_os = "macos")]

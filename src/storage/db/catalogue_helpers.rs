@@ -571,16 +571,15 @@ fn ensure_installation_id(connection: &Connection) -> Result<Uuid, StoreError> {
 }
 
 /// Every writable catalogue connection asks SQLite, on macOS, to flush the drive's
-/// cache when it checkpoints (`F_FULLFSYNC`: a plain `fsync` there does not reach the
-/// disk). The frames of a credential commit are copied into the database file by
-/// whichever connection's commit crosses the automatic checkpoint, which is usually an
-/// ordinary one, so the flush at checkpoint is a property of all of them (B2 apply,
-/// R3C-02). A checkpoint is rare (about every thousand pages of change), so the cost is
-/// one flush then; the per-commit flush stays with the credential commits alone.
+/// cache at commit and checkpoint (`F_FULLFSYNC`: a plain `fsync` there does not
+/// drain the device cache). Identity, audit and vehicle data need the same durable
+/// success boundary as credential records. Other platforms retain the pragma but
+/// use their normal SQLite sync operation.
 fn configure(connection: &Connection) -> Result<(), StoreError> {
     connection
         .execute_batch(
             "
+            PRAGMA fullfsync = ON;
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = FULL;
             PRAGMA foreign_keys = ON;
