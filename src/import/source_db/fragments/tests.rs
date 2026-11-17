@@ -21,7 +21,7 @@ fn dense_stage_starts_at_the_first_bounded_retry_target() {
 
 #[test]
 fn position_projection_pool_returns_pages_in_source_order() {
-    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()));
+    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()), Arc::new(PositionDetachmentPolicy::new(&[], 1, None)));
     let mut pages = Vec::new();
     for ordinal in 0..4 {
         if let Some(page) = pool
@@ -1458,4 +1458,25 @@ fn broken_drive_staged_handover_positions_are_held_by_the_open_session() {
     assert_eq!(result.report.held_open_session_positions, 1);
     assert_eq!(result.report.detached_positions, 0);
     assert_eq!(result.report.projected_positions, 1);
+}
+
+#[test]
+fn broken_drive_accounting_rejects_a_completed_parent_missing_from_the_projection_map() {
+    let (_directory, stage) = stage();
+    let drive = stage.get::<SourceDbDrive>(SourceDbStageTable::Drives, 10).unwrap().unwrap();
+    assert!(drive.end_date_ms.is_some());
+    let position = stage.page::<SourceDbPosition>(SourceDbStageTable::Positions, 0, 10).unwrap().rows;
+    let detachment = Arc::new(PositionDetachmentPolicy::new(&[drive], 1, None));
+    // Deliberately corrupt the map after the source policy was captured.
+    let mut pool = PositionProjectionPool::new(1, Arc::new(HashMap::new()), detachment);
+    let mut results = Vec::new();
+    if let Some(result) = pool.submit(PositionProjectionJob { ordinal: 0, rows: position, car_id: 1 }).unwrap() {
+        results.push(result);
+    }
+    results.extend(pool.finish().unwrap());
+    let error = match results.pop().unwrap().rows {
+        Err(error) => error,
+        Ok(_) => panic!("detaching completed-drive positions must fail the import"),
+    };
+    assert!(matches!(error, SourceDbFragmentError::Projection(SourceDbProjectionError::PositionDetachmentAccounting)));
 }

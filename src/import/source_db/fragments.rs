@@ -30,7 +30,7 @@ use crate::{
     protocol::{ProtocolLimits, SequenceRange},
     source_db_parity::{SourceDbEvidenceError, SourceDbEvidenceFingerprint},
     source_db_projection::{
-        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport,
+        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport, PositionDetachmentPolicy,
         SourceDbAddress, SourceDbCar, SourceDbCharge, SourceDbChargingProcess, SourceDbDrive,
         SourceDbGeofence, SourceDbPosition, SourceDbProjectionError, SourceDbState, SourceDbUpdate,
         handed_over_drive_id, project_car, project_charge, project_charge_sample, project_drive,
@@ -576,9 +576,11 @@ fn write_position_fragments(
     })?;
     let mut broken_drives = BrokenDriveTracker::new(&source_drives, car.id);
     let held_drive_id = handed_over_drive_id(&source_drives, car.id);
+    let detachment = Arc::new(PositionDetachmentPolicy::new(&source_drives, car.id, held_drive_id));
+    let mut expected_detached = 0_u64;
     drop(source_drives);
     let projected_drives = Arc::new(projected_drives);
-    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone());
+    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone(), detachment.clone());
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     let mut ordinal = 0_u64;
     let mut after_id = 0_i64;
@@ -591,6 +593,7 @@ fn write_position_fragments(
         let next_after_id = page.next_after_id;
         for row in &page.rows {
             broken_drives.observe(&row.value);
+            expected_detached += u64::from(detachment.expects_detachment(&row.value));
         }
         page.rows.retain(|row| {
             let held = row.value.drive_id.is_some() && row.value.drive_id == held_drive_id;
@@ -617,6 +620,9 @@ fn write_position_fragments(
     }
     for completed in projection_pool.finish()? {
         append_projected_positions(completed, &mut accumulator, sink, report)?;
+    }
+    if report.detached_positions != expected_detached {
+        return Err(SourceDbProjectionError::PositionDetachmentAccounting.into());
     }
     report.broken_drives = broken_drives.count();
     accumulator.flush(sink)
@@ -966,7 +972,7 @@ struct PositionProjectionPool {
 }
 
 impl PositionProjectionPool {
-    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>) -> Self {
+    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>, detachment: Arc<PositionDetachmentPolicy>) -> Self {
         let workers = thread::available_parallelism()
             .map(|value| value.get())
             .unwrap_or(1)
@@ -980,6 +986,7 @@ impl PositionProjectionPool {
             let receiver = Arc::clone(&receiver);
             let result_sender = result_sender.clone();
             let drives = Arc::clone(&drives);
+            let detachment = Arc::clone(&detachment);
             handles.push(thread::spawn(move || {
                 loop {
                     let job = match receiver.lock().expect("position receiver lock").recv() {
@@ -1016,7 +1023,9 @@ impl PositionProjectionPool {
                                     })
                                     .map_err(SourceDbFragmentError::from),
                             };
-                            position.map(|position| ProjectedPosition { position, drive })
+                            let position = position?;
+                            detachment.validate(&row.value, &position)?;
+                            Ok(ProjectedPosition { position, drive })
                         })
                         .collect::<Result<Vec<_>, _>>();
                     let result = PositionProjectionResult {

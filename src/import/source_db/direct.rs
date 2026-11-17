@@ -39,7 +39,7 @@ use crate::{
     source_db_parity::{SourceDbEvidenceError, SourceDbEvidenceFingerprint},
     source_db_progress::{SourceDbMigrationPhase, SourceDbMigrationProgressReporter},
     source_db_projection::{
-        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport,
+        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport, PositionDetachmentPolicy,
         SourceDbAddress, SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2,
         SourceDbChargingProcess, SourceDbDrive, SourceDbGeofence, SourceDbOpenSession,
         SourceDbPosition, SourceDbProjectionError, SourceDbSettingsPhysicalV2_2, SourceDbState,
@@ -1236,6 +1236,7 @@ async fn write_from_session(
     );
 
     let mut broken_drives = BrokenDriveTracker::new(&drives, selected_car_id);
+    let detachment = PositionDetachmentPolicy::new(&drives, selected_car_id, open_session.drive.as_ref().map(|d| d.id));
     let projected_drives = write_drives(
         selected_car_id,
         drives,
@@ -1258,7 +1259,7 @@ async fn write_from_session(
         &projected_car,
         &projected_drives,
         &mut broken_drives,
-        open_session.drive.as_ref().map(|drive| drive.id),
+        &detachment,
         capture_mode,
         fragment_limits,
         &mut sink,
@@ -1931,7 +1932,7 @@ async fn write_positions(
     car: &crate::hub_pack::ProjectionCar,
     drives: &HashMap<i64, ProjectionDrive>,
     broken_drives: &mut BrokenDriveTracker,
-    held_drive_id: Option<i64>,
+    detachment: &PositionDetachmentPolicy,
     capture_mode: DirectCaptureMode,
     limits: SourceDbFragmentLimits,
     sink: &mut PackSink<'_>,
@@ -1943,6 +1944,7 @@ async fn write_positions(
 ) -> Result<(), SourceDbDirectError> {
     let mut accumulator = direct_position_fragment_accumulator(car, limits, sink)?;
     let mut source_position_rows = 0_u64;
+    let mut expected_detached = 0_u64;
     progress.report(
         SourceDbMigrationPhase::Positions,
         progress_base_rows,
@@ -2002,13 +2004,17 @@ async fn write_positions(
         }
         let position = decode_binary_position(&row)?;
         broken_drives.observe(&position);
-        if position.drive_id.is_some() && position.drive_id == held_drive_id {
+        if !matches!(capture_mode, DirectCaptureMode::LegacyBridgeCapture) {
+            expected_detached += u64::from(detachment.expects_detachment(&position));
+        }
+        if detachment.holds(&position) {
             report.held_open_session_positions =
                 checked_increment(report.held_open_session_positions)?;
             continue;
         }
         let Some(drive_id) = position.drive_id else {
             let projected = crate::lifecycle::imported_position(&position);
+            detachment.validate(&position, &projected)?;
             append_direct_position(
                 projected,
                 None,
@@ -2028,6 +2034,7 @@ async fn write_positions(
             }
             let projected = project_position(&position, selected_car_id, false)?
                 .expect("unattached history position projects");
+            detachment.validate(&position, &projected)?;
             append_direct_position(
                 projected,
                 None,
@@ -2041,6 +2048,7 @@ async fn write_positions(
         };
         let projected = project_position(&position, selected_car_id, true)?
             .expect("completed drive position projects");
+        detachment.validate(&position, &projected)?;
         append_direct_position(
             projected,
             Some(drive),
@@ -2050,6 +2058,7 @@ async fn write_positions(
             report,
         )?;
     }
+    validate_direct_count("detached_positions", expected_detached, report.detached_positions)?;
     if let Some(accumulator) = accumulator.as_mut() {
         accumulator.flush(sink)?;
     }
