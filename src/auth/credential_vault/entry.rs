@@ -2,6 +2,20 @@
 use super::*;
 pub struct CredentialVaultEntry { vault: Arc<CredentialVault> }
 pub struct CredentialVaultEntryError { error: CredentialStoreError }
+/// What a source take-over did (M09-T16, B3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceTakeoverOutcome {
+    /// The pair was stored as this new generation.
+    Stored(Uuid),
+    /// The slot already held this same login; nothing was written.
+    AlreadyStored,
+}
+impl SourceTakeoverOutcome {
+    /// The new generation, when this call stored the pair.
+    pub fn stored_generation(self) -> Option<Uuid> {
+        match self { Self::Stored(generation) => Some(generation), Self::AlreadyStored => None }
+    }
+}
 impl CredentialVaultEntry {
     pub(in crate::auth) fn vault(&self) -> &CredentialVault { &self.vault }
     /// The operator's refused-credential purge (M02-T11), on this process's one vault.
@@ -12,7 +26,8 @@ impl CredentialVaultEntry {
     /// source's pair into the empty Owner API slot as origin `source_token`,
     /// refreshed by the Hub. Refusals keep their codes (`slot_occupied`,
     /// `refresh_token_spent`, `fresh_sign_in_required`, ...); nothing is sent.
-    pub fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<Uuid, CredentialVaultEntryError> {
+    /// The slot already holding this same login is `AlreadyStored`, with nothing written.
+    pub fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<SourceTakeoverOutcome, CredentialVaultEntryError> {
         self.vault.store_source_takeover(tokens).map_err(|error| CredentialVaultEntryError { error })
     }
     #[cfg(test)]

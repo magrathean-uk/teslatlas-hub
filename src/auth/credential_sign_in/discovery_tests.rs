@@ -390,7 +390,7 @@ async fn source_takeover_discovery_uses_the_taken_over_pair_and_refuses_other_or
     let hub = hub();
     let access = takeover_access();
     let tokens = crate::credentials::OwnerTokens::from_secret_parts(access.clone(), REFRESH.to_owned()).expect("synthetic pair");
-    let generation = hub.entry.vault().store_source_takeover(&tokens).expect("taken over");
+    let generation = hub.entry.vault().store_source_takeover(&tokens).expect("taken over").stored_generation().expect("stored");
     let configured = hub.discover(&stub, OwnerCarSelection::Vehicle(7001)).await.expect("listed car configured");
     assert_eq!((configured.vehicles_configured, stub.accepted(), hub.cars()), (1, 1, 1));
     assert_eq!(hub.pair_generation(), Some(generation), "discovery never refreshes the taken-over pair");

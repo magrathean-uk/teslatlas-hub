@@ -153,20 +153,37 @@ fn vault_refusal(error: tesatlas_hub::CredentialVaultEntryError) -> OperatorRefu
 pub(crate) struct TakeoverReport {
     status: &'static str,
     origin: &'static str,
-    first_refresh: &'static str,
+    /// `next_window` while no refresh was sent, else null.
+    first_refresh: Option<&'static str>,
+    /// The status projection's `legacyCredentials.refreshProgress` (M09-T16, B5).
+    refresh_progress: Option<&'static str>,
     /// The reader refuses while any other client is connected, so a
     /// completed take-over saw none.
     source_sessions_seen: u32,
     source_never_mutated: bool,
 }
 
+const NONE_SENT: &str = "none_sent";
+
 pub(crate) fn takeover_report() -> TakeoverReport {
     TakeoverReport {
         status: "taken_over",
         origin: "source_token",
-        first_refresh: "next_window",
+        first_refresh: Some("next_window"),
+        refresh_progress: Some(NONE_SENT),
         source_sessions_seen: 0,
         source_never_mutated: true,
+    }
+}
+
+/// M09-T16 (B3): the slot already holds the source row's login (a run after a
+/// lost report or a crash past the vault commit). Nothing was written.
+pub(crate) fn already_taken_over_report(refresh_progress: Option<&'static str>) -> TakeoverReport {
+    TakeoverReport {
+        status: "already_taken_over",
+        first_refresh: (refresh_progress == Some(NONE_SENT)).then_some("next_window"),
+        refresh_progress,
+        ..takeover_report()
     }
 }
 
@@ -193,12 +210,24 @@ pub(crate) async fn run_take_over(config_path: &Path, source: &str) -> Result<Ta
     let entry = open_command_credential_vault(store.clone(), admission, &config.data_dir).map_err(vault_refusal)?;
     let tokens = read_tokens(&source, &input).await.map_err(reader_refusal)?;
     drop(input);
+    let store_for_status = store.clone();
     let mut checkpoint = CatalogueCheckpointGuard::new(store);
     let stored = entry.store_source_takeover(&tokens);
     drop(tokens);
     drop(entry);
-    stored.map_err(vault_refusal)?;
+    let outcome = stored.map_err(vault_refusal)?;
+    // A test build's reader double can end the process right after the
+    // commit, as a crash before the report would (M09-T16, B3).
+    #[cfg(feature = "journey-doubles")]
+    if double::exit_after_commit() {
+        std::process::exit(double::EXIT_AFTER_COMMIT);
+    }
     checkpoint.finish()?;
+    if outcome == tesatlas_hub::SourceTakeoverOutcome::AlreadyStored {
+        let status = tesatlas_hub::auth::credential_sign_in::credential_status(&store_for_status, &config.data_dir, super::current_epoch_ms()?)?;
+        tracing::info!("the source's Tesla login was already taken over; nothing was written");
+        return Ok(already_taken_over_report(status.legacy_credentials.refresh_progress.flatten()));
+    }
     tracing::info!("the source's Tesla login was taken over; first refresh at the next window");
     Ok(takeover_report())
 }
@@ -222,6 +251,8 @@ mod double {
     use super::*;
 
     pub(crate) const ENV: &str = "TESATLAS_HUB_SOURCE_TAKEOVER_DOUBLE";
+    /// The exit status of a run the double ends after the vault commit.
+    pub(crate) const EXIT_AFTER_COMMIT: i32 = 86;
 
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -232,11 +263,22 @@ mod double {
         access: Option<String>,
         #[serde(default)]
         refresh: Option<String>,
+        /// End the process after the vault commit, before the report.
+        #[serde(default, rename = "exitAfterCommit")]
+        exit_after_commit: bool,
+    }
+
+    fn load() -> Option<Double> {
+        let path = std::env::var_os(ENV)?;
+        serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    }
+
+    pub(super) fn exit_after_commit() -> bool {
+        load().is_some_and(|double| double.exit_after_commit)
     }
 
     pub(super) fn read() -> Option<Result<OwnerTokens, SourceTokenRowError>> {
-        let path = std::env::var_os(ENV)?;
-        let double: Double = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+        let double = load()?;
         if let Some(code) = double.refusal {
             let all = [
                 SourceTokenRowError::SourceStillRunning,
@@ -343,7 +385,13 @@ mod tests {
         }
         assert_eq!(
             serde_json::to_string(&takeover_report()).expect("report"),
-            r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}"#
+            r#"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","refreshProgress":"none_sent","sourceSessionsSeen":0,"sourceNeverMutated":true}"#
         );
+        for (progress, first) in [("none_sent", r#""next_window""#), ("attempt_recorded", "null"), ("completed", "null"), ("sign_in_required", "null")] {
+            assert_eq!(
+                serde_json::to_string(&already_taken_over_report(Some(progress))).expect("report"),
+                format!(r#"{{"status":"already_taken_over","origin":"source_token","firstRefresh":{first},"refreshProgress":"{progress}","sourceSessionsSeen":0,"sourceNeverMutated":true}}"#)
+            );
+        }
     }
 }

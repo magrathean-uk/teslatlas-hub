@@ -407,7 +407,7 @@ fn source_takeover_writer_stores_a_due_hub_owned_pair() {
     assert!(!root.path().join("secrets").join("credential-keys").exists(), "nothing reserved for a supplied source_token");
     let exp = epoch_now() + 28_800;
     let before = epoch_now();
-    let generation = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0001")).expect("takeover");
+    let generation = vault.store_source_takeover(&takeover_tokens(&takeover_jwt(Some(exp)), "refresh-0001")).expect("takeover").stored_generation().expect("stored");
     let after = epoch_now();
     let row = pair(&vault);
     assert_eq!((row.generation, row.origin, row.refresh_owner, row.expires_at, row.refresh.as_str()), (generation, Some(CredentialOrigin::SourceToken), RefreshOwner::Hub, exp, "refresh-0001"));

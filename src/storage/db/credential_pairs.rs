@@ -813,6 +813,22 @@ impl CredentialConnection {
         if !refresh.is_empty() && credential_has_opaque_fence(&tx).map_err(StoreError::CredentialPairStore)? { return Err(StoreError::FreshSignInRequired); }
         Ok(())
     }
+    /// M09-T16 (B3): whether the Owner API slot already holds the login a source take-over
+    /// with this refresh fingerprint stored: a Hub-refreshed `source_token` pair whose stored
+    /// fingerprint is this one (compared in constant time), or whose generation descends by
+    /// completed refreshes from the send this fingerprint's fence records. Reads only.
+    pub(crate) fn source_takeover_already_stored(&mut self, fingerprint: &[u8; 32]) -> Result<bool, StoreError> {
+        let tx = self.connection.transaction().map_err(StoreError::Begin)?;
+        let row = tx.query_row("SELECT origin, refresh_owner, generation, refresh_fingerprint FROM credential_pairs WHERE account_id=1 AND slot='owner_api'", [],
+            |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<Vec<u8>>>(3)?)))
+            .optional().map_err(StoreError::CredentialPairStore)?;
+        let Some((origin, owner, generation, stored)) = row else { return Ok(false) };
+        if credential_origin(origin.as_deref()) != Some(Some(CredentialOrigin::SourceToken)) || credential_owner(&owner) != Some(RefreshOwner::Hub) { return Ok(false); }
+        if stored.as_deref().is_some_and(|stored| crate::protocol::constant_time_eq(stored, fingerprint)) { return Ok(true); }
+        tx.query_row(
+            "WITH RECURSIVE chain(generation) AS (SELECT a.output_generation FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id JOIN credential_refresh_fences f ON f.fence_id=a.fence_id WHERE a.account_id=1 AND a.slot='owner_api' AND r.outcome='success' AND f.fingerprint=?1 UNION SELECT a.output_generation FROM credential_refresh_attempts a JOIN outbound_request_receipts r ON r.id=a.receipt_id JOIN chain c ON a.input_generation=c.generation WHERE a.account_id=1 AND a.slot='owner_api' AND r.outcome='success') SELECT EXISTS(SELECT 1 FROM chain WHERE generation=?2)",
+            params![fingerprint.as_slice(), generation], |r| r.get(0)).map_err(StoreError::CredentialRefreshReceipt)
+    }
     pub(crate) fn credential_reserved_invocations(&mut self, key: KeyId) -> Result<u64, StoreError> {
         let used = self.connection.query_row("SELECT reserved_invocations FROM credential_key_usage WHERE key_id=?1", [key.0.as_slice()], |r| r.get::<_, i64>(0))
             .optional().map_err(StoreError::CredentialPairStore)?.unwrap_or(0);

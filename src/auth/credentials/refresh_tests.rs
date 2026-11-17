@@ -575,7 +575,7 @@ async fn source_takeover_refresh_keeps_origin_and_fences_the_old_token() {
     let rig = new_rig().await;
     let vault = rig.vault();
     let taken = OwnerTokens::from_secret_parts(jg(), "refresh-0".into()).expect("synthetic pair");
-    let g0 = vault.store_source_takeover(&taken).expect("takeover");
+    let g0 = vault.store_source_takeover(&taken).expect("takeover").stored_generation().expect("stored");
     let mut manager = rig.manager();
     assert!(manager.allows_refresh(), "the Hub owns the refresh");
     rig.refresh(&mut manager).await.expect("first refresh");

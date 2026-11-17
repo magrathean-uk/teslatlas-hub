@@ -11,6 +11,7 @@ use crate::{db::{HubStore, CredentialConnection, CredentialPairPresence, SealedC
 pub(crate) mod types;
 pub mod entry;
 pub(crate) use types::*;
+use entry::SourceTakeoverOutcome;
 #[cfg(any(test, debug_assertions))]
 pub(crate) mod fixtures;
 #[cfg(test)]
@@ -831,10 +832,17 @@ impl CredentialVault {
     /// refresh token (`refresh_token_spent`) and, beside an opaque legacy
     /// fence, `fresh_sign_in_required`; the write gate checks them again in
     /// the pair's transaction.
-    pub(crate) fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<Uuid, CredentialStoreError> {
+    ///
+    /// M09-T16 (B3): when the slot already holds this same login (a Hub-refreshed
+    /// `source_token` pair with this refresh fingerprint, or descended from it by the Hub's
+    /// own completed refreshes), nothing is written and the outcome says so, so a run after
+    /// a lost report or a crash past the commit reconciles instead of reading `slot_occupied`.
+    pub(crate) fn store_source_takeover(&self, tokens: &crate::credentials::OwnerTokens) -> Result<SourceTakeoverOutcome, CredentialStoreError> {
         let entry = CredentialEntry::source_takeover(tokens, self.now_ms()?.div_euclid(1000))?;
         let mut state = self.lock()?; state.writable(true)?; Self::slot_writable(&mut state, entry.slot)?;
         state.guard_read()?;
+        let fingerprint = refresh_fingerprint(entry.refresh.as_bytes());
+        if state.connection.source_takeover_already_stored(&fingerprint)? { return Ok(SourceTakeoverOutcome::AlreadyStored); }
         state.connection.check_supplied_credential_entry(entry.slot, entry.refresh.as_bytes(), &entry.legacy, ReplacePolicy::OnlyIfEmpty)?;
         let generation = Uuid::new_v4();
         let mut row = entry.row(generation);
@@ -843,7 +851,7 @@ impl CredentialVault {
         row.seal(keys.as_ref().ok_or(CredentialKeyError::KeyringMissing)?, entry.access.as_bytes(), entry.refresh.as_bytes(), &mut OsNonces)?;
         let VaultState { connection, commits_issued, .. } = &mut *state;
         connection.replace_credential_pair_with_commit(&row, &EntryProvenance::SourceTakeover, &entry.legacy, ReplacePolicy::OnlyIfEmpty, &mut || *commits_issued += 1)?;
-        state.barrier()?; Ok(generation)
+        state.barrier()?; Ok(SourceTakeoverOutcome::Stored(generation))
     }
     pub(in crate::auth) fn restore_credentials(&self, source: &Path, recovery_key: &[u8])
         -> Result<super::credential_recovery::CredentialRecoveryReport, super::credential_recovery::CredentialRecoveryError>
