@@ -5448,8 +5448,6 @@ extension HubControllerTests {
     }
 
     func testStopSitesIssueTheirActions() throws {
-        let credentials = HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
-                                                   region: "europe_middle_east_and_africa", expiresInSeconds: 3600)
         // (label, expected first action, installed, snapshot, trigger)
         struct Site {
             let label: String
@@ -5497,11 +5495,11 @@ extension HubControllerTests {
                  historyMarker: ("awaiting_verification", false)) { controller, done in
                 controller.runOnboardingChecks(expectRunning: false) { _ in done() }
             },
-            Site(label: "configureFleetAccount not connected", expected: "pause") { controller, done in
-                controller.configureFleetAccount(credentials: credentials) { _ in done() }
+            Site(label: "prepareFleetHub not connected", expected: "pause") { controller, done in
+                controller.prepareFleetHub { _ in done() }
             },
-            Site(label: "configureFleetAccount connected", expected: "pause", snapshot: .previewRunning) { controller, done in
-                controller.configureFleetAccount(credentials: credentials) { _ in done() }
+            Site(label: "prepareFleetHub connected", expected: "pause", snapshot: .previewRunning) { controller, done in
+                controller.prepareFleetHub { _ in done() }
             },
             Site(label: "runFullDiagnostics custody", expected: "pause") { controller, done in
                 controller.runFullDiagnostics { _ in done() }
@@ -5786,9 +5784,7 @@ extension HubControllerTests {
         let done = expectation(description: "site \(site)")
         switch site {
         case .fleetNotConnected, .fleetConnected:
-            controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-                accessToken: "a", refreshToken: "r", clientID: "c",
-                region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { outcome = $0; done.fulfill() }
+            controller.prepareFleetHub { outcome = $0.map { _ in () }; done.fulfill() }
         case .custody:
             controller.runFullDiagnostics { report in
                 outcome = report.contains("(failed)") ? .failure(HubActionError.commandFailed(report)) : .success(())
@@ -5819,10 +5815,12 @@ extension HubControllerTests {
                 }
                 _ = runPauseSite(site, home: home, service: service, runner: runner)
                 let actions = events.values.filter { $0.hasPrefix("service:") }
-                if site == .custody, failure == .workFails {
+                if failure == .workFails {
                     // Disposition: custody diagnostics cannot fail as work (a failing check
-                    // becomes a "(failed)" report section), so the held record is covered by
-                    // the ordinary Start and no typed recovery is owed.
+                    // becomes a "(failed)" report section), and the Fleet preparation runs no
+                    // command between its Pause and its Start (its work is the configuration
+                    // write). Either way the held record is covered by the ordinary Start and no
+                    // typed recovery is owed.
                     XCTAssertEqual(actions, ["service:pause", "service:start"], label)
                     continue
                 }
@@ -5857,9 +5855,7 @@ extension HubControllerTests {
         let controller = HubController(commandRunner: SiteRunner(), serviceRunner: rig.controller, homeDirectory: home,
                                        serviceInstalledOverride: true, initialSnapshot: .previewRunning)
         let done = expectation(description: "failed ordinary start")
-        controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-            accessToken: "a", refreshToken: "r", clientID: "c",
-            region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { result in
+        controller.prepareFleetHub { result in
             guard case let .failure(error) = result else { XCTFail("expected the start failure"); done.fulfill(); return }
             XCTAssertTrue(error.localizedDescription.contains("bootstrap failed"))
             done.fulfill()
@@ -6013,15 +6009,13 @@ extension HubControllerTests {
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home, serviceInstalledOverride: false)
         let done = expectation(description: "first run")
-        controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-            accessToken: "a", refreshToken: "r", clientID: "c",
-            region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { result in
+        controller.prepareFleetHub { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             done.fulfill()
         }
         wait(for: [done], timeout: 3)
-        // setup-fleet is reported as "command" by the scripted runner.
-        XCTAssertEqual(Array(events.values.prefix(2)), ["command", "service:start"], "setup, then the explicit first Start")
+        // The Fleet configuration is written, then the explicit first Start; no command runs before it.
+        XCTAssertEqual(events.values.first, "service:start", "the explicit first Start")
         XCTAssertFalse(events.values.contains("service:pause"))
     }
 

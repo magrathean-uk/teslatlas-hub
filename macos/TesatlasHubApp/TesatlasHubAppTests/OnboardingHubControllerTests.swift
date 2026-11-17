@@ -209,33 +209,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertNil(HubController.parseSourceCheckReport("not JSON"))
     }
 
-    func testFleetInvocationPutsCredentialsOnlyOnStandardInput() throws {
-        let credentials = HubFleetSetupCredentials(accessToken: "access-secret",
-                                                   refreshToken: "refresh-secret",
-                                                   clientID: "client-id",
-                                                   region: "europe_middle_east_and_africa",
-                                                   expiresInSeconds: 7_200)
-        let invocation = try HubController.fleetSetupInvocation(
-            configPath: URL(fileURLWithPath: "/tmp/hub-config.toml"),
-            credentials: credentials
-        )
-
-        XCTAssertEqual(invocation.arguments, [
-            "--config", "/tmp/hub-config.toml", "setup-fleet", "--all-vehicles"
-        ])
-        XCTAssertFalse(invocation.arguments.joined(separator: " ").contains("access-secret"))
-        XCTAssertFalse(invocation.arguments.joined(separator: " ").contains("refresh-secret"))
-
-        let payload = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: Data(invocation.standardInput.utf8)) as? [String: Any]
-        )
-        XCTAssertEqual(payload["accessToken"] as? String, "access-secret")
-        XCTAssertEqual(payload["refreshToken"] as? String, "refresh-secret")
-        XCTAssertEqual(payload["clientId"] as? String, "client-id")
-        XCTAssertEqual(payload["region"] as? String, "europe_middle_east_and_africa")
-        XCTAssertEqual(payload["expiresInSeconds"] as? NSNumber, 7_200)
-    }
-
     func testFleetProviderTOMLUpdateReplacesOnlyCollectorProvider() {
         let original = """
         data_dir = "/tmp/hub"

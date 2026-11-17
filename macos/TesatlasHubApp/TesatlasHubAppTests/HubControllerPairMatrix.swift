@@ -33,13 +33,7 @@ extension HubControllerTests {
     private static let localSource = "postgresql://reader@127.0.0.1:55438/source_snapshot"
     private static let remoteSource = "postgresql://reader@127.0.0.1:55439/sourcedb"
 
-    private func credentials() -> HubFleetSetupCredentials {
-        HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
-                                 region: "europe_middle_east_and_africa", expiresInSeconds: 3600)
-    }
-
     private func heldScenarios() -> [Held] {
-        let creds = credentials()
         let grant = TeslaAuthCodeGrant(code: "c", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")
         return [
             Held(family: .start, name: "service start") { rig, box in
@@ -69,16 +63,13 @@ extension HubControllerTests {
                 rig.service.hold("reconcile"); rig.controller.reconcileLaunchAgent { box.completions += 1 }
             },
             Held(family: .account, name: "fleet pause") { rig, box in
-                rig.service.hold("pause"); rig.controller.configureFleetAccount(credentials: creds) { _ in box.completions += 1 }
-            },
-            Held(family: .account, name: "fleet setup") { rig, box in
-                rig.runner.hold("setup-fleet"); rig.controller.configureFleetAccount(credentials: creds) { _ in box.completions += 1 }
+                rig.service.hold("pause"); rig.controller.prepareFleetHub { _ in box.completions += 1 }
             },
             Held(family: .account, name: "fleet start") { rig, box in
-                rig.service.hold("start"); rig.controller.configureFleetAccount(credentials: creds) { _ in box.completions += 1 }
+                rig.service.hold("start"); rig.controller.prepareFleetHub { _ in box.completions += 1 }
             },
-            Held(family: .account, name: "fleet first run setup", options: .init(installed: false)) { rig, box in
-                rig.runner.hold("setup-fleet"); rig.controller.configureFleetAccount(credentials: creds) { _ in box.completions += 1 }
+            Held(family: .account, name: "fleet first run start", options: .init(installed: false)) { rig, box in
+                rig.service.hold("start"); rig.controller.prepareFleetHub { _ in box.completions += 1 }
             },
             Held(family: .account, name: "sign-in window check") { rig, box in
                 rig.runner.hold("window"); rig.controller.configureTeslaAccount(grant: grant) { _ in box.completions += 1 }
@@ -174,7 +165,6 @@ extension HubControllerTests {
     }
 
     private func asks() -> [Ask] {
-        let creds = credentials()
         let grant = TeslaAuthCodeGrant(code: "c", codeVerifier: String(repeating: "v", count: 64), redirectURI: "tesla://auth/callback")
         func outcome(_ done: @escaping (Bool) -> Void) -> (Result<Void, Error>) -> Void {
             { if case .failure = $0 { done(true) } else { done(false) } }
@@ -186,7 +176,9 @@ extension HubControllerTests {
             Ask(family: .remove, name: "Remove") { rig, done in rig.controller.removeBackgroundService(completion: outcome(done)) },
             Ask(family: .delete, name: "Delete") { rig, done in rig.controller.deleteHubAndData { if case .failure = $0 { done(true) } else { done(false) } } },
             Ask(family: .reconcile, name: "Reconcile", deferred: true) { rig, done in rig.controller.reconcileLaunchAgent { done(false) } },
-            Ask(family: .account, name: "Fleet") { rig, done in rig.controller.configureFleetAccount(credentials: creds, completion: outcome(done)) },
+            Ask(family: .account, name: "Fleet") { rig, done in
+                rig.controller.prepareFleetHub { if case .failure = $0 { done(true) } else { done(false) } }
+            },
             Ask(family: .account, name: "Code sign-in") { rig, done in rig.controller.configureTeslaAccount(grant: grant, completion: outcome(done)) },
             Ask(family: .account, name: "Sign-in context") { rig, done in
                 switch rig.controller.beginLegacySignIn() {

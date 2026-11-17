@@ -509,9 +509,7 @@ extension OnboardingWindowControllerTests {
         XCTAssertFalse(onboarding.windowShouldClose(sheet), "OnboardingClose: refused while busy")
         onboarding.setBusy(false)
         onboardingHarness.service.hold("pause")
-        onboardingHarness.controller.configureFleetAccount(
-            credentials: HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
-                                                  region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { _ in }
+        onboardingHarness.controller.prepareFleetHub { _ in }
         XCTAssertEqual(onboardingHarness.controller.lifecycleCapabilities.owner, .account)
         XCTAssertTrue(onboarding.windowShouldClose(sheet), "an idle onboarding window may close")
         sheet.close()

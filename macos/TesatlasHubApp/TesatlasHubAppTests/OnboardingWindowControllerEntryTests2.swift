@@ -268,9 +268,7 @@ extension OnboardingWindowControllerTests {
         XCTAssertFalse(onboarding.windowShouldClose(sheet), "busy onboarding refuses to close")
         onboarding.setBusy(false)
         h.service.hold("pause")
-        h.controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-            accessToken: "a", refreshToken: "r", clientID: "c",
-            region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { _ in }
+        h.controller.prepareFleetHub { _ in }
         XCTAssertTrue(onboarding.windowShouldClose(sheet), "an idle onboarding window closes")
         sheet.close()
         XCTAssertEqual(h.controller.lifecycleCapabilities.owner, .account, "the owner outlived the window")

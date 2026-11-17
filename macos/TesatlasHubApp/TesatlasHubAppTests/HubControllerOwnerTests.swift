@@ -11,11 +11,6 @@ extension HubControllerTests {
 
     fileprivate typealias Rig = OwnerRig
 
-    fileprivate func fleetCredentials() -> HubFleetSetupCredentials {
-        HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
-                                 region: "europe_middle_east_and_africa", expiresInSeconds: 3600)
-    }
-
     fileprivate func acquireForeign(_ rig: Rig, _ family: HubLifecycleFamily = .diagnostics) throws -> HubLifecycleToken {
         switch rig.controller.lifecycle.acquire(family) {
         case let .success(token): return token
@@ -119,7 +114,7 @@ extension HubControllerTests {
         // (Start) each call the service several times: every call carries the one owner.
         let rig = try Rig(.init(loaded: .loaded, marker: "awaiting_handover"))
         defer { rig.tearDown() }
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { _ in }
+        rig.controller.prepareFleetHub { _ in }
         rig.drain()
         let account = rig.service.owners
         XCTAssertGreaterThanOrEqual(account.count, 2, "pause and start at least")
@@ -200,7 +195,6 @@ extension HubControllerTests {
             let arrange: (Rig) -> Void
             let run: (Rig, @escaping () -> Void) -> Void
         }
-        let credentials = fleetCredentials()
         let source = "postgresql://reader@127.0.0.1:55438/source_snapshot"
         let exits: [Exit] = [
             Exit(label: "admission refused after acquisition (handover pending)", family: .start,
@@ -208,7 +202,7 @@ extension HubControllerTests {
                 rig.controller.startHub { _ in done() }
             },
             Exit(label: "failed pause", family: .account, arrange: { $0.service.results["pause"] = .failure(HubActionError.commandFailed("pause")) }) { rig, done in
-                rig.controller.configureFleetAccount(credentials: credentials) { _ in done() }
+                rig.controller.prepareFleetHub { _ in done() }
             },
             Exit(label: "child failure", family: .signOut, arrange: { $0.runner.results["control"] = .failure(HubActionError.commandFailed("control")) }) { rig, done in
                 rig.controller.signOutTeslaAccount { _ in done() }
@@ -909,24 +903,20 @@ extension HubControllerTests {
 
     // MARK: R-E1F6-8
 
-    func testAccountSetupOwnsPauseConfigurationSetupStartAndRecovery() throws {
-        for boundary in ["pause", "setup-fleet", "start"] {
+    func testAccountSetupOwnsPauseConfigurationStartAndRecovery() throws {
+        for boundary in ["pause", "start"] {
             let rig = try Rig(.init(loaded: .loaded))
             defer { rig.tearDown() }
-            switch boundary {
-            case "pause": rig.service.hold("pause")
-            case "setup-fleet": rig.runner.hold("setup-fleet")
-            default: rig.service.hold("start")
-            }
+            rig.service.hold(boundary)
             var done = 0
-            rig.controller.configureFleetAccount(credentials: fleetCredentials()) { _ in done += 1 }
+            rig.controller.prepareFleetHub { _ in done += 1 }
             XCTAssertEqual((rig.service.heldKeys + rig.runner.heldKeys).count, 1, boundary)
             XCTAssertEqual(rig.capabilities.owner, .account, boundary)
             let before = rig.signature()
             var refusals = 0
             rig.controller.deleteHubAndData { if case .failure = $0 { refusals += 1 } }
             rig.controller.stopHub { if case .failure = $0 { refusals += 1 } }
-            rig.controller.configureFleetAccount(credentials: fleetCredentials()) { if case .failure = $0 { refusals += 1 } }
+            rig.controller.prepareFleetHub { if case .failure = $0 { refusals += 1 } }
             rig.controller.runFullDiagnostics { if $0.contains("not run") { refusals += 1 } }
             XCTAssertEqual(refusals, 4, boundary)
             XCTAssertEqual(rig.signature(), before, "\(boundary): the refused requests changed nothing")
@@ -935,11 +925,11 @@ extension HubControllerTests {
             XCTAssertEqual(rig.releases(.account), 1, boundary)
             XCTAssertFalse(rig.service.restartRecordHeld(by: rig.service.owners.last ?? makeLifecycleToken()))
         }
-        // The recovery after a failed setup stays inside the same owner.
+        // The recovery after a failed Start stays inside the same owner.
         let rig = try Rig(.init(loaded: .loaded))
         defer { rig.tearDown() }
-        rig.runner.results["setup-fleet"] = .failure(HubActionError.commandFailed("setup failed"))
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { _ in }
+        rig.service.results["start"] = .failure(HubActionError.commandFailed("start failed"))
+        rig.controller.prepareFleetHub { _ in }
         rig.drain()
         XCTAssertTrue(rig.service.calls.contains("recover"))
         XCTAssertEqual(rig.acquisitions(.account), 1)
@@ -951,7 +941,7 @@ extension HubControllerTests {
         defer { rig.tearDown() }
         let foreign = try acquireForeign(rig)
         var outcomes: [Result<Void, Error>] = []
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { outcomes.append($0) }
+        rig.controller.prepareFleetHub { outcomes.append($0.map { _ in () }) }
         rig.controller.configureTeslaAccount(grant: TeslaAuthCodeGrant(
             code: "c", codeVerifier: String(repeating: "v", count: 64),
             redirectURI: "tesla://auth/callback")) { outcomes.append($0) }
@@ -963,12 +953,12 @@ extension HubControllerTests {
         XCTAssertTrue(rig.runner.names.isEmpty && rig.service.calls.isEmpty)
 
         releaseForeign(rig, foreign)
-        var done: Result<Void, Error>?
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { done = $0 }
+        var done: Result<HubFleetPreparation, Error>?
+        rig.controller.prepareFleetHub { done = $0 }
         rig.drain()
         spinUntil { done != nil }
         XCTAssertTrue(FileManager.default.fileExists(atPath: rig.configPath.path), "admitted once the owner was free")
-        XCTAssertTrue(rig.runner.names.contains("setup-fleet"))
+        XCTAssertTrue(rig.service.calls.contains("run:start"))
     }
 
     // MARK: R-E1F6-9
@@ -1134,7 +1124,7 @@ extension HubControllerTests {
         rig.controller.startHub { if case .failure = $0 { refused += 1 } }
         rig.controller.restartHub { if case .failure = $0 { refused += 1 } }
         rig.controller.signOutTeslaAccount { if case .failure = $0 { refused += 1 } }
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { if case .failure = $0 { refused += 1 } }
+        rig.controller.prepareFleetHub { if case .failure = $0 { refused += 1 } }
         rig.controller.deleteHubAndData { if case .failure = $0 { refused += 1 } }
         rig.controller.runFullDiagnostics { if $0.contains("not run") { refused += 1 } }
         rig.controller.performVehicleControl(.unlock) { if case .failure = $0 { refused += 1 } }
@@ -1211,12 +1201,12 @@ extension HubControllerTests {
 
     func testReconcileCannotEnterACompoundWorkflowGap() throws {
         // Account setup releases the service queue between its phases; reconcile may not
-        // use the gap between the Pause and the setup command.
+        // use the gap between the Pause and the Start.
         let rig = try Rig(.init(loaded: .loaded, change: .replaced))
         defer { rig.tearDown() }
-        rig.runner.hold("setup-fleet")
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { _ in }
-        XCTAssertEqual(rig.runner.heldKeys, ["setup-fleet"], "setup is in the gap after the pause")
+        rig.service.hold("start")
+        rig.controller.prepareFleetHub { _ in }
+        XCTAssertEqual(rig.service.heldKeys, ["start"], "the Start is in the gap after the pause")
         var done = 0
         rig.controller.reconcileLaunchAgent { done += 1 }
         XCTAssertFalse(rig.service.calls.contains("reconcile"), "reconcile did not run between the phases")
@@ -1281,7 +1271,7 @@ extension HubControllerTests {
         rig.controller.restartHub { if case .failure = $0 { refused += 1 } }
         rig.controller.removeBackgroundService { if case .failure = $0 { refused += 1 } }
         rig.controller.deleteHubAndData { if case .failure = $0 { refused += 1 } }
-        rig.controller.configureFleetAccount(credentials: fleetCredentials()) { if case .failure = $0 { refused += 1 } }
+        rig.controller.prepareFleetHub { if case .failure = $0 { refused += 1 } }
         rig.controller.signOutTeslaAccount { if case .failure = $0 { refused += 1 } }
         rig.controller.runFullDiagnostics { if $0.contains("not run") { refused += 1 } }
         rig.controller.performVehicleControl(.lock) { if case .failure = $0 { refused += 1 } }
