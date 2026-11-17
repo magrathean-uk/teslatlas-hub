@@ -2,6 +2,34 @@
   "schema": "tesatlas.name-policy-allow/v1",
   "entries": [
     {
+      "id": "migration-source-encryption-key",
+      "class": "frozen-history",
+      "paths": [
+        "docs/releases/migration.md"
+      ],
+      "max_count": 1,
+      "expires": "G2-5",
+      "review_by": "2027-01-31",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "reason": "Identifies whose deployment key the operator must supply for login take-over.",
+      "authority": "M09-T06 acceptance: the key's location is cited from the source product's public documentation; lead ruling 17 November 2026",
+      "match_b64": "RmluZCB0aGUgYEVOQ1JZUFRJT05fS0VZYCB2YWx1ZSBpbiB5b3VyIFRlc2xhTWF0ZSBkZXBsb3ltZW50IGNvbmZpZ3VyYXRpb24s"
+    },
+    {
+      "id": "migration-source-key-documentation",
+      "class": "frozen-history",
+      "paths": [
+        "docs/releases/migration.md"
+      ],
+      "max_count": 2,
+      "expires": "G2-5",
+      "review_by": "2027-01-31",
+      "review_by_reason": "undated milestone, coordinator placeholder 2026-10-26",
+      "reason": "Retains the public documentation title and exact address cited for the required encryption key.",
+      "authority": "M09-T06 acceptance: the key's location is cited from the source product's public documentation; lead ruling 17 November 2026",
+      "match_b64": "W1Rlc2xhTWF0ZSBFbnZpcm9ubWVudCBWYXJpYWJsZXMgZG9jdW1lbnRhdGlvbl0oaHR0cHM6Ly9kb2NzLnRlc2xhbWF0ZS5vcmcvZG9jcy9jb25maWd1cmF0aW9uL2Vudmlyb25tZW50X3ZhcmlhYmxlcyk="
+    },
+    {
       "id": "frozen-format-car_identity_v1",
       "class": "frozen-history",
       "paths": [
