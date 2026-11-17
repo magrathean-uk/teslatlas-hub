@@ -2584,7 +2584,7 @@ async fn ct67_three_reads_with_an_expired_token_make_one_refresh_and_resend_what
             }
             let sent = bed.fake.authorisations.lock().expect("log")[authorisations_before..]
                 .to_vec();
-            let with_old = sent.iter().filter(|header| header.starts_with("Bearer e30.")).count();
+            let with_old = sent.iter().filter(|header| header.starts_with("Bearer e30.") && !header.ends_with(".fleet-next-access")).count();
             assert_eq!(with_old, 1, "only the first read carried the old token: {sent:?}");
             assert_eq!(bed.reads() - reads_before, 4, "one resend, two reads with token B: {sent:?}");
             assert_eq!(bed.data_reads_stored_at(bed.clock.wall_now_ms().expect("wall")), 3);
@@ -2658,7 +2658,7 @@ async fn ct67b_a_resend_the_reservation_does_not_cover_stays_due_without_a_wait_
                 bed.row("state"),
             );
             let log = bed.fake.authorisations.lock().expect("log").clone();
-            assert!(log[0].starts_with("Bearer e30."), "the first list carried token A");
+            assert!(log[0].starts_with("Bearer e30.") && !log[0].ends_with(".fleet-next-access"), "the first list carried token A");
             assert!(log[1..].iter().all(|header| header == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access"), "{log:?}");
             assert_eq!(bed.fake.token_requests.load(Ordering::SeqCst), 1, "no second refresh");
             assert_eq!(
