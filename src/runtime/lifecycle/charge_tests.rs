@@ -1884,3 +1884,84 @@ fn only_a_sample_anchoring_charge_fact_advances_the_snapshot_time() {
     assert_eq!(snapshot.energy_added_kwh, Some(30.0));
     assert_eq!(snapshot.at_ms, Some(T0 + HOUR));
 }
+
+
+#[test]
+fn astra_p07_f05_one_zero_battery_reading_does_not_erase_a_gap_charge() {
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cv(3, T0 + HOUR + MIN, "Complete", Some(10.0), Some(60), Some(1000.0)),
+    ]);
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].charge_energy_added, Some(10.0));
+}
+
+#[test]
+fn astra_p07_f05_recovery_survives_restart_and_keeps_the_zero_sample() {
+    let first = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+    ]);
+    let restored = OpenSessionState::decode(&first.state.encode().unwrap()).unwrap();
+    let result = step_one(restored, &cv(3, T0 + HOUR + MIN, "Complete", Some(10.0), Some(60), Some(1000.0)));
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].charge_energy_added, Some(10.0));
+    assert_eq!(result.delta.charges[0].start_battery_level, Some(50));
+    assert_eq!(result.delta.charges[0].end_battery_level, None);
+    assert_eq!(result.delta.charges[0].end_date_ms, Some(T0 + HOUR));
+    let raw = &result.delta.open_charge_samples;
+    assert_eq!(raw.len(), 1);
+    assert_eq!(raw[0].timestamp_ms, T0 + HOUR);
+    assert_eq!(raw[0].battery_level, Some(0));
+    assert_eq!(raw[0].charge_energy_added_kwh, Some(10.0));
+}
+
+#[test]
+fn astra_p07_f05_a_persistent_zero_is_not_filtered() {
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cv(3, T0 + HOUR + MIN, "Complete", Some(10.0), Some(0), Some(1000.0)),
+    ]);
+    assert!(result.delta.charges.is_empty());
+    assert_eq!(result.state.parked_snapshot.unwrap().battery_level, Some(0));
+}
+
+#[test]
+fn astra_p07_f05_later_return_cannot_erase_two_zero_readings() {
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cv(3, T0 + HOUR + MIN, "", None, Some(0), None),
+        cv(4, T0 + HOUR + 2 * MIN, "Complete", Some(10.0), Some(60), Some(1000.0)),
+    ]);
+    assert!(result.delta.charges.is_empty());
+}
+
+#[test]
+fn astra_p07_f05_the_next_battery_reading_can_corroborate_before_a_counter() {
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cv(3, T0 + HOUR + MIN, "", None, Some(60), None),
+        cv(4, T0 + HOUR + 2 * MIN, "Complete", Some(10.0), Some(60), Some(1000.0)),
+    ]);
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].charge_energy_added, Some(10.0));
+}
+
+#[test]
+fn astra_p07_f05_a_cached_battery_is_not_the_next_reading() {
+    let cached = vd(3, T0 + HOUR + SEC, json!({
+        "charge_state": {"timestamp": T0 + HOUR, "battery_level": 0}
+    }));
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cached,
+        cv(4, T0 + HOUR + MIN, "Complete", Some(10.0), Some(60), Some(1000.0)),
+    ]);
+    assert_eq!(result.delta.charges.len(), 1);
+    assert_eq!(result.delta.charges[0].charge_energy_added, Some(10.0));
+}

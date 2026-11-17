@@ -91,6 +91,10 @@ pub struct OpenSessionState {
     /// opens (R41).
     #[serde(default)]
     pub parked_snapshot: Option<ParkedSnapshot>,
+    /// One completed gap charge awaiting the very next battery-level reading.
+    /// Its original sample is retained unchanged until corroboration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_gap_charge: Option<PendingGapCharge>,
     /// Newest comparable installed version text seen on a full source (R31).
     #[serde(default)]
     pub last_car_version: Option<String>,
@@ -154,6 +158,16 @@ pub struct ParkedSnapshot {
     pub after_drive: bool,
     #[serde(default)]
     pub unplugged: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingGapCharge {
+    snapshot: ParkedSnapshot,
+    sample: ProjectionChargeSample,
+    coordinates: Option<(f64, f64)>,
+    odometer_km: Option<f64>,
+    odometer_coarse: bool,
+    unplugged: bool,
 }
 
 /// Bounded reference to normalized imported open-session rows. Child rows stay
