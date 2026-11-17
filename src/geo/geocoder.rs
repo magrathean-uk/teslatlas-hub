@@ -642,6 +642,9 @@ mod tests {
 
     #[tokio::test]
     async fn p21_f02_slow_refusals_keep_the_full_pause_after_the_response() {
+        // Keep the reserved slots off the process-wide limiter that c7_t62_seed reads;
+        // the current-thread runtime keeps this thread's limiter for the whole test.
+        let _limiter = isolate_global_limiter_for_test();
         for (status, retry_after, pause_ms) in [(403, None, 60_000), (429, Some(120), 120_000)] {
             let temporary = crate::private_tempdir().unwrap();
             let store = HubStore::initialize(temporary.path()).unwrap();
