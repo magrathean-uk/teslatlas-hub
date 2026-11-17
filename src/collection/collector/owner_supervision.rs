@@ -71,8 +71,9 @@ where
         &stream_endpoint,
         crate::fleet_api::egress::Provider::Legacy,
     )?);
-    // A window's run starts: the intake latency figures start again (M04-T11).
-    reset_intake_latency();
+    // The run takes its window's intake latency record (M04-T11), which an earlier
+    // run of the same window may have filled; the window's open made it empty.
+    write_guard.take_intake_record();
     let window = write_guard.window().clone();
     // The run's write guard exists before the credential unit and the cursor key (B2
     // fix round, P3b fix 3, R-P3bF3-1): the entry point made it, and it has been
@@ -542,12 +543,11 @@ where
                                     run.scheduler
                                         .apply_control_settings(&configured_vehicles, list_time),
                                 );
-                                run.batch.discoveries.extend(candidates.into_iter().map(
-                                    |vehicle| DiscoveryItem {
-                                        vehicle,
-                                        received_at_ms,
-                                    },
-                                ));
+                                run.batch.admit_discoveries(
+                                    candidates,
+                                    received_at_ms,
+                                    list_time,
+                                );
                                 run.batch.note_result(list_time);
                             }
                             Err(error) => {
@@ -698,12 +698,13 @@ where
                                         let candidates = run
                                             .scheduler
                                             .accept_vehicle_state(vehicle_id, state, now);
-                                        run.batch.discoveries.extend(candidates.into_iter().map(
-                                            |vehicle| DiscoveryItem {
-                                                vehicle,
+                                        if !candidates.is_empty() {
+                                            run.batch.admit_discoveries(
+                                                candidates,
                                                 received_at_ms,
-                                            },
-                                        ));
+                                                clock.mono_now(),
+                                            );
+                                        }
                                     }
                                     (
                                         TickKey::Probe(vehicle_id, _),

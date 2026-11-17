@@ -26,6 +26,7 @@ use super::{
     channel::{OperatorHandler, OperatorRequest, SetupMaterial},
     trust::{DialogConfirmation, TrustAuthority},
 };
+use crate::collection::collector::IntakeLatencyBoard;
 use crate::collection::window::{
     AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, Handback, HandbackSource,
     HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
@@ -291,6 +292,8 @@ pub struct OperatorService {
     trust: TrustAuthority,
     window_dir: PathBuf,
     recovery: Arc<RecoveryGate>,
+    /// The collector's intake latency records (M04-T11).
+    intake: IntakeLatencyBoard,
 }
 
 impl OperatorService {
@@ -310,7 +313,15 @@ impl OperatorService {
             trust,
             window_dir: super::window_dir(data_dir),
             recovery: RecoveryGate::new(false),
+            intake: IntakeLatencyBoard::process_wide().clone(),
         }
+    }
+
+    /// Answers with the intake latency records of `board` (the process's own by
+    /// default).
+    pub fn with_intake_latency(mut self, board: IntakeLatencyBoard) -> Self {
+        self.intake = board;
+        self
     }
 
     /// Answers in the recovery state of `recovery` while it is pending.
@@ -333,9 +344,12 @@ impl OperatorService {
     }
 
     fn status(&self) -> Value {
-        let mut status = status_json(&self.controller.status());
+        // One read of the window: the intake latency figures (M04-T11) are shown
+        // only beside the identity of the window they belong to.
+        let window = self.controller.status();
+        let mut status = status_json(&window);
         status["credentialRecoveryPending"] = json!(self.recovery.pending());
-        status["intakeLatency"] = crate::collection::collector::intake_latency_status();
+        status["intakeLatency"] = self.intake.status(&window);
         status
     }
 
@@ -382,9 +396,16 @@ impl OperatorHandler for OperatorService {
             }
             OperatorRequest::WindowOpen { grant } => {
                 let bytes = Self::decode(&grant, GRANT_MAX_BYTES, "grant")?;
-                self.controller
-                    .open(&bytes)
-                    .map_err(OperatorRefusal::window)?;
+                // The window's intake latency record starts empty, current before
+                // the window can start a run (M04-T11).
+                let opening = self.intake.opening();
+                match self.controller.open(&bytes) {
+                    Ok(opened) => self.intake.opened(opening, &opened),
+                    Err(refusal) => {
+                        self.intake.open_refused(opening);
+                        return Err(OperatorRefusal::window(refusal));
+                    }
+                }
                 (self.kick)();
                 Ok(self.status())
             }

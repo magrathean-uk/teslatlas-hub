@@ -203,6 +203,8 @@ struct SupervisedCollectorTestSeam {
     /// While set, every tick transaction that would commit fails instead and
     /// rolls back.
     tick_commit_fault: AtomicBool,
+    /// Run inside every tick transaction just before it commits (M04-T11).
+    tick_commit_hook: std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// While set, the start function fails right after its transaction committed and
     /// before it reads anything else (B2 P3: the durable lift must survive it).
     start_commit_fault: AtomicBool,
@@ -685,6 +687,10 @@ impl SupervisedCollectorTestSeam {
     /// the fault when one is set.
     fn tick_commit_gate(&self) -> Result<(), CollectorError> {
         self.tick_commit_attempts.fetch_add(1, Ordering::SeqCst);
+        let hook = self.tick_commit_hook.lock().expect("tick commit hook").clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         self.tick_commit_times
             .lock()
             .expect("tick commit times")
@@ -702,6 +708,11 @@ impl SupervisedCollectorTestSeam {
     /// publication begins.
     fn set_tick_committed_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
         *self.tick_committed.lock().expect("tick hook") = Some(hook);
+    }
+
+    /// Run `hook` inside every tick transaction just before it commits.
+    fn set_tick_commit_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.tick_commit_hook.lock().expect("tick commit hook") = Some(hook);
     }
 
     fn tick_commits(&self) -> usize {

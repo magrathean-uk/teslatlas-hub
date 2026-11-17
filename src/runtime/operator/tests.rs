@@ -1249,18 +1249,79 @@ fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
     assert_eq!(status["phase"], "closing");
 }
 
-/// M04-T11: the window status answer carries the intake latency figures, empty
-/// (count zero, no percentiles) until an observation is committed.
+/// M04-T11: the window status answer carries the intake latency figures of the
+/// window it names. The service and a collector thread share one board, as the
+/// process-wide one is shared in production: samples recorded by the collector
+/// cross the operator channel, an open starts the new window's figures empty before
+/// any run, and a refused open keeps them.
 #[test]
-fn intake_latency_is_part_of_the_operator_status_answer() {
+fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
     let rig = Rig::new();
     std::fs::create_dir_all(rig.data()).expect("data dir");
-    let _server = rig.serve();
+    let board = crate::collection::collector::IntakeLatencyBoard::default();
+    let _server = ChannelServer::bind(
+        &rig.data(),
+        Arc::new(rig.service().with_intake_latency(board.clone())),
+    )
+    .expect("channel bound");
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let closed = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(closed["intakeLatency"]["count"], 0);
+    assert!(closed["intakeLatency"]["seq"].is_null());
+
+    let opened = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&rig.grant(3_600)),
+        })
+        .expect("open");
+    assert_eq!(opened["intakeLatency"]["count"], 0);
+    assert_eq!(opened["intakeLatency"]["seq"], opened["seq"]);
+
+    // A collector run of the window records on its own thread.
+    let collector = board.clone();
+    std::thread::spawn(move || {
+        collector.for_run().record(&[
+            std::time::Duration::from_millis(12),
+            std::time::Duration::from_millis(30),
+            std::time::Duration::from_millis(400),
+        ]);
+    })
+    .join()
+    .expect("collector thread");
     let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
-    let latency = status["intakeLatency"].as_object().expect("intake latency figures");
-    assert_eq!(latency["count"], 0);
-    for key in ["p50Ms", "p95Ms", "maxMs"] {
-        assert!(latency[key].is_null(), "{key} is null while the count is zero");
-    }
-    assert!(latency["epoch"].is_u64());
+    let latency = &status["intakeLatency"];
+    assert_eq!(latency["count"], 3, "{status}");
+    assert_eq!(latency["dropped"], 0);
+    assert_eq!(latency["maxMs"].as_f64(), Some(400.0));
+    assert_eq!(latency["overTargetCount"], 1);
+    assert_eq!(latency["p95WithinTarget"], false);
+    assert_eq!(latency["seq"], status["seq"]);
+    assert_eq!(latency["grantDigest"], status["grantDigest"]);
+
+    // An open while the window is active is refused and changes nothing.
+    let refused = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&rig.grant(1_800)),
+        })
+        .unwrap_err();
+    assert_eq!(refused.code, "window_active");
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["intakeLatency"]["count"], 3);
+
+    // The next window starts empty before any run, beside its own identity.
+    rig.controller.close(CloseReason::OperatorClose);
+    rig.controller.finish_close().expect("closed");
+    rig.clock.advance(60);
+    let next = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&rig.grant(3_600)),
+        })
+        .expect("next open");
+    assert_ne!(next["seq"], opened["seq"]);
+    assert_eq!(next["intakeLatency"]["count"], 0, "{next}");
+    assert_eq!(next["intakeLatency"]["seq"], next["seq"]);
+    assert!(next["intakeLatency"]["maxMs"].is_null());
 }

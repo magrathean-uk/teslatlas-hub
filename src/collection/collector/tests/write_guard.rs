@@ -441,7 +441,7 @@ fn p3bf2_stream_frame(point: &'static str) {
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     );
     refused_with_the_sensitive_failure(point, &result);
@@ -477,7 +477,7 @@ fn p3bf2_a_stream_frame_is_written_while_the_guard_allows() {
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     )
     .expect("the frame");
@@ -505,7 +505,7 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
         &mut core.scheduler,
         core_id(1),
         &update,
-        Duration::ZERO,
+        Instant::now(),
         &mut cache,
     );
     refused_with_the_sensitive_failure("frame-admission", &result);
