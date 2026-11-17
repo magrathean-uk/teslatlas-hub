@@ -889,7 +889,16 @@
 "hub.fleetSetup.consent.priceState" = "A state check or a list of your cars is billed at the same price.";
 "hub.fleetSetup.consent.priceTitle" = "Price";
 "hub.fleetSetup.consent.setUp" = "Setting up makes a few list requests, which Tesla bills at the same price as a state check: signing in lists your cars once, and so does each Find My Car.";
-"hub.fleetSetup.consent.unreadable" = "Hub cannot read the setting %1$@ in its configuration exactly, so this page cannot state what polling would cost, and nothing can be accepted. Correct that setting, or remove it to use Hub's defaults, then open this page again.";
+"hub.fleetSetup.consent.unreadable" = "Hub states a figure this page cannot show (%1$@), so this page cannot state what polling would cost, and nothing can be accepted. Update the app, then open this page again.";
+"hub.fleetSetup.consent.figuresFailed" = "Hub could not state its figures, so this page cannot state what polling would cost, and nothing can be accepted. Hub's answer: %1$@";
+"hub.fleetSetup.consent.reading" = "Hub is stating the figures in effect…";
+"hub.fleetSetup.consent.priceStateOther" = "A state check or a list of your cars is billed at $1 for every %1$@ requests (%2$@ each).";
+"hub.fleetSetup.consent.priceStateFree" = "Tesla does not bill a state check or a list of your cars.";
+"hub.fleetSetup.consent.collectionTitle" = "Collection";
+"hub.fleetSetup.consent.collectionOff" = "Collection is off: Hub polls nothing until you choose Start Collecting.";
+"hub.fleetSetup.consent.collectionOn" = "Collection is on: Hub's collector runs %1$@.";
+"hub.fleetSetup.figuresUnreadable" = "Hub's answer about its figures could not be read.";
+"hub.fleetSetup.busy.figures" = "Checking Hub's figures…";
 "hub.fleetSetup.consentRequired" = "Accept the cost of polling on the consent page first. Nothing was sent to Tesla.";
 "hub.fleetSetup.prepareLeftStopped" = "%1$@ Hub is left stopped, so it does not poll Tesla before you accept the cost. Try the preparation again.";
 "hub.fleetSetup.tryAgain" = "Try Again";

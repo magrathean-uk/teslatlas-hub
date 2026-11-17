@@ -309,6 +309,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     /// The figures the consent page rendered (R3): acceptance records exactly these, and only
     /// while they are still the figures in effect.
     private var fleetConsentShown: HubFleetConsentFigures?
+    /// The service's answer to `setup-fleet figures` the consent page shows (R2); nil until it
+    /// is read on this visit of the page.
+    private var fleetConsentAnswer: HubFleetConsentReading?
+    private var fleetFiguresReading = false
     /// Where an accepted consent page continues: the sign-in on a first set-up, or the step a
     /// waiting state names on a return.
     private var fleetResumeAfterConsent: HubFleetStep = .signIn
@@ -650,6 +654,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fleetStateUnknown = nil
         fleetPreparationFailed = nil
         fleetConsentShown = nil
+        fleetConsentAnswer = nil
         fleetPublicKey = nil
         sourceEncryptionKey.stringValue = ""
         render()
@@ -831,7 +836,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let fleetPage: HubFleetStep? = state.route == .fleet ? fleetStep : nil
         if fleetPage != lastRenderedFleetStep {
             fleetClientSecret.stringValue = ""
-            if fleetPage != .consent { fleetConsent.state = .off }
+            if fleetPage != .consent {
+                // The next visit of the consent page asks the service for its figures again.
+                fleetConsent.state = .off
+                fleetConsentShown = nil
+                fleetConsentAnswer = nil
+            }
         }
         lastRenderedFleetStep = fleetPage
         if enteringFleet {
@@ -3317,8 +3327,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 // MARK: - Fleet route (M09-T12)
 
 extension OnboardingWindowController {
-    // The cadence, price and cap the consent page states: the figures in effect for this Hub
-    // (`HubController.fleetConsentReading`), never fixed text.
+    // The cadence, price and cap the consent page states: exactly the figures the service
+    // states (`setup-fleet figures`, `HubController.readFleetFigures`), never fixed text.
 
     /// "every 30 seconds", "every 2 minutes", "every hour".
     static func fleetEvery(_ seconds: Int) -> String {
@@ -3349,9 +3359,16 @@ extension OnboardingWindowController {
         var text = HubL10n.format("hub.fleetSetup.consent.price",
             fallback: "Tesla bills your developer account $1 for every %1$@ vehicle-data requests (%2$@ each).",
             arguments: [String(figures.dataRequestsPerDollar), each])
-        if figures.stateRequestsPerDollar == figures.dataRequestsPerDollar {
+        if let state = figures.stateRequestsPerDollar, state == figures.dataRequestsPerDollar {
             text += " " + HubL10n.text("hub.fleetSetup.consent.priceState",
                 fallback: "A state check or a list of your cars is billed at the same price.")
+        } else if let state = figures.stateRequestsPerDollar {
+            text += " " + HubL10n.format("hub.fleetSetup.consent.priceStateOther",
+                fallback: "A state check or a list of your cars is billed at $1 for every %1$@ requests (%2$@ each).",
+                arguments: [String(state), String(format: "$%.3f", 1 / Double(max(1, state)))])
+        } else {
+            text += " " + HubL10n.text("hub.fleetSetup.consent.priceStateFree",
+                fallback: "Tesla does not bill a state check or a list of your cars.")
         }
         return text
     }
@@ -3360,17 +3377,36 @@ extension OnboardingWindowController {
         var text = HubL10n.format("hub.fleetSetup.consent.cap",
             fallback: "Hub stops polling for the month when its requests reach %1$@.",
             arguments: [fleetDollars(cents: figures.monthlyCapCents)])
-        if figures == .serviceDefaults {
+        if figures.isCovered(by: .serviceDefaults) {
             text += " " + HubL10n.text("hub.fleetSetup.consent.capDefault",
                 fallback: "That is Tesla's $10.00 monthly discount; with these settings it is reached around day 14 of a month.")
         }
         return text
     }
 
-    static func fleetUnreadableText(setting: String) -> String {
+    /// Whether collection is on now, as the service states it.
+    static func fleetCollectionText(_ figures: HubFleetConsentFigures) -> String {
+        guard figures.collectionIntervalSeconds > 0 else {
+            return HubL10n.text("hub.fleetSetup.consent.collectionOff",
+                fallback: "Collection is off: Hub polls nothing until you choose Start Collecting.")
+        }
+        return HubL10n.format("hub.fleetSetup.consent.collectionOn",
+            fallback: "Collection is on: Hub's collector runs %1$@.",
+            arguments: [fleetEvery(figures.collectionIntervalSeconds)])
+    }
+
+    /// The service stated a figure this page has no line for, or none it can use (R2).
+    static func fleetUnreadableText(field: String) -> String {
         HubL10n.format("hub.fleetSetup.consent.unreadable",
-            fallback: "Hub cannot read the setting %1$@ in its configuration exactly, so this page cannot state what polling would cost, and nothing can be accepted. Correct that setting, or remove it to use Hub's defaults, then open this page again.",
-            arguments: [setting])
+            fallback: "Hub states a figure this page cannot show (%1$@), so this page cannot state what polling would cost, and nothing can be accepted. Update the app, then open this page again.",
+            arguments: [field])
+    }
+
+    /// `setup-fleet figures` failed (R2): its own text, and nothing can be accepted.
+    static func fleetFiguresFailedText(_ message: String) -> String {
+        HubL10n.format("hub.fleetSetup.consent.figuresFailed",
+            fallback: "Hub could not state its figures, so this page cannot state what polling would cost, and nothing can be accepted. Hub's answer: %1$@",
+            arguments: [message])
     }
 
     /// The figures in effect changed while the consent page was open (R3): nothing was recorded.
@@ -3441,7 +3477,7 @@ extension OnboardingWindowController {
                 && !fleetDomain.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .publicKey:
             return controller.savedFleetApplication?.registered == true || !fleetClientSecret.stringValue.isEmpty
-        case .consent: return fleetConsent.state == .on && fleetConsentFigures != nil
+        case .consent: return fleetConsent.state == .on && fleetConsentShown != nil && !fleetFiguresReading
         case .signIn: return controller.fleetConsentInEffect && !fleetClientSecret.stringValue.isEmpty
         case .vehicles, .start: return controller.fleetConsentInEffect
         }
@@ -3454,7 +3490,7 @@ extension OnboardingWindowController {
         case .details: return [fleetRegion, fleetClientID, fleetRedirectURI, fleetDomain]
         case .publicKey:
             return controller.savedFleetApplication?.registered == true ? [] : [fleetClientSecret]
-        case .consent: return fleetConsentFigures == nil ? [] : [fleetConsent]
+        case .consent: return fleetConsentShown == nil ? [] : [fleetConsent]
         case .signIn: return [fleetClientSecret]
         case .vehicles, .start: return []
         }
@@ -3645,17 +3681,25 @@ extension OnboardingWindowController {
         return stack
     }
 
-    /// The figures the consent page shows; nil while one of them cannot be read exactly.
-    private var fleetConsentFigures: HubFleetConsentFigures? {
-        if case let .figures(figures) = controller.fleetConsentReading { return figures }
-        return nil
+    /// Asks the service for the figures the consent page shows; once per visit of the page.
+    private func loadFleetConsentFigures() {
+        guard !fleetFiguresReading else { return }
+        fleetFiguresReading = true
+        controller.readFleetFigures { [weak self] reading in
+            guard let self else { return }
+            self.fleetFiguresReading = false
+            guard self.state.route == .fleet, self.fleetStep == .consent else { return }
+            self.fleetConsentAnswer = reading
+            self.render()
+        }
     }
 
     private func fleetFigureRows(_ figures: HubFleetConsentFigures) -> [NSView] {
         let rows: [(String, String, String)] = [
             ("clock", HubL10n.text("hub.fleetSetup.consent.cadenceTitle", fallback: "How often"), Self.fleetCadenceText(figures)),
             ("dollarsign.circle", HubL10n.text("hub.fleetSetup.consent.priceTitle", fallback: "Price"), Self.fleetPriceText(figures)),
-            ("gauge", HubL10n.text("hub.fleetSetup.consent.capTitle", fallback: "Monthly cap"), Self.fleetCapText(figures))
+            ("gauge", HubL10n.text("hub.fleetSetup.consent.capTitle", fallback: "Monthly cap"), Self.fleetCapText(figures)),
+            ("power", HubL10n.text("hub.fleetSetup.consent.collectionTitle", fallback: "Collection"), Self.fleetCollectionText(figures))
         ]
         return rows.map { symbol, title, text in
             let heading = NSTextField(labelWithString: title)
@@ -3678,21 +3722,35 @@ extension OnboardingWindowController {
 
     private func fleetConsentBody() -> NSView {
         var views: [NSView] = []
-        switch controller.fleetConsentReading {
-        case let .figures(figures):
+        switch fleetConsentAnswer {
+        case nil:
+            fleetConsent.state = .off
+            fleetConsentShown = nil
+            views.append(featureRow(HubL10n.text("hub.fleetSetup.consent.reading",
+                fallback: "Hub is stating the figures in effect…"), "hourglass"))
+            loadFleetConsentFigures()
+        case let .figures(figures)?:
             // A tick given to other figures is not a tick for these.
             if fleetConsentShown != figures { fleetConsent.state = .off }
             fleetConsentShown = figures
             views += fleetFigureRows(figures)
-            views.append(featureRow(Self.fleetSetUpRequestsText, "list.bullet"))
+            if figures.stateRequestsPerDollar != nil {
+                views.append(featureRow(Self.fleetSetUpRequestsText, "list.bullet"))
+            }
             views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
-        case let .unreadable(setting):
-            // A figure that cannot be read exactly is not stated, and nothing can be accepted.
+        case let .unreadable(field)?:
+            // A figure the page cannot show is not stated, and nothing can be accepted.
             fleetConsent.state = .off
             fleetConsentShown = nil
             views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
-                                    message: Self.fleetUnreadableText(setting: setting),
+                                    message: Self.fleetUnreadableText(field: field),
                                     identifier: "onboarding.fleet.consent-unreadable"))
+        case let .failed(message)?:
+            fleetConsent.state = .off
+            fleetConsentShown = nil
+            views.append(noticeView(symbol: "exclamationmark.triangle.fill", tone: .warning, title: nil,
+                                    message: Self.fleetFiguresFailedText(message),
+                                    identifier: "onboarding.fleet.consent-failed"))
         }
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -3751,19 +3809,34 @@ extension OnboardingWindowController {
         return controller.fleetConsentInEffect ? step : .consent
     }
 
-    /// Accepting the consent page records the time and exactly the figures the page showed;
-    /// nothing is sent. When the figures in effect differ from the shown ones, nothing is
-    /// recorded: the page shows the new figures, clears the tick and asks again (R3).
+    /// Accepting the consent page records the time and exactly the answer the page showed;
+    /// nothing is sent. The service is asked again first: when the figures in effect differ
+    /// from the shown ones, nothing is recorded, and the page shows the new figures, clears the
+    /// tick and asks again (R3).
     private func fleetAcceptConsent() {
-        guard fleetConsent.state == .on, let shown = fleetConsentShown else { return }
-        guard fleetConsentFigures == shown else {
-            HubAppLog.shared.record("fleet_setup.consent_figures_changed", category: "account")
-            fleetConsent.state = .off
-            errorMessage = nil
-            fleetNotice = Self.fleetFiguresChangedText
-            render()
-            return
+        guard fleetConsent.state == .on, let shown = fleetConsentShown, !fleetFiguresReading else { return }
+        fleetFiguresReading = true
+        setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.figures", fallback: "Checking Hub's figures…"),
+                operation: .fleet)
+        controller.readFleetFigures { [weak self] reading in
+            guard let self else { return }
+            self.fleetFiguresReading = false
+            self.setBusy(false)
+            guard self.state.route == .fleet, self.fleetStep == .consent else { return }
+            self.fleetConsentAnswer = reading
+            guard case let .figures(current) = reading, current == shown else {
+                HubAppLog.shared.record("fleet_setup.consent_figures_changed", category: "account")
+                self.fleetConsent.state = .off
+                self.errorMessage = nil
+                if case .figures = reading { self.fleetNotice = Self.fleetFiguresChangedText } else { self.fleetNotice = nil }
+                self.render()
+                return
+            }
+            self.recordFleetConsent(shown)
         }
+    }
+
+    private func recordFleetConsent(_ shown: HubFleetConsentFigures) {
         do { try controller.recordFleetConsent(shown) } catch {
             showInlineError(error.localizedDescription)
             return
@@ -4218,6 +4291,7 @@ extension OnboardingWindowController {
     var fleetNoticeForTests: String? { fleetNotice }
     var fleetStateUnknownForTests: String? { fleetStateUnknown }
     var fleetPreparationFailedForTests: String? { fleetPreparationFailed }
+    var fleetConsentAnswerForTests: HubFleetConsentReading? { fleetConsentAnswer }
     var errorMessageForTests: String? { errorMessage }
     var fleetSecretForTests: String { fleetClientSecret.stringValue }
     var fleetSignInPendingForTests: Bool { fleetSignInSecret != nil }

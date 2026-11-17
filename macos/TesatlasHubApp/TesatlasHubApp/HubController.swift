@@ -3442,6 +3442,8 @@ final class HubController {
     private var ownerSignInGeneration: UInt64 = 0
     /// How many cars the last owner sign-in configured, when its report said; main thread.
     private(set) var lastVehiclesConfigured: Int?
+    /// The service's last answer to `setup-fleet figures` (M09-T12 R2); main queue.
+    private(set) var lastFleetFigures: HubFleetConsentReading?
     private let refreshRequestLock = NSLock()
     private var newestRefreshRequest: UInt64 = 0
 
@@ -8327,93 +8329,119 @@ struct HubFleetApplication: Equatable {
 /// poll intervals, the billed state check and list intervals, `FLEET_PRICING` and
 /// `DEFAULT_FLEET_MONTHLY_CAP_CENTS`); the configuration's `[collector.fleet_polling]` overrides
 /// them. The service will report these figures itself (needs-from-service.md).
+/// The Fleet figures in effect as the service states them (`setup-fleet figures`, interface
+/// section 12; M09-T12 R2). The app never reads them from the configuration file: the
+/// consent page shows exactly this answer, and the consent record holds exactly it.
 struct HubFleetConsentFigures: Equatable {
+    /// `[collector] interval_seconds` in effect; 0 means collection is off.
+    var collectionIntervalSeconds = 0
     var drivingSeconds = 30
     var chargingSeconds = 120
     var updatingSeconds = 300
     var onlineSeconds = 120
     var stateCheckSeconds = 600
     var inventorySeconds = 3_600
-    var monthlyCapCents = 1_000
-    /// Tesla's data rate, and the rate the service counts a state check or a list at.
+    /// Requests per US dollar for a vehicle data read.
     var dataRequestsPerDollar = 500
-    var stateRequestsPerDollar = 500
+    /// Requests per US dollar for a vehicle list (state check, inventory); nil when Tesla does not bill it.
+    var stateRequestsPerDollar: Int? = 500
+    var monthlyCapCents = 1_000
 
+    /// The example answer of section 12 (the service's defaults with collection off). The app
+    /// takes no figure from it; the consent page uses it only to recognise the default set.
     static let serviceDefaults = HubFleetConsentFigures()
 
-    private static let keys: [String: WritableKeyPath<HubFleetConsentFigures, Int>] = [
-        "driving_poll_seconds": \.drivingSeconds,
-        "charging_poll_seconds": \.chargingSeconds,
-        "updating_poll_seconds": \.updatingSeconds,
-        "online_poll_seconds": \.onlineSeconds,
-        "state_poll_seconds": \.stateCheckSeconds,
-        "inventory_poll_seconds": \.inventorySeconds,
-        "monthly_cap_cents": \.monthlyCapCents
+    private static let pollingKeys: [(String, WritableKeyPath<HubFleetConsentFigures, Int>)] = [
+        ("driving", \.drivingSeconds), ("charging", \.chargingSeconds), ("updating", \.updatingSeconds),
+        ("online", \.onlineSeconds), ("stateCheck", \.stateCheckSeconds), ("inventory", \.inventorySeconds)
+    ]
+    private static let topKeys: Set<String> = [
+        "provider", "collectionIntervalSeconds", "pollingSeconds", "requestsPerDollar", "monthlyCapCents"
     ]
 
-    private static let recordKeys: [String: WritableKeyPath<HubFleetConsentFigures, Int>] = [
-        "drivingSeconds": \.drivingSeconds, "chargingSeconds": \.chargingSeconds,
-        "updatingSeconds": \.updatingSeconds, "onlineSeconds": \.onlineSeconds,
-        "stateCheckSeconds": \.stateCheckSeconds, "inventorySeconds": \.inventorySeconds,
-        "monthlyCapCents": \.monthlyCapCents, "dataRequestsPerDollar": \.dataRequestsPerDollar,
-        "stateRequestsPerDollar": \.stateRequestsPerDollar
-    ]
-
-    var record: [String: Int] { Self.recordKeys.mapValues { self[keyPath: $0] } }
-
-    init() {}
-
-    init?(record: [String: Any]) {
-        guard Set(record.keys) == Set(Self.recordKeys.keys) else { return nil }
-        for (key, path) in Self.recordKeys {
-            guard let value = HubFleetJSON.integer(record[key]), value >= 0 else { return nil }
-            self[keyPath: path] = value
-        }
+    /// The answer in the verb's own shape, as the consent record holds it.
+    var answer: [String: Any] {
+        var polling: [String: Any] = [:]
+        for (key, path) in Self.pollingKeys { polling[key] = self[keyPath: path] }
+        let state: Any = stateRequestsPerDollar.map { $0 as Any } ?? NSNull()
+        return [
+            "provider": "fleet",
+            "collectionIntervalSeconds": collectionIntervalSeconds,
+            "pollingSeconds": polling,
+            "requestsPerDollar": ["data": dataRequestsPerDollar, "state": state] as [String: Any],
+            "monthlyCapCents": monthlyCapCents
+        ]
     }
 
-    /// The figures in effect for a configuration, read with the app's line reader. Anything it
-    /// cannot read exactly (another spelling of the table, a dotted or inline form, an unknown
-    /// or repeated key, a value that is not plain decimal digits, an interval of 0) names the
-    /// setting instead: the consent page then states no figure and offers no acceptance.
-    static func reading(in config: String?) -> HubFleetConsentReading {
-        let table = "collector.fleet_polling"
-        guard let config else { return .figures(.serviceDefaults) }
-        func uncommented(_ line: String) -> String {
-            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Whether a consent given to `accepted` covers these figures: every figure is equal. The
+    /// collection interval is not compared: it is the switch the consent governs (0 before
+    /// `setup-fleet activate`, positive after it), not a figure of the cost.
+    func isCovered(by accepted: HubFleetConsentFigures) -> Bool {
+        var mine = self
+        mine.collectionIntervalSeconds = accepted.collectionIntervalSeconds
+        return mine == accepted
+    }
+
+    /// Reads the verb's answer by name. A field the page has no line for, or a field that is
+    /// missing or not a usable value, names that field: the page then states no figure and
+    /// offers no acceptance.
+    static func reading(answer root: [String: Any]) -> HubFleetConsentReading {
+        func number(_ value: Any?, minimum: Int) -> Int? {
+            guard let number = HubFleetJSON.integer(value), number >= minimum else { return nil }
+            return number
         }
-        var figures = HubFleetConsentFigures.serviceDefaults
-        var inTable = false
-        var tableSeen = false
-        var seen: Set<String> = []
-        for raw in config.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = uncommented(String(raw))
-            if line.isEmpty { continue }
-            if line.hasPrefix("[") {
-                inTable = false
-                guard line.contains("fleet_polling") else { continue }
-                guard line == "[\(table)]", !tableSeen else { return .unreadable(setting: table) }
-                inTable = true
-                tableSeen = true
-                continue
-            }
-            guard inTable else {
-                if line.contains("fleet_polling") { return .unreadable(setting: table) }
-                continue
-            }
-            guard let equals = line.firstIndex(of: "=") else { return .unreadable(setting: table) }
-            let key = line[..<equals].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
-            guard let path = keys[key], !seen.contains(key) else { return .unreadable(setting: "\(table).\(key)") }
-            seen.insert(key)
-            guard (1...9).contains(value.count), value.allSatisfy({ ("0"..."9").contains($0) }),
-                  value == "0" || !value.hasPrefix("0"),
-                  let number = Int(value), number > 0 || key == "monthly_cap_cents" else {
-                return .unreadable(setting: "\(table).\(key)")
-            }
-            figures[keyPath: path] = number
+        if let extra = Set(root.keys).subtracting(topKeys).sorted().first { return .unreadable(field: extra) }
+        guard root["provider"] as? String == "fleet" else { return .unreadable(field: "provider") }
+        var figures = HubFleetConsentFigures()
+        guard let interval = number(root["collectionIntervalSeconds"], minimum: 0) else {
+            return .unreadable(field: "collectionIntervalSeconds")
         }
+        figures.collectionIntervalSeconds = interval
+        guard let polling = root["pollingSeconds"] as? [String: Any] else { return .unreadable(field: "pollingSeconds") }
+        if let extra = Set(polling.keys).subtracting(pollingKeys.map(\.0)).sorted().first {
+            return .unreadable(field: "pollingSeconds.\(extra)")
+        }
+        for (key, path) in pollingKeys {
+            guard let seconds = number(polling[key], minimum: 1) else { return .unreadable(field: "pollingSeconds.\(key)") }
+            figures[keyPath: path] = seconds
+        }
+        guard let prices = root["requestsPerDollar"] as? [String: Any] else { return .unreadable(field: "requestsPerDollar") }
+        if let extra = Set(prices.keys).subtracting(["data", "state"]).sorted().first {
+            return .unreadable(field: "requestsPerDollar.\(extra)")
+        }
+        guard let data = number(prices["data"], minimum: 1) else { return .unreadable(field: "requestsPerDollar.data") }
+        figures.dataRequestsPerDollar = data
+        switch prices["state"] {
+        case is NSNull:
+            figures.stateRequestsPerDollar = nil
+        case let value?:
+            guard let state = number(value, minimum: 1) else { return .unreadable(field: "requestsPerDollar.state") }
+            figures.stateRequestsPerDollar = state
+        case nil:
+            return .unreadable(field: "requestsPerDollar.state")
+        }
+        guard let cap = number(root["monthlyCapCents"], minimum: 0) else { return .unreadable(field: "monthlyCapCents") }
+        figures.monthlyCapCents = cap
         return .figures(figures)
+    }
+
+    /// The verb's result as the consent page shows it: the figures, a field it cannot show, or
+    /// the failure with the service's or the system's own text.
+    static func reading(result: Result<String, Error>) -> HubFleetConsentReading {
+        switch result {
+        case let .success(output):
+            guard let root = HubFleetJSON.object(in: output) else {
+                return .failed(message: HubL10n.text("hub.fleetSetup.figuresUnreadable",
+                    fallback: "Hub's answer about its figures could not be read."))
+            }
+            return reading(answer: root)
+        case let .failure(error):
+            let underlying = HubActionError.settingQuiescenceAside(error)
+            if let parsed = HubFleetRefusal.parse(underlying.localizedDescription) {
+                return .failed(message: parsed.message)
+            }
+            return .failed(message: underlying.localizedDescription)
+        }
     }
 }
 
@@ -8437,14 +8465,15 @@ enum HubFleetPreparation: Equatable {
     case serviceStopped
 }
 
-/// The owner's acceptance of the consent page: when, and the figures accepted. It holds no
-/// secret and is kept owner-only beside the application record (`fleet-consent.json`).
+/// The owner's acceptance of the consent page: when, and exactly the answer of
+/// `setup-fleet figures` the page showed. It holds no secret and is kept owner-only beside
+/// the application record (`fleet-consent.json`).
 struct HubFleetConsentRecord: Equatable {
     let acceptedAt: Date
     let figures: HubFleetConsentFigures
 
     var record: [String: Any] {
-        ["acceptedAt": Int(acceptedAt.timeIntervalSince1970.rounded(.down)), "figures": figures.record]
+        ["acceptedAt": Int(acceptedAt.timeIntervalSince1970.rounded(.down)), "figures": figures.answer]
     }
 
     init(acceptedAt: Date, figures: HubFleetConsentFigures) {
@@ -8455,7 +8484,8 @@ struct HubFleetConsentRecord: Equatable {
     init?(record: [String: Any]) {
         guard Set(record.keys) == ["acceptedAt", "figures"],
               let seconds = HubFleetJSON.integer(record["acceptedAt"]), seconds > 0,
-              let figures = (record["figures"] as? [String: Any]).flatMap(HubFleetConsentFigures.init(record:)) else {
+              let answer = record["figures"] as? [String: Any],
+              case let .figures(figures) = HubFleetConsentFigures.reading(answer: answer) else {
             return nil
         }
         self.init(acceptedAt: Date(timeIntervalSince1970: TimeInterval(seconds)), figures: figures)
@@ -8464,8 +8494,11 @@ struct HubFleetConsentRecord: Equatable {
 
 enum HubFleetConsentReading: Equatable {
     case figures(HubFleetConsentFigures)
-    /// The named setting cannot be read exactly; no figure is stated and nothing can be accepted.
-    case unreadable(setting: String)
+    /// The answer names a field the page has no line for, or lacks a usable one: no figure is
+    /// stated and nothing can be accepted.
+    case unreadable(field: String)
+    /// `setup-fleet figures` failed: its text is shown and nothing can be accepted.
+    case failed(message: String)
 }
 
 /// The client secret of one attempted Fleet operation, held only in memory this object owns and
@@ -8716,14 +8749,20 @@ extension HubController {
         HubAppLog.shared.record("fleet_setup.consent_recorded", category: "account")
     }
 
-    /// Whether the owner's consent is on record for the figures now in effect: the only evidence
-    /// that `begin`, the redeem, `discover` and `activate` may run, and that a Fleet Hub may keep
-    /// a positive interval. A Fleet configuration, the provider's name or a positive interval is
-    /// never that evidence; figures that differ from the accepted ones need consent again.
+    /// Whether the owner's consent is on record for the figures the service last stated
+    /// (`lastFleetFigures`): what the pages use to choose a step. A Fleet configuration, the
+    /// provider's name or a positive interval is never that evidence; figures that differ from
+    /// the accepted ones need consent again. `begin`, the redeem, `discover`, `activate` and the
+    /// preparation ask the service again (`confirmFleetConsent`) before they act.
     var fleetConsentInEffect: Bool {
-        guard let record = fleetConsentRecord,
-              case let .figures(figures) = fleetConsentReading else { return false }
-        return record.figures == figures
+        guard case let .figures(figures)? = lastFleetFigures else { return false }
+        return Self.fleetConsent(fleetConsentRecord, covers: figures)
+    }
+
+    /// A record matches only an equal answer: every figure as accepted (R2).
+    static func fleetConsent(_ record: HubFleetConsentRecord?, covers figures: HubFleetConsentFigures) -> Bool {
+        guard let record else { return false }
+        return figures.isCovered(by: record.figures)
     }
 
     /// The refusal of a billed step (or of `activate`) without the owner's consent on record.
@@ -8732,10 +8771,40 @@ extension HubController {
             fallback: "Accept the cost of polling on the consent page first. Nothing was sent to Tesla."))
     }
 
-    /// The polling figures in effect for this Hub, as the consent page states them.
-    var fleetConsentReading: HubFleetConsentReading {
-        do { return HubFleetConsentFigures.reading(in: try readConfigIfPresent()) }
-        catch { return .unreadable(setting: configPath.lastPathComponent) }
+    private var fleetFiguresArguments: [String] { ["--config", configPath.path, "setup-fleet", "figures"] }
+
+    /// Asks the service which Fleet figures are in effect (`setup-fleet figures`, interface
+    /// section 12): read-only, nothing is sent. The completion runs on the main queue.
+    func readFleetFigures(completion: @escaping (HubFleetConsentReading) -> Void) {
+        guard !previewMode else {
+            DispatchQueue.main.async { completion(.failed(message: HubActionError.preview.localizedDescription)) }
+            return
+        }
+        commandRunner.run(arguments: fleetFiguresArguments) { [self] result in
+            let reading = HubFleetConsentFigures.reading(result: result)
+            DispatchQueue.main.async { [self] in
+                noteFleetFigures(reading)
+                completion(reading)
+            }
+        }
+    }
+
+    private func noteFleetFigures(_ reading: HubFleetConsentReading) {
+        lastFleetFigures = reading
+        switch reading {
+        case .figures: HubAppLog.shared.record("fleet_setup.figures_read", category: "account")
+        case .unreadable, .failed:
+            HubAppLog.shared.record("fleet_setup.figures_unavailable", category: "account", level: "ERROR")
+        }
+    }
+
+    /// Asks the service for the figures in effect and answers whether the consent record
+    /// matches them. The completion runs on the main queue.
+    func confirmFleetConsent(completion: @escaping (Bool) -> Void) {
+        readFleetFigures { [self] reading in
+            guard case let .figures(figures) = reading else { completion(false); return }
+            completion(Self.fleetConsent(fleetConsentRecord, covers: figures))
+        }
     }
 
     /// Reads, without changing anything, which Fleet set-up state the Hub is in (`preflight`).
@@ -8775,11 +8844,25 @@ extension HubController {
         }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
         guard let op = admit(.account, phase: "fleet-prepare", completion: deliver) else { return }
+        // The consent record is compared with the service's own statement of the figures (R2).
+        op.phase("figures")
+        op.run(fleetFiguresArguments) { [self] figuresResult in
+            let reading = HubFleetConsentFigures.reading(result: figuresResult)
+            DispatchQueue.main.async { [self] in
+                noteFleetFigures(reading)
+                var consented = false
+                if case let .figures(figures) = reading { consented = Self.fleetConsent(fleetConsentRecord, covers: figures) }
+                prepareFleetHub(op, consented: consented, deliver: deliver)
+            }
+        }
+    }
+
+    private func prepareFleetHub(_ op: HubLifecycleOperation, consented: Bool,
+                                 deliver: @escaping (Result<HubFleetPreparation, Error>) -> Void) {
         let installed = isServiceInstalled
         let originalConfig: String?
         do { originalConfig = try readConfigIfPresent() } catch { op.finish(.failure(error), completion: deliver); return }
         let alreadyFleet = originalConfig.flatMap(Self.collectorProvider(in:)) == "fleet"
-        let consented = fleetConsentInEffect
         let keepsInterval = alreadyFleet && consented
         let interval: Int? = keepsInterval ? nil : 0
         let unchanged = alreadyFleet
@@ -8939,9 +9022,16 @@ extension HubController {
                           completion: @escaping (Result<HubFleetSignInAttempt, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
-        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         let input: String
         do { input = try Self.fleetBeginInput(application) } catch { deliver(.failure(error)); return }
+        confirmFleetConsent { [self] consented in
+            guard consented else { deliver(.failure(Self.fleetConsentRequired)); return }
+            runFleetBegin(application, input: input, deliver: deliver)
+        }
+    }
+
+    private func runFleetBegin(_ application: HubFleetApplication, input: String,
+                               deliver: @escaping (Result<HubFleetSignInAttempt, Error>) -> Void) {
         guard let op = admit(.account, phase: "fleet-begin", completion: deliver) else { return }
         op.run(["--config", configPath.path, "setup-fleet", "begin"], stdin: input) { result in
             let attempt: Result<HubFleetSignInAttempt, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
@@ -8974,14 +9064,23 @@ extension HubController {
         // The sign-in attempt's secret ends here: copied into the stdin buffer, then wiped.
         defer { clientSecret.wipe() }
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
-        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         guard now < attempt.expiresAt else {
             deliver(.failure(HubFleetRefusal.refusal(code: "sign_in_expired", serviceMessage: "")))
             return
         }
+        // The secret is copied into the wiped standard input now (and wiped by the `defer`);
+        // the input is wiped too when the service's figures show no matching consent.
         let input: HubSensitiveInput
         do { input = try Self.fleetRedeemInput(attempt, code: code, clientSecret: clientSecret) }
         catch { deliver(.failure(error)); return }
+        confirmFleetConsent { [self] consented in
+            guard consented else { input.wipe(); deliver(.failure(Self.fleetConsentRequired)); return }
+            runFleetRedeem(input, deliver: deliver)
+        }
+    }
+
+    private func runFleetRedeem(_ input: HubSensitiveInput,
+                                deliver: @escaping (Result<HubFleetSignInOutcome, Error>) -> Void) {
         guard let op = admit(.account, phase: "fleet-redeem", completion: deliver) else { input.wipe(); return }
         op.run(["--config", configPath.path, "setup-fleet", "--all-vehicles"], sensitiveInput: input) { [self] result in
             input.wipe()
@@ -9014,7 +9113,13 @@ extension HubController {
     func discoverFleetVehicles(completion: @escaping (Result<Int, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
-        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
+        confirmFleetConsent { [self] consented in
+            guard consented else { deliver(.failure(Self.fleetConsentRequired)); return }
+            runFleetDiscover(deliver: deliver)
+        }
+    }
+
+    private func runFleetDiscover(deliver: @escaping (Result<Int, Error>) -> Void) {
         guard let op = admit(.account, phase: "fleet-discover", completion: deliver) else { return }
         op.run(["--config", configPath.path, "setup-fleet", "discover", "--all-vehicles"]) { [self] result in
             let found: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
@@ -9038,7 +9143,13 @@ extension HubController {
     func activateFleetCollection(completion: @escaping (Result<Int, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
-        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
+        confirmFleetConsent { [self] consented in
+            guard consented else { deliver(.failure(Self.fleetConsentRequired)); return }
+            runFleetActivate(deliver: deliver)
+        }
+    }
+
+    private func runFleetActivate(deliver: @escaping (Result<Int, Error>) -> Void) {
         guard let op = admit(.account, phase: "fleet-activate", completion: deliver) else { return }
         op.run(["--config", configPath.path, "setup-fleet", "activate"]) { [self] result in
             let activated: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in

@@ -73,7 +73,7 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(window.continueTitleForTests, "Register Domain")
         window.continueForTests()
         XCTAssertEqual(window.fleetSecretForTests, "", "cleared as the call starts")
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         let register = try XCTUnwrap(fixture.runner.call("register"))
         XCTAssertTrue(register.sensitive)
         XCTAssertEqual(try Self.object(register.stdin), [
@@ -97,6 +97,7 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertNil(fixture.controller.fleetConsentRecord)
         window.acceptFleetConsentForTests()
         window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests }
         XCTAssertEqual(window.fleetStepForTests, .signIn)
         XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures, .serviceDefaults)
         XCTAssertEqual(fixture.runner.fleetVerbs, ["public-key", "register"], "accepting sends nothing")
@@ -303,7 +304,7 @@ final class FleetSignInFlowTests: XCTestCase {
         window.enterFleetSecretForTests(Self.secret)
         XCTAssertEqual(window.continueTitleForTests, "Register Domain")
         window.continueForTests()
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         XCTAssertEqual(fixture.runner.fleetVerbs, ["register"], "the registration, not a sign-in")
         XCTAssertEqual(fixture.controller.savedFleetApplication?.registered, true)
     }
@@ -367,7 +368,7 @@ final class FleetSignInFlowTests: XCTestCase {
             let fixture = try Fixture(state: state, interval: 300)
             defer { fixture.tearDown() }
             let window = fixture.window
-            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
             // The existing preparation set the interval to 0 first, for this installed Fleet Hub.
             XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"), "\(state): \(fixture.configText)")
             XCTAssertFalse(fixture.configText.contains("interval_seconds = 300"), "\(state)")
@@ -376,6 +377,8 @@ final class FleetSignInFlowTests: XCTestCase {
 
             window.acceptFleetConsentForTests()
             window.continueForTests()
+            try fixture.waitUntil { !window.isBusyForTests }
+
             if state == .awaitingSignIn {
                 XCTAssertEqual(window.fleetStepForTests, .signIn)
                 var browser: (flow: FleetOAuthFlow, done: (Result<TeslaAuthCodeGrant, Error>) -> Void)?
@@ -415,7 +418,7 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(fixture.runner.fleetVerbs, [])
 
         window.continueForTests()
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         XCTAssertNil(window.fleetPreparationFailedForTests)
         XCTAssertEqual(fixture.service.calls, ["service pause", "service pause", "service start"])
         XCTAssertEqual(fixture.service.recoveries, 0)
@@ -433,19 +436,20 @@ final class FleetSignInFlowTests: XCTestCase {
     }
 
     func testFiguresThatDifferFromTheAcceptedOnesAskForConsentAgain() throws {
-        let fixture = try Fixture(state: .awaitingVehicles, config: "\n[collector.fleet_polling]\nmonthly_cap_cents = 2000\n",
-                                  interval: 300, consented: true)
+        let fixture = try Fixture(state: .awaitingVehicles, interval: 300, consented: true,
+                                  figures: FleetFlowRunner.figures { $0["monthlyCapCents"] = 2_000 })
         defer { fixture.tearDown() }
         let window = fixture.window
         XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures, .serviceDefaults, "accepted at $10.00")
         XCTAssertFalse(fixture.controller.fleetConsentInEffect)
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"))
         XCTAssertTrue(fixture.labels().joined().contains("when its requests reach $20.00"))
         window.continueForTests()
         XCTAssertEqual(fixture.runner.fleetVerbs, [])
         window.acceptFleetConsentForTests()
         window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests }
         XCTAssertEqual(window.fleetStepForTests, .vehicles)
         XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures.monthlyCapCents, 2_000)
         XCTAssertTrue(fixture.controller.fleetConsentInEffect)
@@ -457,11 +461,12 @@ final class FleetSignInFlowTests: XCTestCase {
         let fixture = try Fixture(state: .awaitingActivation)
         defer { fixture.tearDown() }
         let window = fixture.window
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         XCTAssertTrue(fixture.labels().joined().contains("when its requests reach $10.00"))
         fixture.changeFigures(monthlyCapCents: 2_000)
         window.acceptFleetConsentForTests()
         window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests }
         try fixture.waitUntil { fixture.labels().joined().contains("when its requests reach $20.00") && !window.isBusyForTests }
         XCTAssertNil(fixture.controller.fleetConsentRecord, "the $10.00 shown is not what is in effect; $20.00 was not shown")
         XCTAssertEqual(window.fleetStepForTests, .consent)
@@ -472,6 +477,8 @@ final class FleetSignInFlowTests: XCTestCase {
 
         window.acceptFleetConsentForTests()
         window.continueForTests()
+        try fixture.waitUntil { !window.isBusyForTests }
+
         try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
         XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures.monthlyCapCents, 2_000)
         XCTAssertEqual(fixture.runner.fleetVerbs.filter { $0 != "figures" }, [])
@@ -487,11 +494,9 @@ final class FleetSignInFlowTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         XCTAssertEqual(Set(object.keys), ["acceptedAt", "figures"])
         XCTAssertEqual(object["acceptedAt"] as? Int, 1_795_000_000)
-        XCTAssertEqual(object["figures"] as? [String: Int], [
-            "drivingSeconds": 30, "chargingSeconds": 120, "updatingSeconds": 300, "onlineSeconds": 120,
-            "stateCheckSeconds": 600, "inventorySeconds": 3_600, "monthlyCapCents": 1_000,
-            "dataRequestsPerDollar": 500, "stateRequestsPerDollar": 500
-        ])
+        // Exactly the answer of `setup-fleet figures` (interface section 12's example).
+        let answer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(FleetFlowRunner.figures { _ in }.utf8)) as? NSDictionary)
+        XCTAssertEqual(object["figures"] as? NSDictionary, answer)
         XCTAssertEqual(fixture.controller.fleetConsentRecord,
                        HubFleetConsentRecord(acceptedAt: accepted, figures: .serviceDefaults))
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -512,7 +517,7 @@ final class FleetSignInFlowTests: XCTestCase {
             defer { fixture.tearDown() }
             let window = fixture.window
             window.presentFleetSignIn = { _, _ in XCTFail("no browser before consent: \(state)") }
-            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
             // Every button the page offers before acceptance, and every billed verb called directly.
             window.enterFleetSecretForTests(Self.secret)
             window.continueForTests()
@@ -529,6 +534,7 @@ final class FleetSignInFlowTests: XCTestCase {
             // Accepting continues at the step the waiting state names, and only then may it run.
             window.acceptFleetConsentForTests()
             window.continueForTests()
+            try fixture.waitUntil { !window.isBusyForTests }
             XCTAssertEqual(window.fleetStepForTests, resume, "\(state)")
             XCTAssertEqual(window.continueTitleForTests, title, "\(state)")
             XCTAssertNotNil(fixture.controller.fleetConsentRecord, "\(state)")
@@ -788,7 +794,7 @@ final class FleetSignInFlowTests: XCTestCase {
         window.enterFleetSecretForTests(Self.secret)
         window.continueForTests()
         XCTAssertEqual(window.fleetSecretForTests, "", "cleared as the registration starts")
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         XCTAssertEqual(window.fleetSecretsForTests.count, 1)
         XCTAssertTrue(window.fleetSecretsForTests.allSatisfy(\.isWiped), "wiped when the registration ends")
     }
@@ -798,7 +804,7 @@ final class FleetSignInFlowTests: XCTestCase {
     func testTheConsentPageStatesTheDefaultFiguresWhenNothingOverridesThem() throws {
         let fixture = try Fixture(state: .awaitingActivation)
         defer { fixture.tearDown() }
-        try fixture.waitUntil { fixture.window.fleetStepForTests == .consent && !fixture.window.isBusyForTests }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .consent && !fixture.window.isBusyForTests && fixture.window.fleetConsentAnswerForTests != nil }
         let shown = fixture.labels().joined(separator: "\n")
         for figure in ["a driving car every 30 seconds", "a charging car every 2 minutes", "an awake car every 2 minutes",
                        "a car that is updating every 5 minutes", "checks a sleeping car every 10 minutes",
@@ -809,77 +815,145 @@ final class FleetSignInFlowTests: XCTestCase {
         }
     }
 
-    func testTheConsentPageStatesTheCapAndPollingOverridesOfThisHub() throws {
-        let fixture = try Fixture(state: .awaitingActivation, config: """
-
-            [collector.fleet_polling]
-            driving_poll_seconds = 60   # once a minute
-            updating_poll_seconds = 600
-            state_poll_seconds = 900
-            monthly_cap_cents = 2000
-
-            """)
+    /// R2: the page shows exactly what `setup-fleet figures` states; the configuration file is
+    /// not read for figures (it has no polling table here at all).
+    func testTheConsentPageShowsTheFiguresTheServiceStates() throws {
+        let fixture = try Fixture(state: .awaitingActivation, figures: FleetFlowRunner.figures {
+            $0["pollingSeconds"] = ["driving": 60, "charging": 120, "updating": 600, "online": 120,
+                                    "stateCheck": 900, "inventory": 3_600]
+            $0["monthlyCapCents"] = 2_000
+        })
         defer { fixture.tearDown() }
-        try fixture.waitUntil { fixture.window.fleetStepForTests == .consent && !fixture.window.isBusyForTests }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
+        XCTAssertFalse(fixture.configText.contains("fleet_polling"))
         let shown = fixture.labels().joined(separator: "\n")
         for figure in ["a driving car every minute", "a charging car every 2 minutes",
                        "a car that is updating every 10 minutes", "checks a sleeping car every 15 minutes",
-                       "lists your cars every hour", "when its requests reach $20.00"] {
+                       "lists your cars every hour", "when its requests reach $20.00",
+                       "Collection is off: Hub polls nothing until you choose Start Collecting."] {
             XCTAssertTrue(shown.contains(figure), figure)
         }
         XCTAssertFalse(shown.contains("$10.00"), "not the default cap")
         XCTAssertFalse(shown.contains("day 14"), "the default's day is not claimed for other figures")
         XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.consent-accept"))
+        let read = try XCTUnwrap(fixture.runner.calls.last { $0.verb == "figures" })
+        XCTAssertEqual(read.arguments, ["--config", fixture.controller.maintenanceConfigPath.path, "setup-fleet", "figures"])
+        XCTAssertNil(read.stdin)
     }
 
-    func testAFigureThatCannotBeReadExactlyIsNamedAndNothingCanBeAccepted() throws {
-        let fixture = try Fixture(state: .awaitingActivation, config: "\n[collector.fleet_polling]\nmonthly_cap_cents = 2_000\n")
+    /// A list Tesla does not bill (`state` is null) and a list price of its own each have a line.
+    func testTheListPriceIsStatedAsTheServiceStatesIt() throws {
+        let free = try Fixture(state: .awaitingActivation, figures: FleetFlowRunner.figures {
+            $0["requestsPerDollar"] = ["data": 500, "state": NSNull()] as [String: Any]
+        })
+        defer { free.tearDown() }
+        try free.waitUntil { free.window.fleetStepForTests == .consent && free.window.fleetConsentAnswerForTests != nil }
+        var shown = free.labels().joined(separator: "\n")
+        XCTAssertTrue(shown.contains("Tesla does not bill a state check or a list of your cars."), shown)
+        XCTAssertFalse(shown.contains("Setting up makes a few list requests"), "no billed list is claimed")
+
+        let own = try Fixture(state: .awaitingActivation, figures: FleetFlowRunner.figures {
+            $0["requestsPerDollar"] = ["data": 500, "state": 250]
+        })
+        defer { own.tearDown() }
+        try own.waitUntil { own.window.fleetStepForTests == .consent && own.window.fleetConsentAnswerForTests != nil }
+        shown = own.labels().joined(separator: "\n")
+        XCTAssertTrue(shown.contains("A state check or a list of your cars is billed at $1 for every 250 requests ($0.004 each)."), shown)
+    }
+
+    /// R2: a field the page has no line for is named, and nothing can be accepted.
+    func testAFigureThePageHasNoLineForIsNamedAndNothingCanBeAccepted() throws {
+        let fixture = try Fixture(state: .awaitingActivation, figures: FleetFlowRunner.figures {
+            $0["pollingSeconds"] = ["driving": 30, "charging": 120, "updating": 300, "online": 120,
+                                    "stateCheck": 600, "inventory": 3_600, "parked": 900]
+        })
         defer { fixture.tearDown() }
         let window = fixture.window
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
         let shown = fixture.labels().joined(separator: "\n")
-        XCTAssertTrue(shown.contains("Hub cannot read the setting collector.fleet_polling.monthly_cap_cents"), shown)
-        XCTAssertFalse(shown.contains("$10.00") || shown.contains("$20.00"), "no figure is stated")
+        XCTAssertTrue(shown.contains("Hub states a figure this page cannot show (pollingSeconds.parked)"), shown)
+        XCTAssertFalse(shown.contains("$10.00"), "no figure is stated")
         XCTAssertNil(fixture.view(identifier: "onboarding.fleet.consent-accept"), "no acceptance is offered")
         window.acceptFleetConsentForTests()
         XCTAssertFalse(window.continueEnabledForTests)
         window.continueForTests()
+        XCTAssertNil(fixture.controller.fleetConsentRecord)
         XCTAssertNil(fixture.runner.call("activate"))
     }
 
-    func testTheFiguresAreReadExactlyOrTheSettingIsNamed() {
-        func reading(_ table: String) -> HubFleetConsentReading {
-            HubFleetConsentFigures.reading(in: "data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"fleet\"\n" + table)
+    /// R2: a failed `setup-fleet figures` is shown with the service's text and offers no acceptance.
+    func testAFailedFiguresVerbOffersNoAcceptance() throws {
+        let fixture = try Fixture(state: .awaitingActivation)
+        fixture.runner.figuresAnswer = .failure(HubActionError.commandExited(
+            1, "config_invalid: Fixed text the service wrote about its configuration."))
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests && window.fleetConsentAnswerForTests != nil }
+        let shown = fixture.labels().joined(separator: "\n")
+        XCTAssertTrue(shown.contains("Hub could not state its figures"), shown)
+        XCTAssertTrue(shown.contains("Hub's answer: Fixed text the service wrote about its configuration."), shown)
+        XCTAssertFalse(shown.contains("$10.00"), "no figure is stated")
+        XCTAssertNil(fixture.view(identifier: "onboarding.fleet.consent-accept"))
+        window.acceptFleetConsentForTests()
+        XCTAssertFalse(window.continueEnabledForTests)
+        window.continueForTests()
+        XCTAssertNil(fixture.controller.fleetConsentRecord)
+        XCTAssertFalse(fixture.controller.fleetConsentInEffect)
+    }
+
+    /// R2: a record matches only an equal answer. The collection interval is the switch the
+    /// consent governs (0 before `activate`), not a figure of the cost, and is not compared.
+    func testARecordMatchesOnlyAnEqualAnswer() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
+        defer { fixture.tearDown() }
+        try fixture.waitUntil { fixture.window.fleetStepForTests == .signIn && !fixture.window.isBusyForTests }
+        func confirmed(_ answer: String) throws -> Bool {
+            fixture.runner.figuresAnswer = .success(answer)
+            var outcome: Bool?
+            fixture.controller.confirmFleetConsent { outcome = $0 }
+            try fixture.waitUntil { outcome != nil }
+            return outcome ?? false
         }
-        XCTAssertEqual(HubFleetConsentFigures.reading(in: nil), .figures(.serviceDefaults))
-        XCTAssertEqual(reading(""), .figures(.serviceDefaults))
-        var expected = HubFleetConsentFigures.serviceDefaults
-        expected.chargingSeconds = 300
-        expected.onlineSeconds = 240
-        expected.inventorySeconds = 7_200
-        expected.monthlyCapCents = 0
-        XCTAssertEqual(reading("\n[collector.fleet_polling]\ncharging_poll_seconds = 300\nonline_poll_seconds=240\n"
-                               + "inventory_poll_seconds = 7200 # two hours\nmonthly_cap_cents = 0\n\n[geocoder]\nenabled = false\n"),
-                       .figures(expected))
-        let table = "collector.fleet_polling"
-        for (text, setting) in [
-            ("\n[collector.fleet_polling]\nmonthly_cap_cents = 2_000\n", "\(table).monthly_cap_cents"),
-            ("\n[collector.fleet_polling]\nmonthly_cap_cents = 0x10\n", "\(table).monthly_cap_cents"),
-            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 030\n", "\(table).driving_poll_seconds"),
-            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 0\n", "\(table).driving_poll_seconds"),
-            ("\n[collector.fleet_polling]\ndriving_poll_seconds = -5\n", "\(table).driving_poll_seconds"),
-            ("\n[collector.fleet_polling]\ndriving_poll_seconds = 1e2\n", "\(table).driving_poll_seconds"),
-            ("\n[collector.fleet_polling]\nwake_poll_seconds = 60\n", "\(table).wake_poll_seconds"),
-            ("\n[collector.fleet_polling]\ncharging_poll_seconds = 60\ncharging_poll_seconds = 90\n", "\(table).charging_poll_seconds"),
-            ("\n[collector.fleet_polling]\n\"monthly_cap_cents\" = 100\n", "\(table).\"monthly_cap_cents\""),
-            ("\n[ collector.fleet_polling ]\nmonthly_cap_cents = 100\n", table),
-            ("\n[collector.fleet_polling]\n[collector.fleet_polling]\n", table),
-            ("fleet_polling.monthly_cap_cents = 100\n", table),
-            ("fleet_polling = { monthly_cap_cents = 100 }\n", table),
-            ("\n[collector.fleet_polling]\nmonthly_cap_cents\n", table)
-        ] {
-            XCTAssertEqual(reading(text), .unreadable(setting: setting), text)
+        XCTAssertTrue(try confirmed(FleetFlowRunner.figures { _ in }))
+        XCTAssertTrue(try confirmed(FleetFlowRunner.figures { $0["collectionIntervalSeconds"] = 300 }))
+        for (name, change) in [
+            ("cap", { (answer: inout [String: Any]) in answer["monthlyCapCents"] = 1_001 }),
+            ("driving", { answer in answer["pollingSeconds"] = ["driving": 31, "charging": 120, "updating": 300,
+                                                                 "online": 120, "stateCheck": 600, "inventory": 3_600] }),
+            ("data price", { answer in answer["requestsPerDollar"] = ["data": 400, "state": 500] }),
+            ("list not billed", { answer in answer["requestsPerDollar"] = ["data": 500, "state": NSNull()] as [String: Any] }),
+            ("unknown field", { answer in answer["wakeRequestsPerDollar"] = 500 })
+        ] as [(String, (inout [String: Any]) -> Void)] {
+            XCTAssertFalse(try confirmed(FleetFlowRunner.figures(change)), name)
+            XCTAssertFalse(fixture.controller.fleetConsentInEffect, name)
+            try Self.expectRefused { fixture.controller.discoverFleetVehicles(completion: $0) }
         }
+        fixture.runner.figuresAnswer = .failure(HubActionError.commandExited(1, "config_unreadable: Fixed text."))
+        try Self.expectRefused { fixture.controller.activateFleetCollection(completion: $0) }
+        XCTAssertEqual(fixture.runner.fleetVerbs, [], "no billed verb and no activate without an equal answer")
+    }
+
+    func testTheFiguresAreReadByNameFromTheServicesAnswer() {
+        func reading(_ change: (inout [String: Any]) -> Void) -> HubFleetConsentReading {
+            HubFleetConsentFigures.reading(result: .success(FleetFlowRunner.figures(change)))
+        }
+        XCTAssertEqual(reading { _ in }, .figures(.serviceDefaults))
+        var free = HubFleetConsentFigures.serviceDefaults
+        free.stateRequestsPerDollar = nil
+        XCTAssertEqual(reading { $0["requestsPerDollar"] = ["data": 500, "state": NSNull()] as [String: Any] }, .figures(free))
+        XCTAssertEqual(reading { $0["wakeRequestsPerDollar"] = 500 }, .unreadable(field: "wakeRequestsPerDollar"))
+        XCTAssertEqual(reading { $0["provider"] = "legacy" }, .unreadable(field: "provider"))
+        XCTAssertEqual(reading { $0["monthlyCapCents"] = nil }, .unreadable(field: "monthlyCapCents"))
+        XCTAssertEqual(reading { $0["monthlyCapCents"] = true }, .unreadable(field: "monthlyCapCents"))
+        XCTAssertEqual(reading { $0["requestsPerDollar"] = ["data": 500] }, .unreadable(field: "requestsPerDollar.state"))
+        XCTAssertEqual(reading { $0["pollingSeconds"] = ["driving": 0, "charging": 120, "updating": 300, "online": 120,
+                                                         "stateCheck": 600, "inventory": 3_600] },
+                       .unreadable(field: "pollingSeconds.driving"))
+        XCTAssertEqual(HubFleetConsentFigures.reading(result: .failure(HubActionError.commandExited(
+            1, "fleet_provider_not_selected: Fixed text."))), .failed(message: "Fixed text."))
+        XCTAssertEqual(HubFleetConsentFigures.reading(result: .success("not json")),
+                       .failed(message: "Hub's answer about its figures could not be read."))
     }
 
     // MARK: Refusals
@@ -1129,20 +1203,40 @@ private final class FleetFlowRunner: HubCommandRunning {
     var preflight = Fixture.preflight(nil)
     let binding = UUID().uuidString.lowercased()
 
+    /// The answer of `setup-fleet figures`; interface section 12's example unless a test sets it.
+    var figuresAnswer: Result<String, Error> = .success(FleetFlowRunner.figures { _ in })
+
     var calls: [Call] { lock.lock(); defer { lock.unlock() }; return recorded }
-    var fleetVerbs: [String] { calls.compactMap(\.verb) }
+    /// The verbs that act; the read-only `figures` is left out.
+    var fleetVerbs: [String] { calls.compactMap(\.verb).filter { $0 != "figures" } }
+
+    /// Interface section 12's example answer, changed by `change`.
+    static func figures(_ change: (inout [String: Any]) -> Void) -> String {
+        var answer: [String: Any] = [
+            "provider": "fleet", "collectionIntervalSeconds": 0,
+            "pollingSeconds": ["driving": 30, "charging": 120, "updating": 300, "online": 120,
+                               "stateCheck": 600, "inventory": 3_600],
+            "requestsPerDollar": ["data": 500, "state": 500], "monthlyCapCents": 1_000
+        ]
+        change(&answer)
+        return String(decoding: try! JSONSerialization.data(withJSONObject: answer, options: [.sortedKeys]), as: UTF8.self)
+    }
     func call(_ verb: String) -> Call? { calls.last { $0.verb == verb } }
 
     static func verb(_ arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: "setup-fleet") else { return nil }
         let next = arguments.dropFirst(index + 1).first
-        if let next, ["begin", "discover", "activate", "register", "public-key"].contains(next) { return next }
+        if let next, ["begin", "discover", "activate", "register", "public-key", "figures"].contains(next) { return next }
         return "redeem"
     }
 
     private func answer(_ arguments: [String], stdin: String?, sensitive: Bool,
                         completion: @escaping (Result<String, Error>) -> Void) {
         lock.lock(); recorded.append(Call(arguments: arguments, stdin: stdin, sensitive: sensitive)); lock.unlock()
+        if Self.verb(arguments) == "figures" {
+            completion(figuresAnswer)
+            return
+        }
         if let verb = Self.verb(arguments) {
             if var queue = results[verb], !queue.isEmpty {
                 let result = queue.removeFirst()
@@ -1276,7 +1370,8 @@ private final class Fixture {
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
     init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false,
-         registered: Bool = true, serviceStopped: Bool = false, pauseFails: String? = nil) throws {
+         registered: Bool = true, serviceStopped: Bool = false, pauseFails: String? = nil,
+         figures: String? = nil) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1285,6 +1380,7 @@ private final class Fixture {
         let service = FleetFlowService()
         if serviceStopped { service.loaded = .unloaded }
         if let pauseFails { service.pauseResults = [.failure(HubActionError.commandFailed(pauseFails))] }
+        if let figures { runner.figuresAnswer = .success(figures) }
         let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
                                        serviceInstalledOverride: state != nil)
         if let state {
@@ -1308,10 +1404,9 @@ private final class Fixture {
         window = OnboardingWindowController(controller: controller, initialRoute: .fleet, onComplete: { _ in })
     }
 
-    /// Changes the figures in effect, as an edit of the configuration would.
+    /// Changes the figures the service states, as an edit of its configuration would.
     func changeFigures(monthlyCapCents: Int) {
-        let text = configText + "\n[collector.fleet_polling]\nmonthly_cap_cents = \(monthlyCapCents)\n"
-        try? text.write(to: controller.maintenanceConfigPath, atomically: true, encoding: .utf8)
+        runner.figuresAnswer = .success(FleetFlowRunner.figures { $0["monthlyCapCents"] = monthlyCapCents })
     }
 
     var configText: String {

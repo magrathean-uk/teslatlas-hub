@@ -95,8 +95,8 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
         try controller.recordFleetConsent(.serviceDefaults)
-        XCTAssertTrue(controller.fleetConsentInEffect)
         try prepare(controller)
+        XCTAssertTrue(controller.fleetConsentInEffect, "the service's figures equal the accepted ones")
         XCTAssertEqual(try configContents(in: home), original)
         XCTAssertFalse(events.values.contains { $0 == "service:pause" || $0 == "service:start" })
     }
@@ -226,8 +226,8 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
                                        serviceInstalledOverride: true,
                                        initialSnapshot: .previewRunning)
         try controller.recordFleetConsent(.serviceDefaults)
-        XCTAssertTrue(controller.fleetConsentInEffect)
         let error = try prepareFailure(controller)
+        XCTAssertTrue(controller.fleetConsentInEffect)
         XCTAssertFalse(error is HubFleetPreparationLeftStopped)
         XCTAssertEqual(events.values, ["service:pause", "service:recover"])
     }
@@ -346,6 +346,11 @@ private final class FleetRecoveryRunner: HubCommandRunning {
             completion(versionResult ?? result)
             return
         }
+        if arguments.suffix(2) == ["setup-fleet", "figures"] {
+            // The service's statement of the figures (interface section 12's example): read-only.
+            completion(.success(Self.figures))
+            return
+        }
         events.append(arguments.contains("setup-fleet") ? event : "command")
         completion(result)
     }
@@ -353,6 +358,8 @@ private final class FleetRecoveryRunner: HubCommandRunning {
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
         run(arguments: arguments, completion: completion)
     }
+
+    static let figures = #"{"collectionIntervalSeconds":0,"monthlyCapCents":1000,"pollingSeconds":{"charging":120,"driving":30,"inventory":3600,"online":120,"stateCheck":600,"updating":300},"provider":"fleet","requestsPerDollar":{"data":500,"state":500}}"#
 }
 
 private final class FleetRecoveryService: HubServiceControlling {
