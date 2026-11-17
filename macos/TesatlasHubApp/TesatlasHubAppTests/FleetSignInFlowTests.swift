@@ -292,6 +292,22 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(activation.runner.fleetVerbs, ["activate"])
     }
 
+    func testAReturnToAnUnregisteredApplicationContinuesAtThePublicKeyAndTheRegistration() throws {
+        let fixture = try Fixture(state: .awaitingSignIn, registered: false)
+        defer { fixture.tearDown() }
+        let window = fixture.window
+        try fixture.waitUntil { window.fleetStepForTests == .publicKey && !window.isBusyForTests }
+        XCTAssertEqual(window.fleetNoticeForTests,
+                       "Hub is waiting for your Tesla sign-in. Sign in with Tesla to continue.")
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.save-key"))
+        window.enterFleetSecretForTests(Self.secret)
+        XCTAssertEqual(window.continueTitleForTests, "Register Domain")
+        window.continueForTests()
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        XCTAssertEqual(fixture.runner.fleetVerbs, ["register"], "the registration, not a sign-in")
+        XCTAssertEqual(fixture.controller.savedFleetApplication?.registered, true)
+    }
+
     // MARK: Evidence of consent (B4)
 
     func testAFleetHubWithAPositiveIntervalAndNoConsentRecordCannotResumeThroughTheRedeemOrDiscovery() throws {
@@ -904,7 +920,8 @@ private final class Fixture {
 
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
-    init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false) throws {
+    init(state: HubFleetSetupState? = nil, config: String = "", interval: Int = 0, consented: Bool = false,
+         registered: Bool = true) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -918,7 +935,7 @@ private final class Fixture {
                 .write(to: folder.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
             try controller.saveFleetApplication(HubFleetApplication(
                 clientID: "c0ffee00-1111-4222-8333-444455556666", region: .eu,
-                redirectURI: "https://example.com/tesla/callback", domain: "example.com", registered: true))
+                redirectURI: "https://example.com/tesla/callback", domain: "example.com", registered: registered))
             switch state {
             case .awaitingSignIn: runner.preflight = Self.preflight("awaiting_sign_in")
             case .awaitingVehicles: runner.preflight = Self.preflight("awaiting_vehicles")

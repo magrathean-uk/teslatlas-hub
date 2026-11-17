@@ -3998,7 +3998,13 @@ extension OnboardingWindowController {
         case .awaitingSignIn:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingSignIn",
                 fallback: "Hub is waiting for your Tesla sign-in. Sign in with Tesla to continue.")
-            fleetStep = saved == nil ? .details : fleetStepBehindConsent(.signIn)
+            // An application saved but not yet registered continues at the public key and the
+            // registration, not at the sign-in.
+            if let saved {
+                fleetStep = saved.registered ? fleetStepBehindConsent(.signIn) : .publicKey
+            } else {
+                fleetStep = .details
+            }
         case .awaitingVehicles:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingVehicles",
                 fallback: "You are signed in, and Hub has not found your car yet. Find your car to continue.")
