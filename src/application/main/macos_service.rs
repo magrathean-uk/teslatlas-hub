@@ -766,3 +766,42 @@ impl tesatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
         Ok(())
     }
 }
+
+#[cfg(all(test, unix))]
+mod shutdown_error_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn observation_reports_collector_cleanup_failure_before_readiness() {
+        let result = run_macos_serve_supervisor(
+            true,
+            |ready, shutdown| async move {
+                let _ready = ready;
+                let _ = shutdown.await;
+                Err(std::io::Error::other("synthetic collector cleanup failure"))
+            },
+            |_, _| async { panic!("listener must not start before readiness") },
+            async { MacServeControl::Shutdown },
+        )
+        .await;
+        let error = result.expect_err("failed collector cleanup must fail the command");
+        assert!(error.to_string().contains("synthetic collector cleanup failure"));
+    }
+
+    #[tokio::test]
+    async fn observation_reports_collector_cleanup_failure_after_listener_exit() {
+        let result = run_macos_serve_supervisor(
+            true,
+            |ready, shutdown| async move {
+                let _ = ready.send(CursorKey::from_bytes([17; 32]));
+                let _ = shutdown.await;
+                Err(std::io::Error::other("synthetic collector cleanup failure"))
+            },
+            |_, _| async { Ok(()) },
+            std::future::pending(),
+        )
+        .await;
+        let error = result.expect_err("failed collector cleanup must fail the command");
+        assert!(error.to_string().contains("synthetic collector cleanup failure"));
+    }
+}
