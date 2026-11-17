@@ -58,7 +58,11 @@ for all network-owning processes.
 
 ## Upgrade
 
-On macOS, retain a backup, use **Stop Hub** in the app, then quit it. Replace
+On macOS, close the collection window and wait for `window status` to report
+`closed`, then export recovery credentials through the running Hub. Use
+**Stop Hub** in the app, create and verify an offline data backup, then quit
+the app. Retain both recovery artefacts privately; see
+[Backup and recovery](backup-and-recovery.md). Replace
 **Tesatlas Hub.app** in `/Applications` or `~/Applications` and open the new
 copy. Run diagnostics before choosing **Start Hub**. The app replaces an older
 per-user agent after preflight; see [Upgrade and rollback](../releases/upgrade.md)
@@ -66,9 +70,11 @@ for installer-era administrator cleanup.
 
 For a Debian package installation:
 
-1. Verify and retain a data backup.
+1. Close the collection window, wait for `window status` to report `closed`,
+   and export recovery credentials through the running Hub.
 2. Verify the new source tag, exact version, notices, and locally built package.
-3. Stop collection if the installer does not own the upgrade transaction.
+3. Stop Hub, then create, verify and retain an offline data backup and the
+   separately exported recovery credentials.
 4. Install the new package.
 5. Run `doctor` and `status` before resuming collection.
 
