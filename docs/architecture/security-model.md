@@ -17,11 +17,50 @@
 | Remote sync | TLS plus paired-device bearer authentication. |
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
-| Tesla credentials | Hub uses only the login it created itself through its own authorisation-code exchange. It never reads, stores, loads or refreshes a token held by another application. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
-| Collection window | A grant signed by the Mac's window issuer, naming this host, approved by the owner and ending at a hard expiry. Outside a window Hub sends nothing to Tesla and keeps history current by read-only import. See [Collection windows](../operations/collection-windows.md). |
+| Tesla credentials | Hub uses a login from its own sign-in or takes over TeslaMate's login during migration, with TeslaMate stopped and kept stopped. Hub becomes its only refresher. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
+| Collection window | A grant signed by the Mac's window issuer, naming this host, approved by the owner and ending at a hard expiry. Outside a window Hub sends nothing to Tesla. History-only imports remain available; after take-over TeslaMate stays stopped. See [Collection windows](../operations/collection-windows.md). |
 | history import | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
 | Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
+
+## TeslaMate login take-over
+
+History import remains credential-free. The separate `take-over-source-token`
+verb reads the encrypted `access` and `refresh` values from exactly one row in
+`private.tokens`. It opens its own PostgreSQL connection using the source
+application's database role, with a bounded, read-only, repeatable-read
+transaction, separate from the history import connection. Before reading the
+row it checks for other client sessions on that database and refuses if any
+exist, including dashboards. It never writes to the source database or sends
+anything to Tesla.
+
+The Mac app takes TeslaMate's `ENCRYPTION_KEY` in a secure field, clears the
+field as the take-over starts and passes the key and database password to the
+local Hub verb on standard input. The key is used in memory to decrypt the
+pair, then discarded. The Hub never puts the key in a command argument,
+environment variable, log line or file, and never keeps it for later use.
+See the [migration guide](../releases/migration.md) for where to find it.
+
+After decryption and token validation, the Hub seals the access and refresh
+pair in its credential vault in the empty `owner_api` slot, with origin
+`source_token` and refresh owner `hub`. The pair is due for refresh at the next
+collection window; take-over itself does not spend the refresh token. The
+single-use rotation fence and unresolved-refresh stop still apply. The success
+report contains only `status: taken_over`, `origin: source_token`,
+`firstRefresh: next_window`, `sourceSessionsSeen: 0` and
+`sourceNeverMutated: true`, with no token, key or fingerprint.
+
+The verb requires `--source` with a password-free PostgreSQL URL and
+`--accept-source-stopped`. Its bounded standard input must contain exactly
+`postgresPassword` and `encryptionKey`; token-named keys and other shapes are
+refused. It requires the Hub service stopped, the window Closed and its
+handback recorded. It refuses an occupied owner slot (`slot_occupied`), an
+opaque refresh fence requiring a fresh sign-in (`fresh_sign_in_required`),
+spent tokens, malformed or foreign-issuer tokens, missing or multiple source
+rows, oversized values and a wrong encryption key. Only the dedicated take-over path
+can introduce this origin; refresh successors keep it. Direct, provider and pasted tokens, token input to
+`setup` or `migrate`, source credentials owned by an external refresher or on
+the Fleet slot, source writes and Tesla sends outside a window remain refused.
 
 ## Defensive defaults
 

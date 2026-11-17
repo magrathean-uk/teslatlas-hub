@@ -1,17 +1,17 @@
 # How Hub gets data from your car
 
-This guide explains the four ways Tesatlas Hub can receive data from a Tesla, what each one needs from you, what it costs, and how to set it up step by step. Hub runs on your own computer; it never sends your vehicle data through Magrathean. Provider modes and the setup screens described here are the v7 design (plan group G2-6); until they ship, the Hub supports the Legacy path and self-hosted Fleet Telemetry.
+This guide explains the four ways Tesatlas Hub can receive data from a Tesla, what each one needs from you, what it costs, and how to set it up step by step. Hub runs on your own computer; it never sends your vehicle data through Magrathean. Provider modes and the setup screens described here are the v7 design (plan group G2-6); new installations offer Fleet or Legacy sign-in. This guide covers the migration distinction; Fleet onboarding is described separately in the [Fleet guide](fleet-setup.md).
 
 ## The short version
 
 | Path | What you need | Monthly cost | Data quality | Who sees your data |
 | --- | --- | --- | --- | --- |
-| 1. Legacy (default) | Your Tesla account, signed in to Hub itself | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
+| 1. Legacy (default) | Your Tesla account, signed in to Hub or taken over from stopped TeslaMate | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
 | 2. Provider | An account with Teslemetry, Tessie or an Owner-API-compatible provider | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
 | 3. Direct Fleet polling | Your own Tesla developer application, a card on file, a web page you control for the key file | Tesla usage charges, about $0.12 per awake hour at a 60 s interval; a $10 monthly allowance covers light use | Snapshots at the interval you choose | Tesla and your Hub only |
 | 4. Self-hosted Fleet Telemetry | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
 
-Legacy is the default because it is free, has the highest resolution, and needs nothing but a token. Tesla has said it will phase out this unofficial API; when that happens Hub tells you and offers paths 2 to 4. Path 2 is the one most people without a server will use. Paths 3 and 4 are for people who are comfortable running internet-facing services.
+Legacy is the default because it is free, has the highest resolution, and uses your Tesla account login. Tesla has said it will phase out this unofficial API; when that happens Hub tells you and offers paths 2 to 4. Path 2 is the one most people without a server will use. Direct Fleet polling needs a public key file on your domain; self-hosted telemetry additionally needs an inbound service.
 
 ## How the companies do it without you owning a domain
 
@@ -34,11 +34,21 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 **Steps.**
 1. In Hub, choose *Legacy* (the default) on the Collection screen.
 2. Wait for a collection window to be open (see [Collection windows](../operations/collection-windows.md)). Hub sends nothing to Tesla outside a window, including sign-in.
-3. Sign in with your Tesla account in the Hub app. Hub exchanges the authorisation code itself and stores the resulting token pair, encrypted, as its own login. Hub does not accept a pasted token pair, and it never reads a token held by the source application or by any other application.
+3. For a new installation, sign in with your Tesla account in the Hub app. Hub exchanges the authorisation code itself and stores the resulting token pair, encrypted, as its own login. Hub does not accept a pasted token pair.
 4. Hub shows the vehicles on the account. Pick the ones to record.
 5. Wait for the first observation. Status shows "recording" and the last data time.
 
-**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. Hub's login is its own and is renewed only inside a window; if it lapses, sign in again in the next window. History between windows is filled by read-only import from the source application's database.
+**Migrating from TeslaMate.** Use Import History instead of a new sign-in.
+Stop TeslaMate and its dashboards first and leave TeslaMate stopped. After the
+history import, Hub takes over its stored Tesla login using the encryption key
+you paste once. Hub stores the pair encrypted and becomes its only refresher;
+it does not keep the key or change the source database. Take-over sends nothing
+to Tesla. The first refresh waits for a collection window, and your cars appear
+once that first window opens, with no new sign-in. See the
+[migration guide](../releases/migration.md) for key errors, retries and how to
+go back before or after the first refresh.
+
+**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. Hub's login is its own and is renewed only inside a window; if it lapses, sign in again in the next window. History-only imports can fill history between windows without reading credentials. After take-over, TeslaMate stays stopped, so it no longer records new history.
 
 ## Path 2: Provider (Teslemetry, Tessie or an Owner-API-compatible provider)
 
@@ -68,21 +78,15 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 
 ## Path 3: Direct Fleet polling (your own Tesla developer application)
 
-**How it works.** You register your own application with Tesla, and Hub polls Tesla's Fleet API for vehicle state at a slow, consented cadence. No virtual key and no inbound connection are needed for polling, but registration still needs a web page you control.
+**How it works.** Direct Fleet uses polling with your own Tesla developer
+application. Tesatlas does not supply a shared application or relay. Polling
+needs no inbound connection to Hub; the public key file is hosted on a domain
+you control. It is a separate sign-in path for a new installation, rather than
+part of the TeslaMate login take-over.
 
-**What you need.**
-- A Tesla developer account at `developer.tesla.com` with a payment method and a billing limit set. Tesla charges per request (about $1 per 500 data requests) and gives a $10 monthly allowance; applications over their limit are disabled.
-- A domain or site you control where a static file can be served over HTTPS at `/.well-known/appspecific/com.tesla.3p.public-key.pem` (a GitHub Pages site is commonly used for this).
-- About an hour.
-
-**Steps.**
-1. Create the application at `developer.tesla.com`: name, the domain above as the allowed origin, redirect URI as Hub shows it.
-2. Generate the key pair (`openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem`; `openssl ec -in private-key.pem -pubout -out public-key.pem`) and publish the public key at the well-known path on your domain.
-3. Register the application with Tesla's partner `register` endpoint for your region (Hub's *Direct Fleet* setup runs this call for you once you enter the client id, client secret and domain).
-4. Add a payment method and a billing limit in the Tesla developer dashboard.
-5. In Hub, choose *Direct Fleet polling*. Hub shows the consent screen: the cadence it will use (defaults: 30 s while driving, 120 s while charging, nothing while the car sleeps), the estimated monthly cost at Tesla's published rate, and a local monthly cap you set. Nothing is polled until you confirm.
-6. Sign in with Tesla when Hub opens the authorisation page; grant *Vehicle Information* and *Vehicle Location*.
-7. Hub shows the request counter and estimate on its status screen. If Tesla suspends the application for exceeding the billing limit, Hub says so; it never switches to another path on its own.
+Use the [Fleet guide](fleet-setup.md) for prerequisites and onboarding. The
+Legacy migration procedure here does not configure Fleet registration or
+consent, and does not enable telemetry push or vehicle commands.
 
 ## Path 4: Self-hosted Fleet Telemetry
 
@@ -91,7 +95,7 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 **What you need.** Everything from path 3, plus: a public hostname inside your registered domain, a publicly trusted certificate for it, inbound TCP 443 forwarded to the Hub computer (no HTTP-terminating tunnel or CDN in front: the car does mutual TLS with the server itself), and the virtual key installed in the car.
 
 **Steps.**
-1. Complete path 3 steps 1 to 4.
+1. Prepare your own developer application, domain and public key as described in the [Fleet guide](fleet-setup.md).
 2. Install the virtual key in the car by opening `https://tesla.com/_ak/<your-domain>` on the phone with the Tesla app.
 3. In Hub, choose *Self-hosted Fleet Telemetry* and enter the hostname, certificate and key paths. Hub runs the Tesla `fleet-telemetry` server and the `tesla-http-proxy` as local helper processes and shows a reachability check for port 443.
 4. Hub sends the telemetry configuration to the car through the proxy (signed with your private key) and shows when the car has accepted it.

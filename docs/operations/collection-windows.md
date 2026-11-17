@@ -1,11 +1,20 @@
 # Collection windows
 
-Hub sends Tesla traffic only with its own login, only on the host a signed grant
-names, and only while a collection window is open. Outside a window it sends
-nothing to Tesla (no sign-in exchange, vehicle discovery, telemetry
-configuration or token refresh) and keeps history current by read-only import
-from the other logger's database. Hub never reads, stores, uses or refreshes a
-token held by another application, and no setting or flag changes that.
+Hub sends Tesla traffic only on the host a signed grant names and only while
+a collection window is open. Its login comes from a Hub sign-in or a migration
+from TeslaMate: TeslaMate must be stopped before take-over and stay stopped,
+and the Hub becomes the only program that refreshes that login. Outside a
+window Hub sends nothing to Tesla (no sign-in exchange, vehicle discovery,
+telemetry configuration or token refresh).
+
+The separate `take-over-source-token` step reads the source database
+read-only, with TeslaMate stopped and stores the login locally, without contacting Tesla. Run it with
+the Hub service stopped, the window Closed and its handback recorded. The
+first refresh waits for the next collection window. Your cars appear once the
+first window opens, without another sign-in. Follow the
+[migration guide](../releases/migration.md) for the key, retries and returning
+to TeslaMate. After take-over, leave TeslaMate stopped between windows too.
+History-only imports remain read-only and do not read credentials.
 
 This guide covers issuing a grant, trusting the issuer, issuer key custody,
 opening, stopping, rolling back, restarting and removing refused credentials. `tesatlas-hub window --help`
@@ -199,9 +208,10 @@ every open until `window trust` is run again.
    within 10 minutes, before the service restarts and while that login is
    still stored: the service recognises the sign-in it stored, sends nothing
    to Tesla's token endpoint (`"signIn": "resumed"`) and only lists the cars
-   again. After that, a new sign-in is needed. Fleet stays parked:
-   with `collector.provider = "fleet"` discovery refuses (`provider_parked`).
-   The Hub's own login is only sent to Tesla's Owner API: an
+   again. After that, a new sign-in is needed. These `setup` instructions
+   describe Legacy Owner sign-in. A new installation offers Fleet or Legacy;
+   use the [Fleet guide](../guides/fleet-setup.md) for Fleet onboarding.
+   This Legacy login is only sent to Tesla's Owner API: an
    `owner_api_base_url` naming another host is refused
    (`discovery_settings_invalid`).
 
@@ -295,14 +305,16 @@ time you want Hub to stop collecting.
 ## Remove refused credentials
 
 An upgraded Hub keeps the credentials it refuses until you remove them: a
-sign-in stored by an earlier version (the `pre_upgrade` origin), a stored Fleet
-pair, or any pair the Hub's own login did not make. Nothing is deleted on
-upgrade. While such a credential is kept, `status` and `doctor` show a
+sign-in stored by an earlier version (the `pre_upgrade` origin), or other
+credential material not admitted by its origin and refresh owner. A login
+admitted through the TeslaMate take-over (`source_token` on `owner_api`,
+refresh owner `hub`) is usable and is not refused material. Nothing is deleted
+on upgrade. While such a credential is kept, `status` and `doctor` show a
 `refusedCredentialPurge` entry naming the command, and while a refused
 pre-upgrade credential blocks backups, `tesatlas-hub backup` is refused with
-`backup_blocked_by_refused_credentials`, naming the same command. A refused
-Fleet slot is never replaced while Fleet is parked, so only this command ends
-that wait.
+`backup_blocked_by_refused_credentials`, naming the same command. Use the
+purge command to remove refused material; a new sign-in does not make that
+material trusted.
 
 1. With the Hub service running, list what would be removed:
 
@@ -324,7 +336,7 @@ that wait.
    tables in one database transaction, and removes the old key files only after
    that transaction is safely on disk. It then reclaims the freed space and
    completes the credential cleanup; the report says whether cleanup is
-   complete. The pair from the Hub's own login is never touched.
+   complete. Admitted Hub sign-ins and taken-over logins are never touched.
 
 The command is refused with `window_active` while a window is Pending, Open or
 Closing, `collector_running` while a collector holds its lease, and

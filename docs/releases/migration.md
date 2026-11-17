@@ -30,31 +30,95 @@ database, do not import it with this release.
    must be able to access the source application Docker deployment; if it needs sudo,
    select that option in the Mac form. Do not grant broad permissions simply
    to bypass a failed check.
-4. Decide whether you are importing history only or also selecting the
-   supported Legacy credential-transfer path. Never allow two services to
-   refresh the same token pair.
+4. For migration from TeslaMate, stop TeslaMate and its dashboards and leave
+   TeslaMate stopped. Keep PostgreSQL running so Hub can read it. Disable any
+   automatic restart that would bring TeslaMate back. Hub will take over its
+   Tesla login and become its only refresher. For a new installation without
+   migration, choose Fleet or Legacy and sign in instead.
 
 ## Import using the Mac app
 
-1. Choose **Import History** during setup, or from **Manage Tesla**.
-2. Enter the server, port and SSH user. For **SSH key**, use **Choose Key…**
-   to select the private key, or leave the field empty for your SSH agent or
-   default keys. Use **Password** only for the password authentication path.
-3. Choose **Connect to Server**. Read the connection result and compatibility
-   acknowledgement before selecting **Import Data**.
-4. Wait for the import and Hub checks. If a step fails, read the error and use
-   **Open Logs** before retrying. Keep both the source and partial-run diagnostics.
-5. Complete the cutover acknowledgement truthfully: stop the source application's access
-   before Hub takes ownership of the same Legacy refresh credentials. Hub
-   does not stop or modify the source application for you.
-6. Start Hub when setup permits it. Check the intended vehicle, imported
-   journeys and charges, diagnostics, and subsequent collection. Keep the
-   original data until you are satisfied with the result.
+1. Stop TeslaMate and its dashboards before importing, and leave TeslaMate
+   stopped throughout and afterwards. The Hub does not stop it for you.
+2. Choose **Import History** during setup, or from **Manage Tesla**. Enter
+   the server, port and SSH user. For **SSH key**, use **Choose Key…** to
+   select the private key, or leave it empty for your SSH agent or default
+   keys. Use **Password** only for password authentication.
+3. Choose **Connect to Server**. Read the compatibility result and
+   acknowledgement. The app checks over SSH and Docker that TeslaMate is
+   stopped, and checks again immediately before import. If it is running,
+   the page asks you to stop it and its dashboards, then choose **Check Again**.
+4. Find the `ENCRYPTION_KEY` value in your TeslaMate deployment configuration,
+   such as its Docker Compose environment settings or the environment file
+   those settings reference. TeslaMate's public
+   [Environment Variables documentation](https://docs.teslamate.org/docs/configuration/environment_variables)
+   identifies `ENCRYPTION_KEY` as the required key used to encrypt its Tesla
+   API tokens. Paste that value once into the secure **Encryption key** field.
+   Hub clears the field when take-over starts, passes it on standard input
+   and never keeps it in settings, a file or logs. It is not your Tesla
+   password or a token.
+5. Select **Import Data**. History imports first, without reading credentials.
+   The next step shows **Taking over the Tesla login…**. Hub reads and decrypts
+   TeslaMate's stored access and refresh pair, checks it, and stores the pair
+   encrypted in its own credential vault as origin `source_token`, with the
+   Hub as refresh owner. The owner slot must be empty. This step sends nothing
+   to Tesla and changes nothing in TeslaMate's database.
+6. Complete the Hub checks and finish page. Acknowledge that you will keep
+   TeslaMate stopped, then choose **Start Hub**. Hub now holds the login, but
+   its first refresh waits for a collection window. Your cars appear once
+   the first collection window opens, without another Tesla sign-in. Check
+   the intended cars, imported journeys and charges, diagnostics and subsequent
+   collection. Keep the original data until you are satisfied with the result.
 
-The [Mac guide](../guides/install-macos.md#connect-or-migrate) shows the form.
-For authentication, Docker access or compatibility errors, see
-[Troubleshooting](../guides/troubleshooting.md). Command-line operators should
-use the [CLI reference](../guides/cli.md) and the technical requirements below.
+### If the take-over cannot finish
+
+A wrong encryption key gives `source_token_key_mismatch`: the key does not
+open the stored login. The app shows **History imported; Tesla login not taken
+over**. Check the deployment's key, paste it again and choose **Retry**. The
+field was cleared, so each attempt needs the key again. History stays imported.
+You can choose **Sign in with Tesla Instead** to use the Hub's sign-in page
+after starting it; the sign-in itself needs an open collection window.
+
+A running TeslaMate blocks the app's stop check. The Hub also checks database
+sessions before reading the token row: `source_still_running` means another
+client is connected, which can be a dashboard or another database tool even
+if TeslaMate itself is stopped. Stop those clients and retry. Keep PostgreSQL
+running. `source_token_invalid` means the stored login is not a usable Tesla
+Owner login; sign in with Tesla in the Hub instead. `slot_occupied` means Hub
+already holds a login; sign out first if you intend to replace it by take-over.
+These refusals leave the existing login and the source database untouched.
+
+### Going back to TeslaMate
+
+- Before the Hub's first refresh: sign out in Hub, then start TeslaMate. Its
+  stored login still works because take-over has not spent its refresh token.
+- After the first refresh: sign out in Hub, start TeslaMate and sign in again
+  through TeslaMate's own sign-in page. Its old stored login no longer works.
+  Running both on that login can lock you out.
+
+Hub never writes a replacement login into TeslaMate's database and never
+exports a token. If you cannot tell whether the first refresh happened, use
+TeslaMate's own sign-in again after signing out in Hub.
+
+### Command-line take-over
+
+`take-over-source-token --source <password-free PostgreSQL URL>
+--accept-source-stopped` is separate from `migrate`. Stop the Hub service too;
+the window must be Closed with its handback recorded. Standard input takes
+one JSON object with exactly `postgresPassword` and `encryptionKey`. Pass it
+directly through a protected input pipe, never through shell arguments,
+environment variables or a saved JSON file. Do not paste a token. A successful
+run prints only:
+
+```json
+{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}
+```
+
+The [security model](../architecture/security-model.md#teslamate-login-take-over)
+describes the read-only connection and remaining refusals. The
+[collection-window guide](../operations/collection-windows.md) covers the first
+refresh. For authentication, Docker access or compatibility errors, see
+[Troubleshooting](../guides/troubleshooting.md).
 
 ## What transfers
 
@@ -78,7 +142,8 @@ The importer must:
 - verify integrity and counts before cutover;
 - preserve rollback.
 
-The explicit credential-transfer path may read the relevant encrypted token relation only where requested and authorised.
+Only the separate login take-over reads `private.tokens`, through its own
+read-only connection. The history importer never reads that relation.
 
 ## Operator duties
 
@@ -91,7 +156,7 @@ validation, and comply with privacy/employment rules.
 
 The importer is a selected-car projection, not a PostgreSQL backup or live
 replication service. An operator can repeat a history-only, read-only import
-with `--online-snapshot --preserve-existing-credentials` while retaining the
+with `--online-snapshot --history-only` while retaining the
 Hub's stored Legacy pair. The running source application must use a supported
 release, and the database must match a schema set this Hub recognises. Several
 application releases can share one schema set, so the schema cannot establish
@@ -114,9 +179,9 @@ additional car. The read-only snapshot captures:
 - only `addresses` and `geofences` referenced by that car's drives or charging
   processes;
 - current open-drive, open-charge, and open-state rows plus their bounded
-  position and charge-sample tails;
-- encrypted legacy access/refresh token ciphertext only when the operator
-  separately selects the credential-transfer scope.
+  position and charge-sample tails.
+
+Login take-over is a separate operation and is not part of this history capture.
 
 Source row IDs and relationships remain represented in the typed import. Hub
 also assigns its own source, vehicle, snapshot, and sequence identities. Valid
