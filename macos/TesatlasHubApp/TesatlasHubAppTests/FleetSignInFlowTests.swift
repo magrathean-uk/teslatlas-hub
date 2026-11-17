@@ -73,13 +73,33 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(window.continueTitleForTests, "Register Domain")
         window.continueForTests()
         XCTAssertEqual(window.fleetSecretForTests, "", "cleared as the call starts")
-        try fixture.waitUntil { window.fleetStepForTests == .signIn && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
         let register = try XCTUnwrap(fixture.runner.call("register"))
         XCTAssertTrue(register.sensitive)
         XCTAssertEqual(try Self.object(register.stdin), [
             "clientId": Self.clientID, "clientSecret": Self.secret, "domain": Self.domain, "region": "eu"
         ])
         XCTAssertEqual(fixture.controller.savedFleetApplication?.registered, true)
+
+        // Consent comes before the first request Tesla bills: nothing is begun, redeemed or listed.
+        XCTAssertEqual(fixture.runner.fleetVerbs, ["public-key", "register"])
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.consent"))
+        let terms = fixture.labels().joined(separator: "\n")
+        XCTAssertTrue(terms.contains("every 30 seconds"), "the cadence is shown")
+        XCTAssertTrue(terms.contains("$0.002"), "the price is shown")
+        XCTAssertTrue(terms.contains("$10.00"), "the monthly cap is shown")
+        XCTAssertTrue(terms.contains("Setting up makes a few list requests, which Tesla bills at the same price as a state check"),
+                      "set-up's own billed lists are stated")
+        XCTAssertEqual(window.continueTitleForTests, "Accept and Continue")
+        XCTAssertFalse(window.continueEnabledForTests)
+        window.continueForTests()
+        XCTAssertEqual(window.fleetStepForTests, .consent, "Continue does nothing until the owner accepts")
+        XCTAssertNil(fixture.controller.fleetConsentRecord)
+        window.acceptFleetConsentForTests()
+        window.continueForTests()
+        XCTAssertEqual(window.fleetStepForTests, .signIn)
+        XCTAssertEqual(fixture.controller.fleetConsentRecord?.figures, .serviceDefaults)
+        XCTAssertEqual(fixture.runner.fleetVerbs, ["public-key", "register"], "accepting sends nothing")
 
         // Sign in: begin, the browser leg on the registered redirect URI, then the redeem.
         var browser: (flow: FleetOAuthFlow, done: (Result<TeslaAuthCodeGrant, Error>) -> Void)?
@@ -100,7 +120,7 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertTrue(flow.isCallback(URL(string: Self.redirect + "?code=x&state=y")!))
         browser?.done(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)&issuer=https%3A%2F%2Fauth.tesla.com%2Foauth2%2Fv3"))
         XCTAssertEqual(window.fleetSecretForTests, "", "cleared as the redeem starts")
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
         let redeem = try XCTUnwrap(fixture.runner.call("redeem"))
         XCTAssertTrue(redeem.sensitive)
         XCTAssertEqual(Array(redeem.arguments.suffix(2)), ["setup-fleet", "--all-vehicles"])
@@ -109,25 +129,21 @@ final class FleetSignInFlowTests: XCTestCase {
             "clientSecret": Self.secret, "region": "eu", "binding": fixture.runner.binding
         ])
 
-        // Consent: nothing is polled until the owner accepts.
+        // The last page: the car and the accepted figures; nothing is polled until Start Collecting.
         XCTAssertNil(fixture.runner.call("activate"))
         XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"))
-        XCTAssertTrue(fixture.view(identifier: "onboarding.fleet.consent") != nil)
+        XCTAssertNotNil(fixture.view(identifier: "onboarding.fleet.start-page"))
         let shown = fixture.labels().joined(separator: "\n")
-        XCTAssertTrue(shown.contains("every 30 seconds"), "the cadence is shown")
-        XCTAssertTrue(shown.contains("$0.002"), "the price is shown")
-        XCTAssertTrue(shown.contains("$10.00"), "the monthly cap is shown")
+        XCTAssertTrue(shown.contains("Hub found 1 car on your Tesla account."), shown)
+        XCTAssertTrue(shown.contains("You accepted these figures on"))
+        XCTAssertTrue(shown.contains("every 30 seconds") && shown.contains("$10.00"), "the accepted figures")
         XCTAssertEqual(window.continueTitleForTests, "Start Collecting")
-        XCTAssertFalse(window.continueEnabledForTests)
-        window.continueForTests()
-        XCTAssertNil(fixture.runner.call("activate"), "Start Collecting does nothing without consent")
-        window.acceptFleetConsentForTests()
         XCTAssertTrue(window.continueEnabledForTests)
         window.continueForTests()
         try fixture.waitUntil { window.currentRoute == .verify }
         XCTAssertNotNil(fixture.runner.call("activate"))
 
-        // The order of section 10, and the secret only where it belongs.
+        // The order of section 10 with the consent before the sign-in, and the secret only where it belongs.
         XCTAssertEqual(fixture.runner.fleetVerbs, ["public-key", "register", "begin", "redeem", "activate"])
         for call in fixture.runner.calls {
             XCTAssertFalse(call.arguments.joined(separator: " ").contains(Self.secret), "never an argument")
@@ -146,7 +162,7 @@ final class FleetSignInFlowTests: XCTestCase {
     // MARK: The browser leg
 
     func testACallbackWithAnotherStateIsRefusedBeforeTheRedeem() throws {
-        let fixture = try Fixture(state: .awaitingSignIn)
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
         defer { fixture.tearDown() }
         let window = fixture.window
         try fixture.waitUntil { window.fleetStepForTests == .signIn }
@@ -245,35 +261,73 @@ final class FleetSignInFlowTests: XCTestCase {
     // MARK: Waiting states, also after a quit
 
     func testEachWaitingStateShowsItsNextStepAndContinuesAfterAQuit() throws {
-        let signIn = try Fixture(state: .awaitingSignIn)
-        try signIn.waitUntil { signIn.window.fleetStepForTests == .signIn }
+        let signIn = try Fixture(state: .awaitingSignIn, consented: true)
+        try signIn.waitUntil { signIn.window.fleetStepForTests == .signIn && !signIn.window.isBusyForTests }
         XCTAssertEqual(signIn.window.fleetNoticeForTests,
                        "Hub is waiting for your Tesla sign-in. Sign in with Tesla to continue.")
         XCTAssertEqual(signIn.window.continueTitleForTests, "Sign in with Tesla")
         signIn.tearDown()
 
-        let vehicles = try Fixture(state: .awaitingVehicles)
-        try vehicles.waitUntil { vehicles.window.fleetStepForTests == .vehicles }
+        let vehicles = try Fixture(state: .awaitingVehicles, consented: true)
+        try vehicles.waitUntil { vehicles.window.fleetStepForTests == .vehicles && !vehicles.window.isBusyForTests }
         XCTAssertEqual(vehicles.window.fleetNoticeForTests,
                        "You are signed in, and Hub has not found your car yet. Find your car to continue.")
         XCTAssertEqual(vehicles.window.continueTitleForTests, "Find My Car")
         vehicles.window.continueForTests()
-        try vehicles.waitUntil { vehicles.window.fleetStepForTests == .consent && !vehicles.window.isBusyForTests }
+        try vehicles.waitUntil { vehicles.window.fleetStepForTests == .start && !vehicles.window.isBusyForTests }
         XCTAssertEqual(vehicles.runner.call("discover").map { Array($0.arguments.suffix(3)) }, ["setup-fleet", "discover", "--all-vehicles"])
         XCTAssertNil(vehicles.runner.call("redeem"), "no new sign-in")
         XCTAssertNil(vehicles.runner.call("activate"))
         vehicles.tearDown()
 
-        let activation = try Fixture(state: .awaitingActivation)
+        let activation = try Fixture(state: .awaitingActivation, consented: true)
         defer { activation.tearDown() }
-        try activation.waitUntil { activation.window.fleetStepForTests == .consent }
+        try activation.waitUntil { activation.window.fleetStepForTests == .start && !activation.window.isBusyForTests }
         XCTAssertEqual(activation.window.fleetNoticeForTests,
-                       "You are signed in and your car is found. Hub polls nothing until you accept the terms below.")
+                       "You are signed in and your car is found. Hub polls nothing until you start collecting.")
+        XCTAssertEqual(activation.window.continueTitleForTests, "Start Collecting")
         XCTAssertNil(activation.runner.call("activate"))
-        activation.window.acceptFleetConsentForTests()
         activation.window.continueForTests()
         try activation.waitUntil { activation.window.currentRoute == .verify }
         XCTAssertEqual(activation.runner.fleetVerbs, ["activate"])
+    }
+
+    // MARK: Consent before anything Tesla bills (B3)
+
+    func testNoBeginRedeemDiscoverOrActivateRunsBeforeConsentOnAnyReturn() throws {
+        let resumes: [(HubFleetSetupState, HubFleetStep, String)] = [
+            (.awaitingSignIn, .signIn, "Sign in with Tesla"),
+            (.awaitingVehicles, .vehicles, "Find My Car"),
+            (.awaitingActivation, .start, "Start Collecting"),
+            (.collecting, .signIn, "Sign in with Tesla")
+        ]
+        for (state, resume, title) in resumes {
+            let fixture = try Fixture(state: state)
+            defer { fixture.tearDown() }
+            let window = fixture.window
+            window.presentFleetSignIn = { _, _ in XCTFail("no browser before consent: \(state)") }
+            try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+            // Every button the page offers before acceptance, and every billed verb called directly.
+            window.enterFleetSecretForTests(Self.secret)
+            window.continueForTests()
+            XCTAssertEqual(window.fleetStepForTests, .consent, "\(state)")
+            try Self.expectRefused { fixture.controller.discoverFleetVehicles(completion: $0) }
+            try Self.expectRefused { fixture.controller.activateFleetCollection(completion: $0) }
+            try Self.expectRefused { done in
+                fixture.controller.beginFleetSignIn(try! HubFleetApplication.validated(
+                    clientID: Self.clientID, region: .eu, redirectURI: Self.redirect, domain: Self.domain)) { done($0.map { _ in 0 }) }
+            }
+            XCTAssertEqual(fixture.runner.fleetVerbs, [], "nothing billed or started before consent: \(state)")
+            XCTAssertTrue(fixture.configText.contains("interval_seconds = 0"), "\(state)")
+
+            // Accepting continues at the step the waiting state names, and only then may it run.
+            window.acceptFleetConsentForTests()
+            window.continueForTests()
+            XCTAssertEqual(window.fleetStepForTests, resume, "\(state)")
+            XCTAssertEqual(window.continueTitleForTests, title, "\(state)")
+            XCTAssertNotNil(fixture.controller.fleetConsentRecord, "\(state)")
+            XCTAssertEqual(fixture.runner.fleetVerbs, [], "accepting sends nothing: \(state)")
+        }
     }
 
     func testPreflightStatesAreReadByTheServiceFields() {
@@ -407,7 +461,7 @@ final class FleetSignInFlowTests: XCTestCase {
     // MARK: Refusals
 
     func testAnUnknownRefusalIsShownWithTheServicesOwnMessageAndAKnownOneWithTheAppsLine() throws {
-        let fixture = try Fixture(state: .awaitingSignIn)
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
         defer { fixture.tearDown() }
         let window = fixture.window
         try fixture.waitUntil { window.fleetStepForTests == .signIn }
@@ -453,7 +507,7 @@ final class FleetSignInFlowTests: XCTestCase {
     }
 
     func testALostRedeemAnswerReadsTheStateAndContinuesFromIt() throws {
-        let fixture = try Fixture(state: .awaitingSignIn)
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
         defer { fixture.tearDown() }
         let window = fixture.window
         try fixture.waitUntil { window.fleetStepForTests == .signIn }
@@ -468,14 +522,14 @@ final class FleetSignInFlowTests: XCTestCase {
         fixture.runner.preflight = Fixture.preflight("awaiting_activation")
         let flow = try XCTUnwrap(browser?.flow)
         browser?.done(Self.grant(flow, url: "\(Self.redirect)?code=\(Self.code)&state=\(flow.state)"))
-        try fixture.waitUntil { window.fleetStepForTests == .consent }
+        try fixture.waitUntil { window.fleetStepForTests == .start }
         XCTAssertEqual(window.errorMessageForTests,
                        "Hub did not confirm the answer. Hub has checked where the set-up stands; continue from the step shown.")
         XCTAssertNil(fixture.runner.call("activate"))
     }
 
     func testAFailedDiscoveryAfterTheSignInLeadsToFindingTheCarNotANewSignIn() throws {
-        let fixture = try Fixture(state: .awaitingSignIn)
+        let fixture = try Fixture(state: .awaitingSignIn, consented: true)
         defer { fixture.tearDown() }
         let window = fixture.window
         try fixture.waitUntil { window.fleetStepForTests == .signIn }
@@ -490,7 +544,7 @@ final class FleetSignInFlowTests: XCTestCase {
         try fixture.waitUntil { window.fleetStepForTests == .vehicles && !window.isBusyForTests }
         XCTAssertEqual(window.fleetNoticeForTests, "Tesla asked Hub to wait. Find your car again in a few minutes.")
         window.continueForTests()
-        try fixture.waitUntil { window.fleetStepForTests == .consent && !window.isBusyForTests }
+        try fixture.waitUntil { window.fleetStepForTests == .start && !window.isBusyForTests }
         XCTAssertEqual(fixture.runner.fleetVerbs, ["begin", "redeem", "discover"])
     }
 
@@ -583,6 +637,18 @@ final class FleetSignInFlowTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// Runs one controller verb and expects the refusal for a missing consent.
+    private static func expectRefused(_ verb: (@escaping (Result<Int, Error>) -> Void) -> Void,
+                                      file: StaticString = #filePath, line: UInt = #line) throws {
+        var outcome: Result<Int, Error>?
+        verb { outcome = $0 }
+        let deadline = Date().addingTimeInterval(2)
+        while outcome == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        guard case let .failure(error)? = outcome else { return XCTFail("not refused: \(String(describing: outcome))", file: file, line: line) }
+        XCTAssertEqual(error.localizedDescription,
+                       "Accept the cost of polling on the consent page first. Nothing was sent to Tesla.", file: file, line: line)
+    }
 
     private static func flow() throws -> FleetOAuthFlow {
         var components = URLComponents(string: "https://auth.tesla.com/oauth2/v3/authorize")!
@@ -753,7 +819,7 @@ private final class Fixture {
 
     /// A fresh Mac, or a Fleet Hub left in `state` by an earlier run of the app. `config` is
     /// appended to that Hub's configuration.
-    init(state: HubFleetSetupState? = nil, config: String = "") throws {
+    init(state: HubFleetSetupState? = nil, config: String = "", consented: Bool = false) throws {
         home = HubTestScratch.directory.appendingPathComponent("tesatlas-fleet-flow-\(UUID().uuidString)", isDirectory: true)
         let folder = home.appendingPathComponent("Library/Application Support/Tesatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -772,8 +838,10 @@ private final class Fixture {
             case .awaitingSignIn: runner.preflight = Self.preflight("awaiting_sign_in")
             case .awaitingVehicles: runner.preflight = Self.preflight("awaiting_vehicles")
             case .awaitingActivation: runner.preflight = Self.preflight("awaiting_activation")
+            case .collecting: runner.preflight = #"{"status":"ready","version":"1","provider":"fleet"}"#
             default: break
             }
+            if consented { try controller.recordFleetConsent(.serviceDefaults) }
         }
         self.runner = runner
         self.service = service

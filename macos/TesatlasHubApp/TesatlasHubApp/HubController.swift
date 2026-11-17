@@ -8582,6 +8582,31 @@ struct HubFleetConsentFigures: Equatable {
     }
 }
 
+/// The owner's acceptance of the consent page: when, and the figures accepted. It holds no
+/// secret and is kept owner-only beside the application record (`fleet-consent.json`).
+struct HubFleetConsentRecord: Equatable {
+    let acceptedAt: Date
+    let figures: HubFleetConsentFigures
+
+    var record: [String: Any] {
+        ["acceptedAt": Int(acceptedAt.timeIntervalSince1970.rounded(.down)), "figures": figures.record]
+    }
+
+    init(acceptedAt: Date, figures: HubFleetConsentFigures) {
+        self.acceptedAt = Date(timeIntervalSince1970: acceptedAt.timeIntervalSince1970.rounded(.down))
+        self.figures = figures
+    }
+
+    init?(record: [String: Any]) {
+        guard Set(record.keys) == ["acceptedAt", "figures"],
+              let seconds = HubFleetJSON.integer(record["acceptedAt"]), seconds > 0,
+              let figures = (record["figures"] as? [String: Any]).flatMap(HubFleetConsentFigures.init(record:)) else {
+            return nil
+        }
+        self.init(acceptedAt: Date(timeIntervalSince1970: TimeInterval(seconds)), figures: figures)
+    }
+}
+
 enum HubFleetConsentReading: Equatable {
     case figures(HubFleetConsentFigures)
     /// The named setting cannot be read exactly; no figure is stated and nothing can be accepted.
@@ -8766,6 +8791,36 @@ extension HubController {
     /// Whether this Hub's configuration names the Fleet provider.
     var hubConfiguredForFleet: Bool { configuredCollectorProvider() == "fleet" }
 
+    private var fleetConsentURL: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent("fleet-consent.json")
+    }
+
+    /// The owner's accepted consent page, if one was recorded.
+    var fleetConsentRecord: HubFleetConsentRecord? {
+        guard let data = HubAppLog.regularFileData(of: fleetConsentURL, maximumBytes: 8_192),
+              let record = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return HubFleetConsentRecord(record: record)
+    }
+
+    /// Records that the owner accepted the consent page with these figures. No secret is part of it.
+    func recordFleetConsent(_ figures: HubFleetConsentFigures, at date: Date = Date()) throws {
+        let record = HubFleetConsentRecord(acceptedAt: date, figures: figures)
+        let data = try JSONSerialization.data(withJSONObject: record.record, options: [.sortedKeys])
+        try Self.writeDurablePrivateFile(data, to: fleetConsentURL)
+        HubAppLog.shared.record("fleet_setup.consent_recorded", category: "account")
+    }
+
+    /// Whether the owner's consent is on record: the only evidence that `begin`, the redeem,
+    /// `discover` and `activate` may run. A Fleet configuration, the provider's name or a
+    /// positive interval is never that evidence.
+    var fleetConsentInEffect: Bool { fleetConsentRecord != nil }
+
+    /// The refusal of a billed step (or of `activate`) without the owner's consent on record.
+    static var fleetConsentRequired: Error {
+        HubFleetRefusalPassthrough(message: HubL10n.text("hub.fleetSetup.consentRequired",
+            fallback: "Accept the cost of polling on the consent page first. Nothing was sent to Tesla."))
+    }
+
     /// The polling figures in effect for this Hub, as the consent page states them.
     var fleetConsentReading: HubFleetConsentReading {
         do { return HubFleetConsentFigures.reading(in: try readConfigIfPresent()) }
@@ -8926,6 +8981,7 @@ extension HubController {
                           completion: @escaping (Result<HubFleetSignInAttempt, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         let input: String
         do { input = try Self.fleetBeginInput(application) } catch { deliver(.failure(error)); return }
         guard let op = admit(.account, phase: "fleet-begin", completion: deliver) else { return }
@@ -8950,13 +9006,15 @@ extension HubController {
     }
 
     /// Redeems the code of a begun Fleet sign-in (`setup-fleet --all-vehicles`, six keys with the
-    /// binding). The client secret goes only to standard input and is wiped after it. Collection
+    /// binding). The redeem lists the cars, a request Tesla bills: it runs only with the owner's
+    /// consent on record. The client secret goes only to standard input and is wiped after it. Collection
     /// is not switched on here. The completion runs on the main queue.
     func redeemFleetSignIn(_ attempt: HubFleetSignInAttempt, code: String, clientSecret: String,
                            now: Date = Date(),
                            completion: @escaping (Result<HubFleetSignInOutcome, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         guard now < attempt.expiresAt else {
             deliver(.failure(HubFleetRefusal.refusal(code: "sign_in_expired", serviceMessage: "")))
             return
@@ -8996,6 +9054,7 @@ extension HubController {
     func discoverFleetVehicles(completion: @escaping (Result<Int, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         guard let op = admit(.account, phase: "fleet-discover", completion: deliver) else { return }
         op.run(["--config", configPath.path, "setup-fleet", "discover", "--all-vehicles"]) { [self] result in
             let found: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in
@@ -9013,12 +9072,13 @@ extension HubController {
         }
     }
 
-    /// Starts collection once the owner has accepted the consent page (`setup-fleet activate`):
-    /// the only step that sets a positive interval on a first set-up. The completion runs on the
+    /// Starts collection from the last page, after the owner has accepted the consent page
+    /// (`setup-fleet activate`): the only step that sets a positive interval on a first set-up. The completion runs on the
     /// main queue with the interval the service reports.
     func activateFleetCollection(completion: @escaping (Result<Int, Error>) -> Void) {
         let deliver = Self.mainQueue(completion)
         guard !previewMode else { deliver(.failure(HubActionError.preview)); return }
+        guard fleetConsentInEffect else { deliver(.failure(Self.fleetConsentRequired)); return }
         guard let op = admit(.account, phase: "fleet-activate", completion: deliver) else { return }
         op.run(["--config", configPath.path, "setup-fleet", "activate"]) { [self] result in
             let activated: Result<Int, Error> = result.mapError(HubFleetRefusal.from).flatMap { output in

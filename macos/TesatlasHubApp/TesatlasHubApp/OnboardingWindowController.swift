@@ -33,22 +33,25 @@ enum HubFleetOnboarding {
     }
 }
 
-/// The Fleet route's steps, in the order of a first set-up (M09-T19a interface, section 10).
+/// The Fleet route's steps, in the order of a first set-up (M09-T19a interface, section 10, with
+/// DEC-222): the cost consent comes before the sign-in, because the redeem and `discover` list the
+/// cars and Tesla bills that request. The last page shows the car and runs `setup-fleet activate`.
 enum HubFleetStep: Equatable {
     case prerequisites
     case details
     case publicKey
+    case consent
     case signIn
     case vehicles
-    case consent
+    case start
 
     var previous: HubFleetStep? {
         switch self {
         case .prerequisites: return nil
         case .details: return .prerequisites
         case .publicKey: return .details
-        case .signIn: return .publicKey
-        case .vehicles, .consent: return .signIn
+        case .consent, .signIn: return .publicKey
+        case .vehicles, .start: return .signIn
         }
     }
 }
@@ -301,6 +304,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var fleetNotice: String?
     /// `preflight` named a set-up state this app does not know: shown, and no next step offered.
     private var fleetStateUnknown: String?
+    /// Where an accepted consent page continues: the sign-in on a first set-up, or the step a
+    /// waiting state names on a return.
+    private var fleetResumeAfterConsent: HubFleetStep = .signIn
     private var fleetPublicKey: HubFleetPublicKey?
     private var fleetStateReading: UInt64 = 0
     private var lastRenderedFleetStep: HubFleetStep?
@@ -613,6 +619,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         importedAwaitingTakeover = false
         takeoverFailure = nil
         fleetStep = .prerequisites
+        fleetResumeAfterConsent = .signIn
         fleetNotice = nil
         fleetStateUnknown = nil
         fleetPublicKey = nil
@@ -3329,6 +3336,12 @@ extension OnboardingWindowController {
             arguments: [setting])
     }
 
+    /// Set-up itself lists the cars (the redeem and `discover`): Tesla bills those as state checks.
+    static var fleetSetUpRequestsText: String {
+        HubL10n.text("hub.fleetSetup.consent.setUp",
+            fallback: "Setting up makes a few list requests, which Tesla bills at the same price as a state check: signing in lists your cars once, and so does each Find My Car.")
+    }
+
     static var fleetConsentText: String {
         HubL10n.text("hub.fleetSetup.consent.accept",
             fallback: "I accept that Hub polls my car through my Tesla developer application and that Tesla bills these requests to my developer account.")
@@ -3339,9 +3352,10 @@ extension OnboardingWindowController {
         case .prerequisites: return HubL10n.text("hub.fleetSetup.title.prerequisites", fallback: "Before you set up the Fleet API")
         case .details: return HubL10n.text("hub.fleetSetup.title.details", fallback: "Your Tesla developer application")
         case .publicKey: return HubL10n.text("hub.fleetSetup.title.publicKey", fallback: "Publish Hub's public key")
+        case .consent: return HubL10n.text("hub.fleetSetup.title.consent", fallback: "What polling costs")
         case .signIn: return HubL10n.text("hub.fleetSetup.title.signIn", fallback: "Sign in with Tesla")
         case .vehicles: return HubL10n.text("hub.fleetSetup.title.vehicles", fallback: "Find your car")
-        case .consent: return HubL10n.text("hub.fleetSetup.title.consent", fallback: "Before Hub starts polling")
+        case .start: return HubL10n.text("hub.fleetSetup.title.start", fallback: "Start collecting")
         }
     }
 
@@ -3350,9 +3364,10 @@ extension OnboardingWindowController {
         case .prerequisites: return HubL10n.text("hub.fleetSetup.subtitle.prerequisites", fallback: "The Fleet API needs your own Tesla developer application and a domain you control.")
         case .details: return HubL10n.text("hub.fleetSetup.subtitle.details", fallback: "Enter the details exactly as they are in your Tesla developer application.")
         case .publicKey: return HubL10n.text("hub.fleetSetup.subtitle.publicKey", fallback: "Tesla checks this key on your domain before it registers the domain for your application.")
+        case .consent: return HubL10n.text("hub.fleetSetup.subtitle.consent", fallback: "Hub sends nothing that Tesla bills until you accept.")
         case .signIn: return HubL10n.text("hub.fleetSetup.subtitle.signIn", fallback: "Sign in while a collection window is open, and allow vehicle information and location.")
         case .vehicles: return HubL10n.text("hub.fleetSetup.subtitle.vehicles", fallback: "Hub lists the cars on your Tesla account with the stored sign-in.")
-        case .consent: return HubL10n.text("hub.fleetSetup.subtitle.consent", fallback: "Nothing is polled until you accept.")
+        case .start: return HubL10n.text("hub.fleetSetup.subtitle.start", fallback: "Hub polls nothing until you start it.")
         }
     }
 
@@ -3364,9 +3379,10 @@ extension OnboardingWindowController {
             return controller.savedFleetApplication?.registered == true
                 ? HubL10n.text("hub.OnboardingWindowController.168.1852", fallback: "Continue")
                 : HubL10n.text("hub.fleetSetup.register", fallback: "Register Domain")
+        case .consent: return HubL10n.text("hub.fleetSetup.acceptCost", fallback: "Accept and Continue")
         case .signIn: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Sign in with Tesla")
         case .vehicles: return HubL10n.text("hub.fleetSetup.findCar", fallback: "Find My Car")
-        case .consent: return HubL10n.text("hub.fleetSetup.startCollecting", fallback: "Start Collecting")
+        case .start: return HubL10n.text("hub.fleetSetup.startCollecting", fallback: "Start Collecting")
         }
     }
 
@@ -3380,9 +3396,9 @@ extension OnboardingWindowController {
                 && !fleetDomain.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .publicKey:
             return controller.savedFleetApplication?.registered == true || !fleetClientSecret.stringValue.isEmpty
-        case .signIn: return !fleetClientSecret.stringValue.isEmpty
-        case .vehicles: return true
         case .consent: return fleetConsent.state == .on && fleetConsentFigures != nil
+        case .signIn: return controller.fleetConsentInEffect && !fleetClientSecret.stringValue.isEmpty
+        case .vehicles, .start: return controller.fleetConsentInEffect
         }
     }
 
@@ -3392,9 +3408,9 @@ extension OnboardingWindowController {
         case .details: return [fleetRegion, fleetClientID, fleetRedirectURI, fleetDomain]
         case .publicKey:
             return controller.savedFleetApplication?.registered == true ? [] : [fleetClientSecret]
-        case .signIn: return [fleetClientSecret]
-        case .vehicles: return []
         case .consent: return fleetConsentFigures == nil ? [] : [fleetConsent]
+        case .signIn: return [fleetClientSecret]
+        case .vehicles, .start: return []
         }
     }
 
@@ -3420,9 +3436,10 @@ extension OnboardingWindowController {
         case .prerequisites: views.append(fleetPrerequisitesBody())
         case .details: views.append(fleetDetailsBody())
         case .publicKey: views.append(fleetPublicKeyBody())
+        case .consent: views.append(fleetConsentBody())
         case .signIn: views.append(fleetSignInBody())
         case .vehicles: views.append(fleetVehiclesBody())
-        case .consent: views.append(fleetConsentBody())
+        case .start: views.append(fleetStartBody())
         }
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -3438,9 +3455,10 @@ extension OnboardingWindowController {
         case .prerequisites: return "prerequisites"
         case .details: return "details"
         case .publicKey: return "public-key"
+        case .consent: return "consent"
         case .signIn: return "sign-in"
         case .vehicles: return "vehicles"
-        case .consent: return "consent"
+        case .start: return "start"
         }
     }
 
@@ -3538,6 +3556,37 @@ extension OnboardingWindowController {
         featureRow(HubL10n.text("hub.fleetSetup.vehiclesNote", fallback: "Finding your car needs an open collection window. It reads the list of cars only: nothing is sent to a car."), "car.side")
     }
 
+    /// The last page: the car Hub found, the figures the owner accepted, and the one button that
+    /// runs `setup-fleet activate`.
+    private func fleetStartBody() -> NSView {
+        var views: [NSView] = []
+        let names = controller.snapshot.controlVehicles.map(\.displayName).filter { !$0.isEmpty }
+        let car: String
+        if !names.isEmpty {
+            car = HubL10n.format("hub.fleetSetup.start.cars", fallback: "Hub found %1$@ on your Tesla account.",
+                                 arguments: [ListFormatter.localizedString(byJoining: names)])
+        } else if let count = controller.lastVehiclesConfigured, count > 0 {
+            car = HubL10n.plural("hub.fleetSetup.start.count", count: count,
+                                 one: "Hub found 1 car on your Tesla account.", other: "Hub found %d cars on your Tesla account.")
+        } else {
+            car = HubL10n.text("hub.fleetSetup.start.found", fallback: "Hub found your car on your Tesla account.")
+        }
+        views.append(featureRow(car, "car.side", color: .systemGreen))
+        if let record = controller.fleetConsentRecord {
+            let accepted = DateFormatter.localizedString(from: record.acceptedAt, dateStyle: .medium, timeStyle: .short)
+            views.append(featureRow(HubL10n.format("hub.fleetSetup.start.accepted",
+                fallback: "You accepted these figures on %1$@.", arguments: [accepted]), "checkmark.seal.fill"))
+            views += fleetFigureRows(record.figures)
+        }
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        stack.identifier = NSUserInterfaceItemIdentifier("onboarding.fleet.start-page")
+        for view in views { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        return stack
+    }
+
     /// The figures the consent page shows; nil while one of them cannot be read exactly.
     private var fleetConsentFigures: HubFleetConsentFigures? {
         if case let .figures(figures) = controller.fleetConsentReading { return figures }
@@ -3574,6 +3623,7 @@ extension OnboardingWindowController {
         switch controller.fleetConsentReading {
         case let .figures(figures):
             views += fleetFigureRows(figures)
+            views.append(featureRow(Self.fleetSetUpRequestsText, "list.bullet"))
             views.append(wrappingCheckbox(fleetConsent, title: Self.fleetConsentText))
         case let .unreadable(setting):
             // A figure that cannot be read exactly is not stated, and nothing can be accepted.
@@ -3608,15 +3658,43 @@ extension OnboardingWindowController {
         case .publicKey:
             if let application = controller.savedFleetApplication, application.registered {
                 errorMessage = nil
-                fleetStep = .signIn
+                fleetStep = fleetStepAfterRegistration()
                 render()
             } else {
                 fleetRegister()
             }
+        case .consent: fleetAcceptConsent()
         case .signIn: fleetSignIn()
         case .vehicles: fleetDiscover()
-        case .consent: fleetActivate()
+        case .start: fleetActivate()
         }
+    }
+
+    /// After the registration: the consent page, unless the owner's consent is on record.
+    private func fleetStepAfterRegistration() -> HubFleetStep {
+        fleetStepBehindConsent(.signIn)
+    }
+
+    /// `step`, or the consent page first when the owner's consent is not on record: no billed
+    /// request (the redeem, `discover`) and no `activate` is offered before it.
+    private func fleetStepBehindConsent(_ step: HubFleetStep) -> HubFleetStep {
+        fleetResumeAfterConsent = step
+        return controller.fleetConsentInEffect ? step : .consent
+    }
+
+    /// Accepting the consent page records the time and the figures accepted; nothing is sent.
+    private func fleetAcceptConsent() {
+        guard fleetConsent.state == .on, let figures = fleetConsentFigures else { return }
+        do { try controller.recordFleetConsent(figures) } catch {
+            showInlineError(error.localizedDescription)
+            return
+        }
+        HubAppLog.shared.record("fleet_setup.consent_accepted", category: "account")
+        fleetConsent.state = .off
+        errorMessage = nil
+        fleetNotice = nil
+        fleetStep = fleetResumeAfterConsent
+        render()
     }
 
     private func fillFleetDetails(from application: HubFleetApplication?) {
@@ -3656,7 +3734,7 @@ extension OnboardingWindowController {
                 }
                 self.errorMessage = nil
                 self.fleetNotice = nil
-                self.fleetStep = application.registered ? .signIn : .publicKey
+                self.fleetStep = application.registered ? self.fleetStepAfterRegistration() : .publicKey
                 self.render()
             case let .failure(error):
                 self.fleetFailed(error)
@@ -3705,7 +3783,7 @@ extension OnboardingWindowController {
             switch result {
             case .success:
                 self.errorMessage = nil
-                self.fleetStep = .signIn
+                self.fleetStep = self.fleetStepAfterRegistration()
                 self.render()
             case let .failure(error):
                 self.fleetFailed(error)
@@ -3788,8 +3866,8 @@ extension OnboardingWindowController {
             case let .success(.vehiclesConfigured(count)) where count > 0:
                 self.errorMessage = nil
                 self.fleetNotice = nil
-                self.fleetStep = .consent
-                self.render()
+                self.fleetStep = .start
+                self.refreshFleetCars()
             case .success(.vehiclesConfigured):
                 self.errorMessage = nil
                 self.fleetNotice = HubFleetRefusal.message(code: "discovery_no_vehicles")
@@ -3816,8 +3894,8 @@ extension OnboardingWindowController {
             case let .success(count) where count > 0:
                 self.errorMessage = nil
                 self.fleetNotice = nil
-                self.fleetStep = .consent
-                self.render()
+                self.fleetStep = .start
+                self.refreshFleetCars()
             case .success:
                 self.showInlineError(HubFleetRefusal.message(code: "discovery_no_vehicles") ?? "")
             case let .failure(error):
@@ -3826,16 +3904,31 @@ extension OnboardingWindowController {
         }
     }
 
-    /// Section 10, step 6: only an accepted consent page starts collection.
+    /// Shows the last page, then reads the Hub's status (local, nothing sent to Tesla) so the
+    /// page names the car it found.
+    private func refreshFleetCars() {
+        render()
+        controller.refresh { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.state.route == .fleet, self.fleetStep == .start, !self.busy else { return }
+                self.render()
+            }
+        }
+    }
+
+    /// Section 10, step 6: the last page runs `setup-fleet activate`, only with the owner's
+    /// consent on record.
     private func fleetActivate() {
-        guard fleetConsent.state == .on else { return }
-        HubAppLog.shared.record("fleet_setup.consent_accepted", category: "account")
+        guard controller.fleetConsentInEffect else {
+            fleetStep = fleetStepBehindConsent(.start)
+            render()
+            return
+        }
         setBusy(true, message: HubL10n.text("hub.fleetSetup.busy.activate", fallback: "Starting collection…"), operation: .fleet)
         controller.activateFleetCollection { [weak self] result in
             guard let self else { return }
             switch result {
             case .success:
-                self.fleetConsent.state = .off
                 self.fleetNotice = nil
                 self.setupFinished(.success(()))
             case let .failure(error):
@@ -3888,22 +3981,22 @@ extension OnboardingWindowController {
         case .awaitingSignIn:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingSignIn",
                 fallback: "Hub is waiting for your Tesla sign-in. Sign in with Tesla to continue.")
-            fleetStep = saved == nil ? .details : .signIn
+            fleetStep = saved == nil ? .details : fleetStepBehindConsent(.signIn)
         case .awaitingVehicles:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingVehicles",
                 fallback: "You are signed in, and Hub has not found your car yet. Find your car to continue.")
-            fleetStep = .vehicles
+            fleetStep = fleetStepBehindConsent(.vehicles)
         case .awaitingActivation:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.awaitingActivation",
-                fallback: "You are signed in and your car is found. Hub polls nothing until you accept the terms below.")
-            fleetStep = .consent
+                fallback: "You are signed in and your car is found. Hub polls nothing until you start collecting.")
+            fleetStep = fleetStepBehindConsent(.start)
         case .collecting:
             fleetNotice = HubL10n.text("hub.fleetSetup.state.collecting",
                 fallback: "Hub is collecting through the Fleet API. Sign in again only to change the Tesla account.")
-            fleetStep = saved == nil ? .details : .signIn
+            fleetStep = saved == nil ? .details : fleetStepBehindConsent(.signIn)
         case .idle:
             fleetNotice = nil
-            if let saved { fleetStep = saved.registered ? .signIn : .publicKey }
+            if let saved { fleetStep = saved.registered ? fleetStepBehindConsent(.signIn) : .publicKey }
         case let .unknown(state, serviceText):
             // Shown as it is: no next step is chosen from a state this app does not know.
             fleetNotice = nil
