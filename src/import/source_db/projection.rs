@@ -5,8 +5,9 @@
 //! A PostgreSQL reader will decode only the fixed schema-contract projections
 //! into these source values. This module then makes the lossy boundaries
 //! explicit: only completed drives are included, while standalone positions
-//! remain valid history and an in-progress drive remains for the next
-//! snapshot rather than being fabricated as finished history.
+//! remain valid history. Samples of omitted open drives are retained unattached
+//! unless handed to the lifecycle; an in-progress drive is never fabricated
+//! as finished history.
 
 use std::collections::{HashMap, HashSet};
 
@@ -956,6 +957,12 @@ pub fn project_update(
 pub struct ProjectionReport {
     pub completed_drives: u64,
     pub skipped_open_drives: u64,
+    /// Rows with no end or distance and exactly one sample, including terminal rows.
+    pub broken_drives: u64,
+    /// Retained samples whose parent did not project. Included in projected_positions.
+    pub detached_positions: u64,
+    /// Source samples owned exclusively by the handed-over lifecycle drive.
+    pub held_open_session_positions: u64,
     pub skipped_unattached_positions: u64,
     pub projected_positions: u64,
     pub projected_charges: u64,
@@ -963,6 +970,94 @@ pub struct ProjectionReport {
     pub projected_states: u64,
     pub projected_updates: u64,
     pub skipped_incomplete_updates: u64,
+}
+
+/// Bounded by source drive rows, never by the number of history positions.
+/// Count the DEC-191 shape independently of ordering and lifecycle handover.
+pub(crate) struct BrokenDriveTracker {
+    car_id: i64,
+    candidate_position_counts: HashMap<i64, u8>,
+}
+
+impl BrokenDriveTracker {
+    pub(crate) fn new(drives: &[SourceDbDrive], car_id: i64) -> Self {
+        let candidate_position_counts = drives
+            .iter()
+            .filter(|d| {
+                d.car_id == car_id
+                    && d.end_date_ms.is_none()
+                    && d.distance_km.is_none()
+
+            })
+            .map(|d| (d.id, 0))
+            .collect();
+        Self {
+            car_id,
+            candidate_position_counts,
+        }
+    }
+
+    pub(crate) fn observe(&mut self, position: &SourceDbPosition) {
+        if position.car_id != self.car_id {
+            return;
+        }
+        if let Some(count) = position
+            .drive_id
+            .and_then(|id| self.candidate_position_counts.get_mut(&id))
+        {
+            *count = count.saturating_add(1).min(2);
+        }
+    }
+
+    pub(crate) fn count(&self) -> u64 {
+        self.candidate_position_counts
+            .values()
+            .filter(|&&count| count == 1)
+            .count() as u64
+    }
+}
+
+/// Match the reader's unique-open-parent policy without guessing between stale rows.
+pub(crate) fn handed_over_drive_id(drives: &[SourceDbDrive], car_id: i64) -> Option<i64> {
+    let mut open = drives
+        .iter()
+        .filter(|d| d.car_id == car_id && d.end_date_ms.is_none());
+    let first = open.next()?;
+    open.next().is_none().then_some(first.id)
+}
+
+/// Derived from source parents before projection, independently of the output maps.
+pub(crate) struct PositionDetachmentPolicy {
+    held_drive_id: Option<i64>,
+    skipped_drive_ids: HashSet<i64>,
+}
+
+impl PositionDetachmentPolicy {
+    pub(crate) fn new(drives: &[SourceDbDrive], car_id: i64, held_drive_id: Option<i64>) -> Self {
+        Self {
+            held_drive_id,
+            skipped_drive_ids: drives.iter()
+                .filter(|d| d.car_id == car_id && d.end_date_ms.is_none() && Some(d.id) != held_drive_id)
+                .map(|d| d.id).collect(),
+        }
+    }
+
+    pub(crate) fn holds(&self, position: &SourceDbPosition) -> bool {
+        position.drive_id.is_some() && position.drive_id == self.held_drive_id
+    }
+
+    pub(crate) fn expects_detachment(&self, position: &SourceDbPosition) -> bool {
+        position.drive_id.is_some_and(|id| self.skipped_drive_ids.contains(&id))
+    }
+
+    pub(crate) fn validate(&self, source: &SourceDbPosition, projected: &ProjectionPosition)
+        -> Result<(), SourceDbProjectionError> {
+        let detached = source.drive_id.is_some() && projected.drive_id.is_none();
+        if detached != self.expects_detachment(source) || self.holds(source) {
+            return Err(SourceDbProjectionError::PositionDetachmentAccounting);
+        }
+        Ok(())
+    }
 }
 
 impl ProjectionReport {
@@ -1156,20 +1251,17 @@ pub fn project_drive(
 }
 
 /// Map a position from the selected car. Standalone positions are valid
-/// history and retain a NULL drive_id. A non-NULL drive_id must belong to a
-/// completed drive selected by the caller.
+/// history and retain a NULL drive_id. If its parent is omitted, retain the
+/// sample as unattached history without inventing a completed journey.
 pub fn project_position(
     position: &SourceDbPosition,
     selected_car_id: i64,
     drive_is_included: bool,
 ) -> Result<Option<ProjectionPosition>, SourceDbProjectionError> {
     require_selected_car("position", position.id, position.car_id, selected_car_id)?;
-    if position.drive_id.is_some() && !drive_is_included {
-        return Ok(None);
-    }
     Ok(Some(ProjectionPosition {
         id: position.id,
-        drive_id: position.drive_id,
+        drive_id: position.drive_id.filter(|_| drive_is_included),
         car_id: selected_car_id,
         date_ms: position.date_ms,
         latitude: position.latitude,
@@ -1370,6 +1462,10 @@ pub fn project_vehicle(
     }
     let projected_car = project_car(car, latest_firmware(&updates))?;
 
+    let mut broken_drives = BrokenDriveTracker::new(&source.drives, selected_car_id);
+    let held_drive_id = handed_over_drive_id(&source.drives, selected_car_id);
+    let detachment = PositionDetachmentPolicy::new(&source.drives, selected_car_id, held_drive_id);
+    let mut expected_detached = 0_u64;
     let mut included_drive_ids = HashSet::new();
     let mut drives = Vec::new();
     for drive in source
@@ -1431,17 +1527,29 @@ pub fn project_vehicle(
         .iter()
         .filter(|position| position.car_id == selected_car_id)
     {
+        broken_drives.observe(position);
+        expected_detached += u64::from(detachment.expects_detachment(position));
+        if detachment.holds(position) {
+            report.held_open_session_positions += 1;
+            continue;
+        }
         let included = position
             .drive_id
             .is_none_or(|drive_id| included_drive_ids.contains(&drive_id));
         let projected = project_position(position, selected_car_id, included)?;
-        let Some(projected) = projected else {
-            report.skipped_unattached_positions += 1;
-            continue;
-        };
+        let projected = projected.expect("history position projects");
+        detachment.validate(position, &projected)?;
+        if position.drive_id.is_some() && projected.drive_id.is_none() {
+            report.detached_positions += 1;
+        }
         positions.push(projected);
         report.projected_positions += 1;
     }
+
+    if report.detached_positions != expected_detached {
+        return Err(SourceDbProjectionError::PositionDetachmentAccounting);
+    }
+    report.broken_drives = broken_drives.count();
 
     let mut samples_by_process = HashMap::<i64, Vec<&SourceDbCharge>>::new();
     for sample in &source.charges {
@@ -1726,6 +1834,8 @@ pub enum SourceDbProjectionError {
         expected_car_id: i64,
         found_car_id: i64,
     },
+    #[error("position detachment does not match skipped source drives")]
+    PositionDetachmentAccounting,
     #[error("{field} is negative or non-finite")]
     InvalidValue { field: &'static str },
 }
@@ -1760,9 +1870,11 @@ mod n1_src_import_source_db_projection_rs_display_tests {
                 SourceDbProjectionError::RelatedPositionWrongCar { .. } => (),
                 SourceDbProjectionError::SelectedCarMismatch { .. } => (),
                 SourceDbProjectionError::InvalidValue { .. } => (),
+                SourceDbProjectionError::PositionDetachmentAccounting => (),
             }
             assert_name_free(&error);
         }
+        check_source_db_projection_error(SourceDbProjectionError::PositionDetachmentAccounting);
         check_source_db_projection_error(SourceDbProjectionError::SelectedCarMissing(example()));
         check_source_db_projection_error(SourceDbProjectionError::InvalidId {
             entity: example(),

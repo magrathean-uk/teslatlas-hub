@@ -248,13 +248,12 @@ const SUBSCRIBE: &str = "subscribe";
 
 #[tokio::test(start_paused = true)]
 async fn sc40_a_hello_503_is_an_outage_and_two_hello_401s_make_auth_rejected() {
-    // Hello code 503 is Busy with no retry-after: an outage event, and the Transport
-    // delay of 1 s at u = 0.
+    // Hello code 503 is Busy: an outage event and its own slow retry delay.
     let peer = plan_peer(vec![Plan::ends(End::Hello(503)), Plan::hold()]).await;
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
     peer.log.wait_for("accept", 2).await;
-    assert_eq!(delays(&peer), vec![secs(1)]);
+    assert_eq!(delays(&peer), vec![secs(150)]);
     run.shut_down().await.expect("shutdown");
 
     // Hello code 401 in two consecutive sessions: no event after the first, and the
@@ -278,7 +277,7 @@ async fn sc40_a_hello_503_is_an_outage_and_two_hello_401s_make_auth_rejected() {
 // ----------------------------------------------------------------------------- SC50
 
 #[tokio::test(start_paused = true)]
-async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
+async fn sc50_the_vehicle_path_keeps_the_shared_fast_schedule_through_short_sessions() {
     let vehicle = || Plan::ends(End::Error("vehicle_test_a"));
     let peer = plan_peer(vec![
         vehicle(),
@@ -286,7 +285,7 @@ async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
         vehicle(),
         vehicle(),
         vehicle(),
-        // Data arrives, then a vehicle error: the first of a new series.
+        // Data arrives, then a vehicle error before stability: the series continues.
         Plan::data(vec![(0, u(T0, V1))], 0, End::Error("vehicle_test_a")),
         Plan::hold(),
     ])
@@ -307,18 +306,11 @@ async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
         ]
     );
     peer.log.wait_for("accept", 7).await;
-    // Nominal 15, 30, 60, 120, 120 s at u = 0 (half): 7.5, 15, 30, 60, 60 s; after data
-    // the counter is 0, so the next vehicle end waits 7.5 s again.
+    // All four outage classes share 1, 2, 4, 8, 15 s at minimum jitter.
+    // B2: the short data session leaves the outage on its next capped wait.
     assert_eq!(
         delays(&peer),
-        vec![
-            millis(7_500),
-            secs(15),
-            secs(30),
-            secs(60),
-            secs(60),
-            millis(7_500)
-        ]
+        vec![secs(1), secs(2), secs(4), secs(8), secs(15), secs(15)]
     );
     // Every vehicle session sent the unsubscribe (R9): six sessions ended by the Hub.
     let wire = wire_kinds(&peer);
@@ -339,13 +331,12 @@ async fn sc50_the_vehicle_path_waits_15_30_60_120_and_data_starts_it_over() {
 // ----------------------------------------------------------------------------- SC51
 
 #[tokio::test(start_paused = true)]
-async fn sc51_the_refusal_path_reports_the_second_refusal_and_data_clears_it() {
+async fn sc51_the_refusal_path_reports_the_second_refusal_and_short_data_keeps_it() {
     let peer = plan_peer(vec![
         Plan::ends(End::Hello(401)),
         Plan::ends(End::Hello(401)),
         Plan::ends(End::Hello(401)),
-        // Data, then a refusal: the series starts over, so no event, and the
-        // subscription that existed is released.
+        // B2 / R37: data without stability leaves this retry schedule running.
         Plan::data(vec![(0, u(T0, V1))], 0, End::Hello(401)),
         Plan::hold(),
     ])
@@ -355,13 +346,16 @@ async fn sc51_the_refusal_path_reports_the_second_refusal_and_data_clears_it() {
     expect_silence(&mut run, secs(2)).await;
     assert_eq!(run.event().await, StreamEvent::AuthRejected);
     assert_eq!(run.event().await, StreamEvent::AuthRejected);
-    // Session 4: Healthy and Telemetry, then no event for the refusal.
-    assert_eq!(kinds(&mut run, 2).await, ["Healthy", "Telemetry"]);
+    // Session 4: the short session does not clear the refusal streak.
+    assert_eq!(
+        kinds(&mut run, 3).await,
+        ["Healthy", "Telemetry", "AuthRejected"]
+    );
     expect_silence(&mut run, secs(2)).await;
     peer.log.wait_for("subscribe-received", 5).await;
     assert_eq!(
         delays(&peer),
-        vec![millis(2_500), secs(150), secs(150), millis(2_500)]
+        vec![millis(2_500), secs(150), secs(150), secs(150)]
     );
     // One refresh call per attempt (R40), each followed by its own subscribe.
     assert_eq!(peer.log.count("refresh"), 5);
@@ -413,8 +407,9 @@ async fn sc53_a_session_stable_for_60_seconds_resets_the_transport_back_off() {
     .await;
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     peer.log.wait_for("accept", 6).await;
-    // Three quick failures: 1, 2, 4 s. Counter 3, then a 30 s session ends: counter 4,
-    // nominal 16 s, so 8 s. A 61 s session resets at 60 s, so its end is counter 1: 1 s.
+    // B2 / R37: three failures wait 1, 2, 4 s; 30 s of data does not reset
+    // the outage (8 s). The stable timer resets it in the 61 s session,
+    // whose end also qualifies for ruling 4's quiet reconnect (1 s).
     assert_eq!(
         delays(&peer),
         vec![secs(1), secs(2), secs(4), secs(8), secs(1)]
@@ -424,7 +419,7 @@ async fn sc53_a_session_stable_for_60_seconds_resets_the_transport_back_off() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn sc54_a_vehicle_end_restarts_the_transport_back_off() {
+async fn sc54_a_vehicle_end_keeps_the_shared_outage_back_off() {
     let close = || Plan::ends(End::Close(1000));
     let peer = plan_peer(vec![
         close(),
@@ -437,11 +432,10 @@ async fn sc54_a_vehicle_end_restarts_the_transport_back_off() {
     .await;
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     peer.log.wait_for("accept", 6).await;
-    // 1, 2, 4 s for the socket failures; a vehicle end waits 7.5 s and zeroes the
-    // transport counter, so the next socket failure waits 1 s again.
+    // Changing failure class without data does not restart the outage schedule.
     assert_eq!(
         delays(&peer),
-        vec![secs(1), secs(2), secs(4), millis(7_500), secs(1)]
+        vec![secs(1), secs(2), secs(4), secs(8), secs(15)]
     );
     assert_min_spacing(&peer);
     run.shut_down().await.expect("shutdown");
@@ -465,18 +459,18 @@ async fn sc55_attempts_are_never_less_than_a_second_apart_whatever_the_classes()
     .await;
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     peer.log.wait_for("accept", 8).await;
-    // Transport 1 s; refusal 2.5 s; vehicle 7.5 s; 404 is Transport after a vehicle
-    // end (counter 1) 1 s; busy hello 2 s; Close 1013 (busy) 4 s; Close 8 s.
+    // Busy waits remain slow. Time spent waiting for Busy also counts towards
+    // an existing outage, so the last Transport failure is in the slow phase.
     assert_eq!(
         delays(&peer),
         vec![
             secs(1),
             millis(2_500),
-            millis(7_500),
-            secs(1),
             secs(2),
             secs(4),
-            secs(8)
+            secs(150),
+            secs(150),
+            secs(150)
         ]
     );
     assert_min_spacing(&peer);
@@ -527,7 +521,8 @@ async fn sc56_a_token_expiring_mid_stream_changes_nothing_until_the_next_attempt
     for step in 1..=24_i64 {
         assert_eq!(telemetry_time(&run.event().await), T0 + step * 5_000);
     }
-    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+    // Ruling 4: this stable end is quiet; inspect the first session before retry.
+    peer.log.wait_for("end:0", 1).await;
     assert_eq!(peer.log.count("subscribe-received"), 1);
     assert_eq!(
         issuer.requests.load(Ordering::SeqCst),
@@ -773,6 +768,7 @@ impl LogCapture {
         let writer = Sink(Arc::clone(&sink));
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
+            .without_time()
             .with_ansi(false)
             .with_writer(move || writer.clone())
             .finish();
@@ -1248,14 +1244,16 @@ async fn sc87_stand_in_failing_refreshes_do_not_change_the_attempt_schedule_or_r
     // Stream side of SC87. The issuer answers 503 to every token request and the peer
     // closes every session at once. The unit calls `refresh_if_due` once per attempt
     // (R40), a failed refresh does not stop the stream (R6 step 2), the attempts follow
-    // R34 (1, 2, 4, ... 128 s, then 150 s at u = 0), and nothing reports a rejection.
+    // M04-T12 (1, 2, 4, 8 s, then 15 s at u = 0), and nothing reports a rejection.
     // The spacing of the token requests at the issuer (at least 60 s, C5 R16, R19, R31)
     // is C5's and is asserted by the ignored test below.
     let issuer = Issuer::spawn_with_status(Duration::ZERO, "tok-2", "ref-2", 503).await;
     let creds = Creds::due(issuer.url.clone(), "tok-1").held_by(&issuer);
     let peer = plan_peer(vec![Plan::ends(End::Close(1000)); 60]).await;
     let started = Instant::now();
-    let mut run = Rig::for_peer(&peer, creds).start();
+    let mut rig = Rig::for_peer(&peer, creds);
+    rig.capacity = 256;
+    let mut run = rig.start();
     // The first attempt's refresh is a real HTTP exchange with the loopback issuer; let
     // it finish before the paused clock is moved (the later attempts' refreshes are
     // deferred by the manager's own gate and do no I/O).
@@ -1263,12 +1261,17 @@ async fn sc87_stand_in_failing_refreshes_do_not_change_the_attempt_schedule_or_r
     sleep(secs(30 * 60)).await;
     assert!(Instant::now() - started >= secs(30 * 60));
     let delays = delays(&peer);
-    // Counters 1 to 8 give 1, 2, 4, ... 128 s; from counter 9 the nominal 300 s gives
-    // 150 s.
-    let schedule = [1, 2, 4, 8, 16, 32, 64, 128].map(secs);
+    // M04-T12: 1, 2, 4, 8 s, then the 30 s nominal cap gives 15 s.
+    let schedule = [1, 2, 4, 8].map(secs);
     assert!(delays.len() > schedule.len() + 3, "{delays:?}");
     assert_eq!(delays[..schedule.len()], schedule);
-    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(150)));
+    assert!(delays[schedule.len()..].contains(&secs(150)), "{delays:?}");
+    assert!(
+        delays[schedule.len()..]
+            .iter()
+            .all(|d| *d <= secs(15) || *d == secs(150)),
+        "{delays:?}"
+    );
     assert_eq!(
         peer.log.count("refresh"),
         peer.log.count("accept"),
@@ -1302,15 +1305,23 @@ async fn sc87_refresh_failure_pacing_with_the_real_credential_unit() {
     let manager = Arc::clone(&creds.manager);
     let peer = plan_peer(vec![Plan::ends(End::Close(1000)); 80]).await;
     let started = Instant::now();
-    let mut run = Rig::for_peer(&peer, creds).start();
+    let mut rig = Rig::for_peer(&peer, creds);
+    rig.capacity = 256;
+    let mut run = rig.start();
     peer.log.wait_for("accept", 1).await;
     sleep(secs(30 * 60)).await;
     assert!(Instant::now() - started >= secs(30 * 60));
     let delays = delays(&peer);
-    let schedule = [1, 2, 4, 8, 16, 32, 64, 128].map(secs);
+    let schedule = [1, 2, 4, 8].map(secs);
     assert!(delays.len() > schedule.len() + 3, "{delays:?}");
     assert_eq!(delays[..schedule.len()], schedule);
-    assert!(delays[schedule.len()..].iter().all(|d| *d == secs(150)));
+    assert!(delays[schedule.len()..].contains(&secs(150)), "{delays:?}");
+    assert!(
+        delays[schedule.len()..]
+            .iter()
+            .all(|d| *d <= secs(15) || *d == secs(150)),
+        "{delays:?}"
+    );
     // The token requests: the first at once, then spaced by the unit's schedule.
     let requests = manager.lock().await.injected_request_times();
     assert!(requests.len() >= 5, "{requests:?}");
@@ -1450,17 +1461,21 @@ fn sc88_a_frame_delivered_again_after_a_restart_creates_no_stored_observation() 
 
 #[tokio::test]
 async fn sc89_ten_sequential_runs_hold_one_socket_at_a_time_with_their_own_correlation_ids() {
-
-    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(crate::collection::loopback_fixture::AdvanceMode::Manual)
-        .await
-        .expect("fake Tesla");
+    let fake = crate::collection::loopback_fixture::FakeTeslaSource::spawn_canonical(
+        crate::collection::loopback_fixture::AdvanceMode::Manual,
+    )
+    .await
+    .expect("fake Tesla");
     fake.set_stream_script(crate::collection::loopback_fixture::StreamScript::Normal);
     let directory = crate::private_tempdir().expect("temporary directory");
     let store = crate::db::HubStore::initialize(directory.path()).expect("store");
     let subscribes = || {
         fake.audited_stream_events()
             .iter()
-            .filter(|event| event.event == crate::collection::loopback_fixture::StreamAuditEvent::Subscribe && event.accepted)
+            .filter(|event| {
+                event.event == crate::collection::loopback_fixture::StreamAuditEvent::Subscribe
+                    && event.accepted
+            })
             .count()
     };
     for run_number in 1..=10_usize {
@@ -1496,12 +1511,10 @@ async fn sc89_ten_sequential_runs_hold_one_socket_at_a_time_with_their_own_corre
 // ------------------------------------------------------------------ R37, R54 extras
 
 #[tokio::test(start_paused = true)]
-async fn r37_a_session_the_silence_rule_ends_at_exactly_60_seconds_keeps_its_back_off() {
-    // Session 1 ends at once (counter 1). Session 2 delivers one moving frame and then
-    // only answers pings, so data silence ends it 60 s after that frame, at the same
-    // instant its stable timer is due. The end wins the tie: that minute did not work,
-    // so the counter goes on to 2 and the next attempt waits 2 s (nominal 4 s at u = 0).
-    // A stable reset that came first would make it counter 1, and 1 s.
+async fn r37_a_session_ending_at_exactly_60_seconds_keeps_the_outage_back_off() {
+    // B2 / R37: silence ending the session wins a tie with the stable timer.
+    // Ruling 4's quiet end also requires strictly more than 60 s, so the
+    // unhealthy event remains and the outage advances to its second wait.
     let peer = plan_peer(vec![
         Plan::ends(End::Close(1000)),
         Plan::data(vec![(0, u(T0, V1))], 0, End::Hold),
@@ -1528,11 +1541,10 @@ async fn r37_a_session_the_silence_rule_ends_at_exactly_60_seconds_keeps_its_bac
 
 #[tokio::test(start_paused = true)]
 async fn r37_a_duplicate_first_frame_also_starts_the_stable_timer() {
-    // Session 1 delivers a frame and the server closes (counter 1, wait 1 s). Session 2
-    // opens with the same frame again, a duplicate that counts as its first accepted
-    // frame (R26, R37), then a new frame at 30 s, and the server closes at 61 s: stable
-    // at 60 s, so the end is counter 1 again and the wait is 1 s (counter 2 would give
-    // 2 s).
+    // Session 1 delivers a frame and closes (wait 1 s). Session 2 starts with a
+    // duplicate, then a new frame at 30 s, and closes at 61 s. Rulings 2 and 4:
+    // the duplicate starts the stable timer without resetting the outage; the stable
+    // end reconnects quietly after 1 s without another unhealthy event.
     let peer = plan_peer(vec![
         Plan::data(vec![(0, u(T0, V1))], 0, End::Close(1000)),
         Plan::data(
@@ -1546,19 +1558,18 @@ async fn r37_a_duplicate_first_frame_also_starts_the_stable_timer() {
     let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
     peer.log.wait_for("accept", 3).await;
     assert_eq!(delays(&peer), vec![secs(1), secs(1)]);
-    // The duplicate gave Healthy but no Telemetry (session 2): Healthy, Telemetry,
-    // outage, Healthy, Telemetry (the new frame), outage.
+    // The duplicate gives Healthy but no Telemetry; the stable end stays quiet.
     assert_eq!(
-        kinds(&mut run, 6).await,
+        kinds(&mut run, 5).await,
         [
             "Healthy",
             "Telemetry",
             "TransportUnavailable",
             "Healthy",
-            "Telemetry",
-            "TransportUnavailable"
+            "Telemetry"
         ]
     );
+    expect_silence(&mut run, secs(1)).await;
     run.shut_down().await.expect("shutdown");
 }
 
@@ -1616,4 +1627,715 @@ async fn r54_the_rows_of_a_run_that_was_cut_off_stay_started_and_are_never_updat
     let summary = store.stream_audit_summary_since(0).expect("summary");
     assert_eq!(summary.unresolved_sessions, 1);
     assert_eq!(summary.unresolved_attempts, 1);
+}
+
+// M04-T12: normal server disconnects must not accumulate minutes of retry delay.
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_normal_disconnects_recover_within_thirty_seconds() {
+    for jitter in [1.0, 0.0] {
+        for code in [1000, 1001] {
+            let mut plans = vec![Plan::ends(End::Close(code)); 10];
+            plans.push(Plan::data(vec![(0, u(T0, V1))], 0, End::Hold));
+            let peer = plan_peer(plans).await;
+            let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+            rig.jitter = vec![jitter; 32];
+            let mut run = rig.start();
+            for _ in 0..10 {
+                assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+            }
+            assert_eq!(run.event().await, StreamEvent::Healthy);
+            let longest = delays(&peer).into_iter().max().expect("retries");
+            assert!(longest <= secs(30), "normal disconnect waited {longest:?}");
+            assert_min_spacing(&peer);
+            run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+/// Replay messages at the existing Tesla stub boundary, with a fresh connection
+/// delivering valid data after the first end. No real Tesla endpoint is used.
+async fn m04_t12_reason_case(
+    messages: Vec<tokio_tungstenite::tungstenite::Message>,
+    expected: StreamEvent,
+    reason: &str,
+) {
+    use futures_util::SinkExt;
+    let capture = LogCapture::start();
+    let peer = Peer::spawn(move |conn| {
+        let messages = messages.clone();
+        async move {
+            let index = conn.index;
+            let mut ws = conn.ws().await;
+            ws.subscribe().await;
+            if index == 0 {
+                if messages.is_empty() {
+                    return;
+                } // abrupt transport loss
+                for message in messages {
+                    if ws.inner.send(message).await.is_err() {
+                        break;
+                    }
+                }
+            } else {
+                ws.send(&u(T0, V1)).await;
+            }
+            ws.drain().await;
+        }
+    })
+    .await;
+    let (rig, _dir) = Rig::for_peer(&peer, Creds::offline("private-test-token")).with_store();
+    let store = rig.store.clone().expect("store");
+    let mut run = rig.start();
+    assert_eq!(run.event().await, expected, "{reason}");
+    assert_eq!(run.event().await, StreamEvent::Healthy, "{reason}");
+    run.shut_down().await.expect("shutdown");
+    let subscribe = request_outcomes(&store)
+        .into_iter()
+        .find(|(operation, _)| operation == "stream_subscribe")
+        .expect("subscribe");
+    assert_eq!(
+        subscribe.1 == "protocol_error",
+        expected == StreamEvent::ProtocolViolation,
+        "{reason}"
+    );
+    let text = capture.text();
+    assert!(
+        text.lines()
+            .any(|line| line.contains("stream attempt ended")
+                && line.contains(&format!("reason_class=\"{reason}\""))),
+        "{text}"
+    );
+    for private in ["private-test-token", "private-payload", TAG] {
+        assert!(
+            !text.contains(private),
+            "private value in diagnostics: {text}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_protocol_conditions_have_fixed_private_reasons() {
+    use tokio_tungstenite::tungstenite::Message;
+    let malformed = |value: serde_json::Value| Message::text(value.to_string());
+    let cases = vec![
+        (vec![Message::binary(vec![0xff]); 3], "invalid_utf8"),
+        (vec![Message::text("{private-payload"); 3], "invalid_json"),
+        (vec![Message::text("[]"); 3], "invalid_envelope"),
+        (vec![Message::text("{}"); 3], "invalid_envelope"),
+        (
+            vec![Message::text(r#"{"msg_type":7}"#); 3],
+            "invalid_envelope",
+        ),
+        (
+            vec![Message::text(r#"{"msg_type":"data:update","msg_type":"data:update"}"#); 3],
+            "invalid_envelope",
+        ),
+        (
+            vec![malformed(json!({"msg_type":"data:update", "tag":TAG})); 3],
+            "update_envelope",
+        ),
+        (
+            vec![
+                malformed(json!({"msg_type":"data:update", "tag":7, "value":"private-payload"}));
+                3
+            ],
+            "update_envelope",
+        ),
+        (
+            vec![malformed(json!({"msg_type":"data:update", "tag":TAG, "value":7})); 3],
+            "update_envelope",
+        ),
+        (vec![Message::text(u(T0, "1,2")); 3], "column_count"),
+        (
+            vec![Message::text(u("invalid", V1)); 3],
+            "invalid_timestamp",
+        ),
+        (
+            vec![Message::text(u(W + 61_000, V1)); 3],
+            "implausible_timestamp",
+        ),
+        (vec![Message::text(u(1, V1)); 3], "implausible_timestamp"),
+        (
+            vec![
+                malformed(
+                    json!({"msg_type":"data:update", "tag":"9999", "value":format!("{T0},{V1}")})
+                );
+                3
+            ],
+            "foreign_vehicle",
+        ),
+        (
+            vec![Message::text("x".repeat(super::K_MAX_MESSAGE + 1))],
+            "message_too_large",
+        ),
+        (
+            vec![Message::binary(vec![0; super::K_MAX_MESSAGE + 1])],
+            "message_too_large",
+        ),
+    ];
+    for (messages, reason) in cases {
+        m04_t12_reason_case(messages, StreamEvent::ProtocolViolation, reason).await;
+    }
+    // The decisive third rejection can differ from the first two. It is named
+    // exactly, and the rejected-streak rule still applies across conditions.
+    m04_t12_reason_case(
+        vec![
+            Message::text("[]"),
+            Message::text("{}"),
+            Message::text(u("bad", V1)),
+        ],
+        StreamEvent::ProtocolViolation,
+        "invalid_timestamp",
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_service_ends_are_not_protocol_violations() {
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        protocol::{CloseFrame, frame::coding::CloseCode},
+    };
+    m04_t12_reason_case(
+        Vec::new(),
+        StreamEvent::TransportUnavailable,
+        "connection_reset",
+    )
+    .await;
+    for code in [1000, 1001, 1002, 1008, 1011, 1013] {
+        m04_t12_reason_case(
+            vec![Message::Close(Some(CloseFrame {
+                code: CloseCode::from(code),
+                reason: "private-payload".into(),
+            }))],
+            StreamEvent::TransportUnavailable,
+            if code == 1013 {
+                "server_busy_close"
+            } else {
+                "server_close"
+            },
+        )
+        .await;
+    }
+    m04_t12_reason_case(
+        vec![Message::Close(None)],
+        StreamEvent::TransportUnavailable,
+        "server_close",
+    )
+    .await;
+    for (token, expected, reason) in [
+        (
+            "vehicle_disconnected",
+            StreamEvent::VehicleOffline,
+            "vehicle_disconnected",
+        ),
+        (
+            "vehicle_error",
+            StreamEvent::VehicleOffline,
+            "vehicle_error",
+        ),
+        (
+            "vehicle_other",
+            StreamEvent::VehicleOffline,
+            "unrecognised_error",
+        ),
+        (
+            "client_error",
+            StreamEvent::TransportUnavailable,
+            "client_error",
+        ),
+        (
+            "private-payload",
+            StreamEvent::TransportUnavailable,
+            "unrecognised_error",
+        ),
+    ] {
+        m04_t12_reason_case(
+            vec![Message::text(error_frame(token, "private-payload"))],
+            expected,
+            reason,
+        )
+        .await;
+    }
+    for code in [400, 503] {
+        m04_t12_reason_case(
+            vec![Message::text(hello_frame(Some(code), None))],
+            StreamEvent::TransportUnavailable,
+            if code == 503 {
+                "hello_rejected"
+            } else {
+                "unrecognised_error"
+            },
+        )
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_bad_websocket_frames_are_real_violations() {
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        protocol::frame::{
+            Frame,
+            coding::{Data, OpCode},
+        },
+    };
+    // An unsolicited continuation is an RFC 6455 framing error, not a service
+    // Close or a network disconnection. The stub writes a raw WebSocket frame.
+    m04_t12_reason_case(
+        vec![Message::Frame(Frame::message(
+            vec![1, 2, 3],
+            OpCode::Data(Data::Continue),
+            true,
+        ))],
+        StreamEvent::ProtocolViolation,
+        "websocket_protocol",
+    )
+    .await;
+    // A text frame with invalid UTF-8 is rejected by tungstenite before JSON.
+    m04_t12_reason_case(
+        vec![Message::Frame(Frame::message(
+            vec![0xff],
+            OpCode::Data(Data::Text),
+            true,
+        ))],
+        StreamEvent::ProtocolViolation,
+        "invalid_utf8",
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_control_idle_and_shutdown_are_not_protocol_failures() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![Plan::data(
+        vec![
+            (0, hello_frame(Some(0), Some(30_000))),
+            (0, hello_frame(Some(200), None)),
+            (
+                0,
+                json!({"msg_type":"control:other","value":"private-payload"}).to_string(),
+            ),
+            (
+                0,
+                json!({"msg_type":"data:error","tag":"9999","value":"private-payload"}).to_string(),
+            ),
+            (0, u(T0, &",".repeat(10))),
+        ],
+        0,
+        End::Hold,
+    )])
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    assert!(matches!(run.event().await, StreamEvent::Telemetry { .. }));
+    expect_silence(&mut run, secs(10)).await;
+    run.shut_down().await.expect("orderly shutdown");
+    assert_eq!(peer.log.count("accept"), 1);
+    assert!(!capture.text().contains("stream attempt ended"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_vehicle_and_unknown_errors_have_bounded_retries() {
+    for jitter in [0.0, 1.0] {
+        for error in ["vehicle_disconnected", "vehicle_error", "client_error"] {
+            let mut plans = vec![Plan::ends(End::Error(error)); 10];
+            plans.push(Plan::data(vec![(0, u(T0, V1))], 0, End::Hold));
+            let peer = plan_peer(plans).await;
+            let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+            rig.jitter = vec![jitter; 32];
+            let mut run = rig.start();
+            for _ in 0..10 {
+                let expected = if error.starts_with("vehicle_") {
+                    StreamEvent::VehicleOffline
+                } else {
+                    StreamEvent::TransportUnavailable
+                };
+                assert_eq!(run.event().await, expected);
+            }
+            assert_eq!(run.event().await, StreamEvent::Healthy);
+            for delay in delays(&peer) {
+                assert!(
+                    delay >= secs(1) && delay <= secs(30),
+                    "{error} waited {delay:?}"
+                );
+            }
+            assert_min_spacing(&peer);
+            run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_reason_labels_do_not_reflect_a_short_credential() {
+    for token in ["client_error", "vehicle_error", "vehicle_disconnected"] {
+        let capture = LogCapture::start();
+        let peer = plan_peer(vec![Plan::ends(End::Error(token)), Plan::hold()]).await;
+        let mut run = Rig::for_peer(&peer, Creds::offline(token)).start();
+        let expected = if token.starts_with("vehicle_") {
+            StreamEvent::VehicleOffline
+        } else {
+            StreamEvent::TransportUnavailable
+        };
+        assert_eq!(run.event().await, expected);
+        run.shut_down().await.expect("shutdown");
+        let text = capture.text();
+        assert!(
+            text.contains("reason_class=\"reflected_error_type\""),
+            "{text}"
+        );
+        assert!(!text.contains(token), "credential in diagnostics: {text}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_busy_never_uses_fast_retries() {
+    for end in [End::Close(1013), End::Hello(429), End::Hello(503)] {
+        for jitter in [0.0, 1.0] {
+            let peer = plan_peer(vec![Plan::ends(end.clone()); 3]).await;
+            let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+            rig.jitter = vec![jitter; 10];
+            let mut run = rig.start();
+            for _ in 0..3 {
+                assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+            }
+            for delay in delays(&peer) {
+                assert!((secs(150)..=secs(300)).contains(&delay), "{delay:?}");
+            }
+            run.shut_down().await.expect("shutdown");
+        }
+    }
+}
+
+/// Repeated sessions last three seconds, with or without an accepted sample.
+/// Protocol uses three mixed rejections; other cases exercise the same clock,
+/// including failures that change class between connections.
+async fn m04_t12_replay_outage(seconds: u64, class: usize, jitter: f64, with_data: bool) {
+    let started = Instant::now();
+    let peer = Peer::spawn(move |conn| async move {
+        let index = conn.index;
+        let mut ws = conn.ws().await;
+        ws.subscribe().await;
+        if Instant::now() - started < secs(seconds) {
+            if with_data {
+                // Each short session delivers a distinct accepted sample.
+                ws.send(&u(T0 + index as i64, V1)).await;
+            }
+            let kind = if class == 4 { index % 4 } else { class };
+            if kind == 0 {
+                for frame in ["[]".to_owned(), u(T0, "1,2"), u("bad", V1)] {
+                    idle(&mut ws, secs(1)).await;
+                    ws.send(&frame).await;
+                }
+            } else {
+                idle(&mut ws, secs(3)).await;
+                match kind {
+                    1 => ws.send(&error_frame("vehicle_disconnected", "text")).await,
+                    2 => ws.send(&error_frame("unknown_candidate", "text")).await,
+                    _ => ws.close(1000).await,
+                }
+            }
+            ws.log.mark(format!("end:{index}"));
+        } else {
+            ws.log.mark("recovered");
+            ws.send(&u(T0, V1)).await;
+        }
+        ws.drain().await;
+    })
+    .await;
+    let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+    rig.jitter = vec![jitter; 128];
+    let mut run = rig.start();
+    loop {
+        if run.event().await == StreamEvent::Healthy && peer.log.count("recovered") > 0 {
+            break;
+        }
+    }
+    let first_end = peer
+        .log
+        .entries()
+        .into_iter()
+        .find(|(_, label)| label == "end:0")
+        .expect("first failed attempt")
+        .0;
+    let recovered = peer.log.times("recovered")[0];
+    let end = started + secs(seconds);
+    assert!(recovered >= end);
+    assert!(
+        recovered - end <= secs(if seconds == 60 { 30 } else { 300 }),
+        "class={class} recovery after refusal ends: {:?}",
+        recovered - end
+    );
+    if seconds >= 600 {
+        let attempts = peer.log.times("accept");
+        let fast = attempts
+            .iter()
+            .filter(|at| **at < first_end + secs(300))
+            .count();
+        assert!(
+            (10..=24).contains(&fast),
+            "class={class} fast attempts={fast}"
+        );
+        for window in 1..seconds / 300 {
+            let slow = attempts
+                .iter()
+                .filter(|at| {
+                    **at >= first_end + secs(300 * window)
+                        && **at < first_end + secs(300 * (window + 1))
+                })
+                .count();
+            assert!(
+                (1..=3).contains(&slow),
+                "class={class} window={window} slow attempts={slow}"
+            );
+        }
+        // Once the boundary attempt has failed, all waits use the slow range.
+        let ends: Vec<_> = peer
+            .log
+            .entries()
+            .into_iter()
+            .filter(|(_, label)| label.starts_with("end:"))
+            .collect();
+        for ((at, _), wait) in ends.iter().zip(delays(&peer)) {
+            if *at >= first_end + secs(300) {
+                assert!((secs(150)..=secs(300)).contains(&wait), "{wait:?}");
+            } else {
+                assert!(wait <= secs(30), "{wait:?}");
+            }
+        }
+    }
+    assert!(matches!(run.event().await, StreamEvent::Telemetry { .. }));
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_outage_fast_phase_then_slow_phase_and_recovery() {
+    for class in 0..=4 {
+        for jitter in [0.0, 1.0] {
+            m04_t12_replay_outage(600, class, jitter, false).await;
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_short_data_sessions_keep_outage_bounds_for_twenty_minutes() {
+    for class in 0..=4 {
+        for jitter in [0.0, 1.0] {
+            m04_t12_replay_outage(1200, class, jitter, true).await;
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_sixty_seconds_of_stability_ends_the_outage() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![
+        Plan::ends(End::Close(1000)),
+        Plan::ends(End::Close(1000)),
+        Plan::data(
+            vec![(0, u(T0, V1)), (30, u(T0 + 1, V1))],
+            31,
+            End::Close(1000),
+        ),
+        Plan::ends(End::Close(1000)),
+        Plan::hold(),
+    ])
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
+    assert_eq!(
+        kinds(&mut run, 4).await,
+        [
+            "TransportUnavailable",
+            "TransportUnavailable",
+            "Healthy",
+            "Telemetry"
+        ]
+    );
+    let first = Instant::now();
+    assert!(matches!(run.event().await, StreamEvent::Telemetry { .. }));
+    expect_silence(&mut run, secs(29)).await;
+    assert_eq!(Instant::now() - first, secs(59));
+    assert!(!capture.text().contains("stream session is stable"));
+    expect_silence(&mut run, secs(1)).await;
+    // The timer fires while the session is still open, exactly 60 s after data.
+    tokio::task::yield_now().await;
+    assert!(capture.text().contains("stream session is stable"));
+    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+    peer.log.wait_for("accept", 5).await;
+    // One quiet reconnect, then a failed reconnect starts a fresh outage.
+    assert_eq!(delays(&peer), [secs(1), secs(2), secs(1), secs(1)]);
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_sixty_second_glitch_recovers_within_thirty_seconds() {
+    for class in 0..=4 {
+        for jitter in [0.0, 1.0] {
+            m04_t12_replay_outage(60, class, jitter, false).await;
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_stable_vehicle_end_reconnects_quietly_within_two_seconds() {
+    for jitter in [0.0, 1.0] {
+        let capture = LogCapture::start();
+        let mut frames = vec![(0, u(T0, V1))];
+        frames.extend((0..10).map(|_| (30, u(T0, V1))));
+        let peer = plan_peer(vec![
+            Plan::data(frames, 1, End::Error("vehicle_disconnected")),
+            Plan::data(vec![(0, u(T0 + 1, V1))], 0, End::Hold),
+        ])
+        .await;
+        let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+        rig.jitter = vec![jitter; 8];
+        let mut run = rig.start();
+        assert_eq!(kinds(&mut run, 2).await, ["Healthy", "Telemetry"]);
+        // The next event must be data from the new session. No unhealthy event
+        // reaches C3 to raise an outage, request state or advance fallback.
+        assert_eq!(kinds(&mut run, 2).await, ["Healthy", "Telemetry"]);
+        assert_eq!(delays(&peer).len(), 1);
+        assert!((secs(1)..=secs(2)).contains(&delays(&peer)[0]));
+        let text = capture.text();
+        assert!(
+            text.lines()
+                .any(|line| line.contains("stream attempt ended")
+                    && line.contains("quiet_reconnect=true")),
+            "{text}"
+        );
+        run.shut_down().await.expect("shutdown");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_failed_quiet_reconnect_starts_an_outage() {
+    let peer = plan_peer(vec![
+        Plan::data(
+            vec![(0, u(T0, V1)), (30, u(T0, V1)), (30, u(T0, V1))],
+            1,
+            End::Error("vehicle_disconnected"),
+        ),
+        Plan::ends(End::Error("vehicle_disconnected")),
+        Plan::data(vec![(0, u(T0 + 1, V1))], 0, End::Hold),
+    ])
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
+    assert_eq!(
+        kinds(&mut run, 5).await,
+        [
+            "Healthy",
+            "Telemetry",
+            "VehicleOffline",
+            "Healthy",
+            "Telemetry"
+        ]
+    );
+    assert_eq!(delays(&peer), [secs(1), secs(1)]);
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_unknown_error_tokens_and_mixed_reasons_are_visible_at_info() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![
+        Plan::ends(End::Error("unlisted_candidate")),
+        Plan::ends(End::Raw(json!({"msg_type":"data:error"}).to_string())),
+        Plan::data(
+            vec![(0, "[]".into()), (0, u(T0, "1,2")), (0, u("bad", V1))],
+            0,
+            End::Hold,
+        ),
+        Plan::data(vec![(0, u(T0, V1))], 0, End::Hold),
+    ])
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(
+        kinds(&mut run, 4).await,
+        [
+            "TransportUnavailable",
+            "TransportUnavailable",
+            "ProtocolViolation",
+            "Healthy"
+        ]
+    );
+    let text = capture.text();
+    let info: Vec<_> = text
+        .lines()
+        .filter(|line| line.contains(" INFO "))
+        .collect();
+    let attempts: Vec<_> = info
+        .iter()
+        .filter(|line| {
+            line.contains("stream attempt ended")
+                && line.contains("reason_class=\"unrecognised_error\"")
+        })
+        .collect();
+    assert_eq!(attempts.len(), 2, "{text}");
+    assert!(
+        attempts[0].contains("error_type=\"unlisted_candidate\""),
+        "{text}"
+    );
+    let summary = info
+        .iter()
+        .find(|line| line.contains("stream session summary"))
+        .expect("INFO summary");
+    for reason in ["invalid_envelope", "column_count", "invalid_timestamp"] {
+        assert!(summary.contains(&format!("\"{reason}\": 1")), "{text}");
+    }
+    assert!(!text.contains("private-test-token"));
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_info_error_type_never_contains_the_vehicle_tag() {
+    for token in [
+        TAG.to_owned(),
+        format!("vehicle_{TAG}"),
+        format!("{TAG}_candidate"),
+        format!("unknown_{TAG}_candidate"),
+        "unlisted_candidate".to_owned(),
+    ] {
+        let capture = LogCapture::start();
+        let peer = plan_peer(vec![Plan::ends(End::Raw(error_frame(&token, "text")))]).await;
+        let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+        assert!(matches!(
+            run.event().await,
+            StreamEvent::TransportUnavailable | StreamEvent::VehicleOffline
+        ));
+        let text = capture.text();
+        let ended = text
+            .lines()
+            .find(|line| line.contains(" INFO ") && line.contains("stream attempt ended"))
+            .expect("INFO attempt record");
+        if token.contains(TAG) {
+            assert!(!ended.contains("error_type="), "{ended}");
+            assert!(!ended.contains(&token), "{ended}");
+        } else {
+            assert!(
+                ended.contains("error_type=\"unlisted_candidate\""),
+                "{ended}"
+            );
+        }
+        run.shut_down().await.expect("shutdown");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn collector_m04_t12_unknown_error_does_not_claim_second_listener_detection() {
+    let capture = LogCapture::start();
+    let peer = plan_peer(vec![Plan::ends(End::Error("second_listener"))]).await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("private-test-token")).start();
+    assert_eq!(run.event().await, StreamEvent::TransportUnavailable);
+    let text = capture.text();
+    let ended = text
+        .lines()
+        .find(|line| line.contains(" INFO ") && line.contains("stream attempt ended"))
+        .expect("ended attempt at INFO");
+    assert!(
+        ended.contains("reason_class=\"unrecognised_error\""),
+        "{text}"
+    );
+    assert!(ended.contains("error_type=\"second_listener\""), "{text}");
+    assert!(ended.contains("class=\"unknown\""), "{text}");
+    run.shut_down().await.expect("shutdown");
 }

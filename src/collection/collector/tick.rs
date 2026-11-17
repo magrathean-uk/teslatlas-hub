@@ -299,9 +299,85 @@ struct TickBatch {
     /// When the oldest result of the batch arrived: the commit logs how long it
     /// waited for the tick's one transaction.
     first_result_at: Option<Instant>,
+    /// The snapshots accepted through [`TickBatch::admit_snapshot`], in index order
+    /// (M04-T11). A snapshot pushed otherwise is not measured.
+    snapshot_admissions: Vec<IntakeAdmission>,
+    /// The discoveries accepted through [`TickBatch::admit_discoveries`], likewise.
+    discovery_admissions: Vec<IntakeAdmission>,
+}
+
+/// An observation the batch accepted (M04-T11): its index in the batch, when it
+/// was accepted, and whether the tick transaction inserted it. The entry is made
+/// when the observation is accepted; the transaction only sets its flag.
+#[derive(Debug)]
+struct IntakeAdmission {
+    index: usize,
+    admitted_at: Instant,
+    inserted: AtomicBool,
+}
+
+impl IntakeAdmission {
+    fn new(index: usize, admitted_at: Instant) -> Self {
+        Self {
+            index,
+            admitted_at,
+            inserted: AtomicBool::new(false),
+        }
+    }
+
+    /// The transaction inserted the observation at `index`, when it was accepted.
+    fn mark_inserted(admissions: &[Self], index: usize) {
+        if let Ok(found) = admissions.binary_search_by_key(&index, |admission| admission.index) {
+            admissions[found].inserted.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 impl TickBatch {
+    /// Accept a successful read into the batch at `admitted_at` (the first of the
+    /// two clock reads the intake latency costs per observation).
+    fn admit_snapshot(&mut self, item: SnapshotItem, admitted_at: Instant) {
+        self.snapshot_admissions
+            .push(IntakeAdmission::new(self.snapshots.len(), admitted_at));
+        self.snapshots.push(item);
+    }
+
+    /// Accept the discovery candidates of one response into the batch at
+    /// `admitted_at`.
+    fn admit_discoveries(
+        &mut self,
+        vehicles: impl IntoIterator<Item = Vehicle>,
+        received_at_ms: i64,
+        admitted_at: Instant,
+    ) {
+        for vehicle in vehicles {
+            self.discovery_admissions
+                .push(IntakeAdmission::new(self.discoveries.len(), admitted_at));
+            self.discoveries.push(DiscoveryItem {
+                vehicle,
+                received_at_ms,
+            });
+        }
+    }
+
+    /// Whether the batch holds an accepted observation to measure.
+    fn has_admissions(&self) -> bool {
+        !self.snapshot_admissions.is_empty() || !self.discovery_admissions.is_empty()
+    }
+
+    /// Record, through `guard`, the intake latency to `committed_at` of every
+    /// accepted observation the transaction inserted. Allocates nothing.
+    fn record_intake(&self, guard: &RunWriteGuard, committed_at: Instant) {
+        for admission in self
+            .snapshot_admissions
+            .iter()
+            .chain(&self.discovery_admissions)
+            .filter(|admission| admission.inserted.load(Ordering::Relaxed))
+        {
+            guard.record_intake(committed_at.saturating_duration_since(admission.admitted_at));
+        }
+    }
+
     /// Nothing is waiting for a transaction (C3 R5: a reservation commit made with
     /// an empty batch is a lone one).
     fn is_empty(&self) -> bool {
@@ -367,7 +443,8 @@ struct TickCommit<'a> {
 
 /// C3 R14 for one discovery candidate, inside the tick transaction. The cached
 /// lifecycle facts decide when they are current; otherwise the transaction reads
-/// them once. Returns the vehicle's identity use through `output`.
+/// them once. Returns the vehicle's identity use through `output`, and whether an
+/// observation was inserted.
 fn store_discovery_in_transaction(
     store: &HubStore,
     transaction: &rusqlite::Transaction<'_>,
@@ -376,7 +453,7 @@ fn store_discovery_in_transaction(
     item: &DiscoveryItem,
     cached: Option<(Option<String>, Option<String>)>,
     output: &mut TickTxOutput,
-) -> Result<(), CollectorError> {
+) -> Result<bool, CollectorError> {
     let vehicle = &item.vehicle;
     let (last_reach, current, read) = match cached {
         Some((last_reach, current)) => (last_reach, current, None),
@@ -401,6 +478,7 @@ fn store_discovery_in_transaction(
         payload: discovery_payload(vehicle, commit.provider),
     };
     let mut read = read;
+    let mut inserted = false;
     match action {
         crate::db::DiscoveryAction::Skip => {}
         crate::db::DiscoveryAction::WriteCurrentOnly => {
@@ -429,13 +507,16 @@ fn store_discovery_in_transaction(
                 registered.pack_car_id,
                 &live,
             )?;
-            store.accept_owner_observation_and_lifecycle_in_transaction(
-                transaction,
-                &input,
-                item.received_at_ms,
-                registered.pack_car_id,
-                commit.offline_drive_timeout,
-            )?;
+            inserted = store
+                .accept_owner_observation_and_lifecycle_in_transaction(
+                    transaction,
+                    &input,
+                    item.received_at_ms,
+                    registered.pack_car_id,
+                    commit.offline_drive_timeout,
+                )?
+                .append
+                .inserted;
             output.stored.push((vehicle.id, item.received_at_ms));
             output.wrote = true;
         }
@@ -443,7 +524,7 @@ fn store_discovery_in_transaction(
     if let Some(snapshot) = read {
         output.views_read.push((vehicle.id, snapshot));
     }
-    Ok(())
+    Ok(inserted)
 }
 
 /// Store the batch's snapshots inside the tick transaction (C3 R5, section 8
@@ -457,10 +538,11 @@ fn finish_collection_in_transaction(
     commit: &TickCommit<'_>,
     registered: &HashMap<VehicleId, Registered>,
     snapshots: &[SnapshotItem],
+    admissions: &[IntakeAdmission],
     failures: usize,
     output: &mut TickTxOutput,
 ) -> Result<(), CollectorError> {
-    intake_snapshots_in_transaction(
+    intake_admitted_snapshots_in_transaction(
         store,
         transaction,
         &SnapshotIntake {
@@ -471,6 +553,7 @@ fn finish_collection_in_transaction(
         },
         registered,
         snapshots,
+        admissions,
         failures,
         output,
     )
@@ -508,6 +591,31 @@ fn intake_snapshots_in_transaction(
     failures: usize,
     output: &mut TickTxOutput,
 ) -> Result<(), CollectorError> {
+    intake_admitted_snapshots_in_transaction(
+        store,
+        transaction,
+        intake,
+        registered,
+        snapshots,
+        &[],
+        failures,
+        output,
+    )
+}
+
+/// [`intake_snapshots_in_transaction`], marking in `admissions` (M04-T11) each
+/// accepted snapshot the transaction inserted.
+#[allow(clippy::too_many_arguments)]
+fn intake_admitted_snapshots_in_transaction(
+    store: &HubStore,
+    transaction: &rusqlite::Transaction<'_>,
+    intake: &SnapshotIntake<'_>,
+    registered: &HashMap<VehicleId, Registered>,
+    snapshots: &[SnapshotItem],
+    admissions: &[IntakeAdmission],
+    failures: usize,
+    output: &mut TickTxOutput,
+) -> Result<(), CollectorError> {
     if snapshots.is_empty() {
         return Ok(());
     }
@@ -528,7 +636,7 @@ fn intake_snapshots_in_transaction(
         lifecycle_quarantines: 0,
     };
     let mut seen: Vec<VehicleId> = Vec::new();
-    for item in snapshots {
+    for (index, item) in snapshots.iter().enumerate() {
         let identity = registered
             .get(&item.vehicle.id)
             .ok_or(CollectorError::SnapshotWithoutListedVehicle)?;
@@ -570,6 +678,9 @@ fn intake_snapshots_in_transaction(
             report.observations_inserted += 1;
         } else {
             report.observations_already_present += 1;
+        }
+        if result.append.inserted {
+            IntakeAdmission::mark_inserted(admissions, index);
         }
         report.drives_closed += result.drives_closed;
         report.charges_closed += result.charges_closed;
@@ -664,12 +775,12 @@ fn write_tick_in_transaction(
         )?;
         committed_evidence.insert(event.vehicle.id, snapshot.last_stored_obs_ms);
     }
-    for item in &batch.discoveries {
+    for (index, item) in batch.discoveries.iter().enumerate() {
         let identity = registered
             .get(&item.vehicle.id)
             .ok_or(CollectorError::SnapshotWithoutListedVehicle)?;
         let cached = scheduler.cached_discovery_view(item.vehicle.id);
-        store_discovery_in_transaction(
+        if store_discovery_in_transaction(
             store,
             transaction,
             commit,
@@ -677,7 +788,9 @@ fn write_tick_in_transaction(
             item,
             cached,
             &mut output,
-        )?;
+        )? {
+            IntakeAdmission::mark_inserted(&batch.discovery_admissions, index);
+        }
     }
     finish_collection_in_transaction(
         store,
@@ -685,6 +798,7 @@ fn write_tick_in_transaction(
         commit,
         registered,
         &batch.snapshots,
+        &batch.snapshot_admissions,
         batch.failures.len(),
         &mut output,
     )?;
@@ -937,6 +1051,9 @@ async fn commit_tick(
     let rows = tick.to_rows_write(now_ms);
     scheduler.check_write("tick-transaction")?;
     let guard = scheduler.write_guard();
+    // The intake latency (M04-T11) is measured only for a run that knows its window
+    // and a batch that accepted an observation.
+    let measures_intake = guard.is_some_and(RunWriteGuard::measures_intake) && batch.has_admissions();
     let result = commit.store.collector_write_transaction(
         |transaction| {
             // The scheduled list and the identities first, so the tick's rows can
@@ -1009,6 +1126,8 @@ async fn commit_tick(
         },
         supervised_tick_commit_hook,
     );
+    // The second clock read of the intake latency: the commit has just returned.
+    let committed_at = measures_intake.then(|| scheduler.clock.mono_now());
     let (output, fresh, wrote, identities_published) = match result {
         Ok(output) => output,
         // A refused write is the run's end, not a store fault of the tick.
@@ -1063,21 +1182,30 @@ async fn commit_tick(
         let _ = decided_at_ms;
     }
     let mut report = output.report;
-    if let Some(report) = report.as_mut()
+    let published = if let Some(report) = report.as_mut()
         && let Some(publication_gate) = publication_gate.as_ref()
     {
         // The identities, cars and settings committed with the tick: the
         // publication is the claim, the packs and the catalogue only (M04-T08).
-        report.snapshots_published = publish_compatibility_snapshots_with_identities(
+        publish_compatibility_snapshots_with_identities(
             commit.store,
             publication_gate,
             commit.cursor_key,
             &identities_published,
             now_ms,
             scheduler.write_guard(),
-        )?;
-    }
+        )
+        .map(|count| report.snapshots_published = count)
+    } else {
+        Ok(())
+    };
     drop(publication_gate);
+    // The intake latencies are recorded once the publication gate is released, so
+    // no lock is held longer for them.
+    if let (Some(committed_at), Some(guard)) = (committed_at, scheduler.write_guard()) {
+        batch.record_intake(guard, committed_at);
+    }
+    published?;
     Ok(TickOutcome::Committed { wrote, report })
 }
 
@@ -1537,6 +1665,250 @@ fn start_collector_run_with_identity(
     })
 }
 
+/// The intake latency (M04-T11): the time from the moment the Hub accepts an
+/// observation to the moment the write that inserted it is durable, read straight
+/// after the commit returns. A polling read or a discovery is accepted when its
+/// response has been taken into the tick's batch; a stream frame when the session
+/// takes its message off the socket, before it waits in the Hub's own queue (the
+/// frame's `queued_at`). Upstream delivery ends before either. Only observations
+/// the transaction actually inserted are counted: a duplicate, a superseded read, a
+/// current-only discovery row, a failed transaction and an empty poll record nothing.
+///
+/// One [`IntakeRecorder`] serves the process, made only of atomics. Each sample is
+/// recorded with the grant sequence of the window whose collector run committed it.
+/// The first sample of a newer window starts the figures over for that window; a
+/// sample of an older window is ignored. Nothing is written durably and a restart
+/// starts empty. The operator status shows the figures only beside the window they
+/// belong to, so a window that has just opened shows empty figures until its first
+/// sample.
+///
+/// Every counter is one `u64` holding the window's tag in its top
+/// [`INTAKE_TAG_BITS`] bits and its value below them. A counter still holding an
+/// older window's tag reads as zero for a newer one and is restarted by that
+/// window's first update; one already holding a newer window's tag is left alone.
+/// So a counter's value always belongs to exactly one window, with no reset step,
+/// no lock and no allocation: recording is a few compare-and-swap loops on atomics
+/// that never wait for a reader or another recorder.
+const INTAKE_TAG_BITS: u32 = 24;
+const INTAKE_VALUE_BITS: u32 = 64 - INTAKE_TAG_BITS;
+/// The largest value a counter holds: a count saturates there, and so does a
+/// latency in microseconds (about 12.7 days).
+const INTAKE_VALUE_MAX: u64 = (1 << INTAKE_VALUE_BITS) - 1;
+/// Latencies in microseconds: exact below 64, otherwise in buckets at most 1/32 of
+/// their value wide, up to [`INTAKE_VALUE_MAX`].
+const INTAKE_LATENCY_LINEAR: u64 = 64;
+const INTAKE_LATENCY_SUB_BITS: u32 = 5;
+const INTAKE_LATENCY_BUCKETS: usize =
+    64 + (INTAKE_VALUE_BITS as usize - 6) * (1 << INTAKE_LATENCY_SUB_BITS);
+/// The intake target of M04-T04: p95 at most 250 ms.
+const INTAKE_LATENCY_TARGET: Duration = Duration::from_millis(250);
+/// How often a status read starts again when a sample of a newer window arrived
+/// while it read.
+const INTAKE_READ_ATTEMPTS: usize = 3;
+
+/// A window's tag: its grant sequence plus one, so that zero is no window. Grant
+/// sequences only grow, and the controller refuses one that does not; sequences
+/// from `2^24 - 2` on would share the last tag, which no hand-approved series of
+/// windows reaches.
+fn intake_tag(seq: u64) -> u64 {
+    seq.saturating_add(1).min((1 << INTAKE_TAG_BITS) - 1)
+}
+
+/// The value `cell` holds for the window tagged `tag`: zero while it holds another
+/// window's.
+fn intake_cell_value(cell: &std::sync::atomic::AtomicU64, tag: u64) -> u64 {
+    let packed = cell.load(Ordering::SeqCst);
+    if packed >> INTAKE_VALUE_BITS == tag {
+        packed & INTAKE_VALUE_MAX
+    } else {
+        0
+    }
+}
+
+/// Apply `update` to the value `cell` holds for the window tagged `tag`. A cell of
+/// an older window starts from zero; a cell of a newer window is left alone.
+fn intake_cell_update(cell: &std::sync::atomic::AtomicU64, tag: u64, update: impl Fn(u64) -> u64) {
+    let _ = cell.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |packed| {
+        let value = match (packed >> INTAKE_VALUE_BITS).cmp(&tag) {
+            std::cmp::Ordering::Less => 0,
+            std::cmp::Ordering::Equal => packed & INTAKE_VALUE_MAX,
+            std::cmp::Ordering::Greater => return None,
+        };
+        Some(tag << INTAKE_VALUE_BITS | update(value).min(INTAKE_VALUE_MAX))
+    });
+}
+
+/// The bucket of a latency of `micros` microseconds.
+fn intake_bucket(micros: u64) -> usize {
+    let micros = micros.min(INTAKE_VALUE_MAX);
+    if micros < INTAKE_LATENCY_LINEAR {
+        return micros as usize;
+    }
+    let exponent = 63 - micros.leading_zeros();
+    let shift = exponent - INTAKE_LATENCY_SUB_BITS;
+    let sub = (micros >> shift) & ((1 << INTAKE_LATENCY_SUB_BITS) - 1);
+    64 + ((exponent - 6) as usize) * (1 << INTAKE_LATENCY_SUB_BITS) + sub as usize
+}
+
+/// The greatest latency, in microseconds, the bucket holds.
+fn intake_bucket_top(index: usize) -> u64 {
+    if index < INTAKE_LATENCY_LINEAR as usize {
+        return index as u64;
+    }
+    let offset = index - 64;
+    let exponent = (offset >> INTAKE_LATENCY_SUB_BITS) as u32 + 6;
+    let sub = (offset & ((1 << INTAKE_LATENCY_SUB_BITS) - 1)) as u64;
+    let shift = exponent - INTAKE_LATENCY_SUB_BITS;
+    let low = ((1u64 << INTAKE_LATENCY_SUB_BITS) + sub) << shift;
+    low + ((1u64 << shift) - 1)
+}
+
+/// The process's intake latency figures (see [`INTAKE_TAG_BITS`]).
+#[derive(Debug)]
+pub struct IntakeRecorder {
+    /// The tag of the newest window a sample was recorded for; zero before any.
+    window: std::sync::atomic::AtomicU64,
+    buckets: [std::sync::atomic::AtomicU64; INTAKE_LATENCY_BUCKETS],
+    /// The greatest latency, in microseconds.
+    max_micros: std::sync::atomic::AtomicU64,
+    /// The samples over [`INTAKE_LATENCY_TARGET`], decided on the measured duration.
+    over_target: std::sync::atomic::AtomicU64,
+}
+
+/// One window's figures, read without blocking the recorder.
+#[derive(Debug)]
+struct IntakeFigures {
+    buckets: [u64; INTAKE_LATENCY_BUCKETS],
+    count: u64,
+    max_micros: u64,
+    over_target: u64,
+}
+
+impl IntakeRecorder {
+    #[allow(clippy::new_without_default)]
+    pub const fn new() -> Self {
+        Self {
+            window: std::sync::atomic::AtomicU64::new(0),
+            buckets: [const { std::sync::atomic::AtomicU64::new(0) }; INTAKE_LATENCY_BUCKETS],
+            max_micros: std::sync::atomic::AtomicU64::new(0),
+            over_target: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// The recorder of this process: the collector's runs and the operator service
+    /// use it unless they were given another.
+    pub fn process_wide() -> &'static Self {
+        static RECORDER: IntakeRecorder = IntakeRecorder::new();
+        &RECORDER
+    }
+
+    /// Record one latency of window `seq`. The over-target count and the maximum
+    /// are updated before the bucket, so a reader that sees the sample counted also
+    /// sees them.
+    pub(crate) fn record(&self, seq: u64, latency: Duration) {
+        let tag = intake_tag(seq);
+        if self.window.fetch_max(tag, Ordering::SeqCst) > tag {
+            return;
+        }
+        let micros = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
+        if latency > INTAKE_LATENCY_TARGET {
+            intake_cell_update(&self.over_target, tag, |count| count.saturating_add(1));
+        }
+        intake_cell_update(&self.max_micros, tag, |max| max.max(micros));
+        intake_cell_update(&self.buckets[intake_bucket(micros)], tag, |count| {
+            count.saturating_add(1)
+        });
+    }
+
+    /// The figures of window `seq`: `None` when the recorder holds another window,
+    /// or when a newer window's sample arrived during every attempt to read. The
+    /// window is read before and after the counters, so the figures never mix two
+    /// windows.
+    fn figures(&self, seq: u64) -> Option<IntakeFigures> {
+        let tag = intake_tag(seq);
+        for _ in 0..INTAKE_READ_ATTEMPTS {
+            if self.window.load(Ordering::SeqCst) != tag {
+                return None;
+            }
+            let mut figures = IntakeFigures {
+                buckets: [0; INTAKE_LATENCY_BUCKETS],
+                count: 0,
+                max_micros: 0,
+                over_target: 0,
+            };
+            for (copy, bucket) in figures.buckets.iter_mut().zip(&self.buckets) {
+                *copy = intake_cell_value(bucket, tag);
+                figures.count = figures.count.saturating_add(*copy);
+            }
+            figures.max_micros = intake_cell_value(&self.max_micros, tag);
+            figures.over_target = intake_cell_value(&self.over_target, tag);
+            if self.window.load(Ordering::SeqCst) == tag {
+                return Some(figures);
+            }
+        }
+        None
+    }
+
+    /// The operator status answer's `intakeLatency`, beside the window `status`
+    /// names: that window's figures, or empty figures when the recorder holds
+    /// another window's (or none).
+    pub fn status(&self, status: &crate::collection::window::WindowStatus) -> Value {
+        let figures = status.seq.and_then(|seq| self.figures(seq));
+        intake_latency_json(status, figures.as_ref())
+    }
+}
+
+impl IntakeFigures {
+    /// The nearest rank of quantile `numerator / denominator`.
+    fn rank(&self, numerator: u64, denominator: u64) -> u64 {
+        (self.count.saturating_mul(numerator))
+            .div_ceil(denominator)
+            .max(1)
+    }
+
+    /// Upper bound of the nearest-rank quantile in microseconds: the top of the
+    /// bucket that holds it, never above the maximum.
+    fn quantile_upper(&self, numerator: u64, denominator: u64) -> u64 {
+        let rank = self.rank(numerator, denominator);
+        let mut seen = 0u64;
+        for (index, bucket) in self.buckets.iter().enumerate() {
+            seen = seen.saturating_add(*bucket);
+            if seen >= rank {
+                return intake_bucket_top(index).min(self.max_micros);
+            }
+        }
+        self.max_micros
+    }
+
+    /// Exact: the nearest-rank p95 is at most the target exactly when at least that
+    /// rank of samples is at most the target.
+    fn p95_within_target(&self) -> bool {
+        self.count.saturating_sub(self.over_target) >= self.rank(95, 100)
+    }
+}
+
+/// The answer's `intakeLatency` object. Percentiles are bucket upper bounds
+/// (`...UpperMs`); `maxMs` (to the microsecond), `overTargetCount` and
+/// `p95WithinTarget` are exact.
+fn intake_latency_json(
+    status: &crate::collection::window::WindowStatus,
+    figures: Option<&IntakeFigures>,
+) -> Value {
+    let millis = |micros: u64| serde_json::json!(micros as f64 / 1000.0);
+    let measured = figures.filter(|figures| figures.count > 0);
+    serde_json::json!({
+        "seq": status.seq,
+        "grantDigest": status.grant_digest,
+        "count": measured.map_or(0, |figures| figures.count),
+        "p50UpperMs": measured.map(|figures| millis(figures.quantile_upper(50, 100))),
+        "p95UpperMs": measured.map(|figures| millis(figures.quantile_upper(95, 100))),
+        "maxMs": measured.map(|figures| millis(figures.max_micros)),
+        "targetMs": INTAKE_LATENCY_TARGET.as_millis(),
+        "overTargetCount": measured.map_or(0, |figures| figures.over_target),
+        "p95WithinTarget": measured.map(IntakeFigures::p95_within_target),
+    })
+}
+
 /// The in-process status publication (C3 R13): the latest `CollectorStatus` of
 /// the running collector, for in-process readers. Other processes read the R4
 /// tables (R66). The collector holds the process's one lease, so one value
@@ -1646,6 +2018,11 @@ struct RunWriteGuard {
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
     /// The run's hold on the collection window (M04-T01), shared by every clone.
     window: WindowAuthority,
+    /// The recorder of the run's intake latencies (M04-T11).
+    intake: &'static IntakeRecorder,
+    /// The grant sequence of the window the run holds, once it holds it; shared by
+    /// every clone, the shutdown guard's included.
+    intake_window: Arc<std::sync::OnceLock<u64>>,
     /// Test only: which boundaries consulted the guard and what they were told.
     #[cfg(test)]
     audit: Arc<WriteGuardAudit>,
@@ -1672,9 +2049,37 @@ impl RunWriteGuard {
             fence,
             admission,
             window: WindowAuthority::default(),
+            intake: run_intake_recorder(),
+            intake_window: Arc::default(),
             #[cfg(test)]
             audit: Arc::default(),
         }
+    }
+
+    /// Test only: the run records its intake latencies into `recorder`.
+    #[cfg(test)]
+    fn with_intake_recorder(mut self, recorder: &'static IntakeRecorder) -> Self {
+        self.intake = recorder;
+        self
+    }
+
+    /// The run holds the window with grant sequence `seq` (M04-T11): its intake
+    /// latencies are recorded as that window's.
+    fn hold_intake_window(&self, seq: u64) {
+        let _ = self.intake_window.set(seq);
+    }
+
+    /// Record the intake latency of an observation the run has just committed;
+    /// nothing before the run knows its window.
+    fn record_intake(&self, latency: Duration) {
+        if let Some(seq) = self.intake_window.get() {
+            self.intake.record(*seq, latency);
+        }
+    }
+
+    /// Whether the run's intake latencies are recorded.
+    fn measures_intake(&self) -> bool {
+        self.intake_window.get().is_some()
     }
 
     /// The run's hold on the collection window, shared by every clone of the guard.
