@@ -114,6 +114,12 @@ pub(crate) fn publish_recorded_physical_v3_stage_with_gate_at(
     .map(|(publication, _)| publication)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Fails the next month preparation on this thread (M08-T19 tests).
+    pub(crate) static FAIL_NEXT_PREPARATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// As [`publish_recorded_physical_v3_stage_with_gate_at`], also saying
 /// whether the optional prepared month was made (M08-T19).
 pub(crate) fn publish_recorded_physical_v3_stage_reporting_month(

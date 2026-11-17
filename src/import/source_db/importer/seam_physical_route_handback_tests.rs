@@ -1942,7 +1942,7 @@ fn handback_early_answer_prepares_a_failed_month_alone() {
         .store
         .record_physical_v3_handback_plan(&fixture.gate, vehicle, None)
         .expect("forget the inputs, so the next handback is a full one");
-    crate::sync::prepared_map::FAIL_NEXT_PREPARATION.with(|fail| fail.set(true));
+    crate::physical_publication::FAIL_NEXT_PREPARATION.with(|fail| fail.set(true));
     assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
     let recorded = fixture.store.physical_v3_handback_plan(vehicle).expect("record").expect("inputs");
     assert!(!recorded.prepared, "the failed preparation is recorded as such");
