@@ -1538,7 +1538,19 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // an Open window, under the supervisor; the API is served
                 // whatever the collector does (design 2.8, ruling R5).
                 let collector_ready = collector_can_start(&store, &config)?;
-                log_runtime_inventory(&store, &config);
+                // The runtime inventory counts every observation and pack
+                // reference, so its cost grows with the store: it runs on a
+                // blocking task once the operator channel is bound and the
+                // listener is open, and can never delay serving (M08-T22).
+                let log_inventory: server::ListeningHook = {
+                    let store = store.clone();
+                    let config = config.clone();
+                    Box::new(move || {
+                        drop(tokio::task::spawn_blocking(move || {
+                            log_runtime_inventory(&store, &config);
+                        }));
+                    })
+                };
                 if collector_ready {
                     // Once per start: a clamped stream timeout or an ignored
                     // key (C3 R21).
@@ -1635,6 +1647,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 server_admission,
                                 cursor_key,
                                 summary_now_ms,
+                                Some(log_inventory),
                                 async move {
                                     let _ = shutdown.await;
                                 },

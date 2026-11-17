@@ -30,10 +30,11 @@ use crate::{
     protocol::{ProtocolLimits, SequenceRange},
     source_db_parity::{SourceDbEvidenceError, SourceDbEvidenceFingerprint},
     source_db_projection::{
-        ChargeProjectionFacts, DriveRelations, ProjectionReport, SourceDbAddress, SourceDbCar,
-        SourceDbCharge, SourceDbChargingProcess, SourceDbDrive, SourceDbGeofence, SourceDbPosition,
-        SourceDbProjectionError, SourceDbState, SourceDbUpdate, project_car, project_charge,
-        project_charge_sample, project_drive, project_position, project_state, project_update,
+        BrokenDriveTracker, ChargeProjectionFacts, DriveRelations, ProjectionReport, PositionDetachmentPolicy,
+        SourceDbAddress, SourceDbCar, SourceDbCharge, SourceDbChargingProcess, SourceDbDrive,
+        SourceDbGeofence, SourceDbPosition, SourceDbProjectionError, SourceDbState, SourceDbUpdate,
+        handed_over_drive_id, project_car, project_charge, project_charge_sample, project_drive,
+        project_position, project_state, project_update,
     },
     source_db_stage::{SourceDbStage, SourceDbStageError, SourceDbStageFormat, SourceDbStageTable},
 };
@@ -565,24 +566,42 @@ fn write_position_fragments(
     report: &mut ProjectionReport,
 ) -> Result<(), SourceDbFragmentError> {
     let mut projected_drives = HashMap::new();
+    let mut source_drives = Vec::new();
     for_each_page::<SourceDbDrive, _>(stage, SourceDbStageTable::Drives, |drive| {
         if let Some(projected) = project_drive_from_stage(stage, &drive, car.id)? {
             projected_drives.insert(drive.id, projected);
         }
+        source_drives.push(drive);
         Ok(())
     })?;
+    let mut broken_drives = BrokenDriveTracker::new(&source_drives, car.id);
+    let held_drive_id = handed_over_drive_id(&source_drives, car.id);
+    let detachment = Arc::new(PositionDetachmentPolicy::new(&source_drives, car.id, held_drive_id));
+    let mut expected_detached = 0_u64;
+    drop(source_drives);
     let projected_drives = Arc::new(projected_drives);
-    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone());
+    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone(), detachment.clone());
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     let mut ordinal = 0_u64;
     let mut after_id = 0_i64;
     loop {
-        let page = stage.page::<SourceDbPosition>(
+        let mut page = stage.page::<SourceDbPosition>(
             SourceDbStageTable::Positions,
             after_id,
             STAGE_PAGE_ROWS,
         )?;
         let next_after_id = page.next_after_id;
+        for row in &page.rows {
+            broken_drives.observe(&row.value);
+            expected_detached += u64::from(detachment.expects_detachment(&row.value));
+        }
+        page.rows.retain(|row| {
+            let held = row.value.drive_id.is_some() && row.value.drive_id == held_drive_id;
+            if held {
+                report.held_open_session_positions += 1;
+            }
+            !held
+        });
         let completed = projection_pool.submit(PositionProjectionJob {
             ordinal,
             rows: page.rows,
@@ -602,6 +621,10 @@ fn write_position_fragments(
     for completed in projection_pool.finish()? {
         append_projected_positions(completed, &mut accumulator, sink, report)?;
     }
+    if report.detached_positions != expected_detached {
+        return Err(SourceDbProjectionError::PositionDetachmentAccounting.into());
+    }
+    report.broken_drives = broken_drives.count();
     accumulator.flush(sink)
 }
 
@@ -611,9 +634,9 @@ fn append_projected_positions(
     sink: &mut PackSink<'_>,
     report: &mut ProjectionReport,
 ) -> Result<(), SourceDbFragmentError> {
-    report.skipped_unattached_positions = report
-        .skipped_unattached_positions
-        .checked_add(page.skipped_unattached)
+    report.detached_positions = report
+        .detached_positions
+        .checked_add(page.detached)
         .ok_or(SourceDbFragmentError::ReportOverflow)?;
     for projected in page.rows? {
         let position = projected.position;
@@ -932,7 +955,7 @@ struct ProjectedPosition {
 struct PositionProjectionResult {
     ordinal: u64,
     rows: Result<Vec<ProjectedPosition>, SourceDbFragmentError>,
-    skipped_unattached: u64,
+    detached: u64,
 }
 
 /// Project position pages on two bounded workers. Stage reads and fragment
@@ -949,7 +972,7 @@ struct PositionProjectionPool {
 }
 
 impl PositionProjectionPool {
-    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>) -> Self {
+    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>, detachment: Arc<PositionDetachmentPolicy>) -> Self {
         let workers = thread::available_parallelism()
             .map(|value| value.get())
             .unwrap_or(1)
@@ -963,6 +986,7 @@ impl PositionProjectionPool {
             let receiver = Arc::clone(&receiver);
             let result_sender = result_sender.clone();
             let drives = Arc::clone(&drives);
+            let detachment = Arc::clone(&detachment);
             handles.push(thread::spawn(move || {
                 loop {
                     let job = match receiver.lock().expect("position receiver lock").recv() {
@@ -970,18 +994,18 @@ impl PositionProjectionPool {
                         Err(_) => return,
                     };
                     debug_assert_eq!(job.car_id, car_id);
-                    let mut skipped_unattached = 0_u64;
+                    let mut detached = 0_u64;
                     let rows = job
                         .rows
                         .into_iter()
-                        .filter_map(|row| {
+                        .map(|row| {
                             let drive = match row.value.drive_id {
                                 None => None,
                                 Some(drive_id) => match drives.get(&drive_id) {
                                     Some(drive) => Some(drive.clone()),
                                     None => {
-                                        skipped_unattached += 1;
-                                        return None;
+                                        detached += 1;
+                                        None
                                     }
                                 },
                             };
@@ -993,15 +1017,21 @@ impl PositionProjectionPool {
                                     }
                                     Err(error) => Err(error.into()),
                                 },
-                                None => Ok(crate::lifecycle::imported_position(&row.value)),
+                                None => project_position(&row.value, car_id, false)
+                                    .map(|value| {
+                                        value.expect("unattached history position projects")
+                                    })
+                                    .map_err(SourceDbFragmentError::from),
                             };
-                            Some(position.map(|position| ProjectedPosition { position, drive }))
+                            let position = position?;
+                            detachment.validate(&row.value, &position)?;
+                            Ok(ProjectedPosition { position, drive })
                         })
                         .collect::<Result<Vec<_>, _>>();
                     let result = PositionProjectionResult {
                         ordinal: job.ordinal,
                         rows,
-                        skipped_unattached,
+                        detached,
                     };
                     if result_sender.send(result).is_err() {
                         return;

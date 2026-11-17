@@ -93,6 +93,7 @@ where
         admission,
         cursor_key,
         None,
+        None,
         shutdown,
     )
     .await
@@ -118,6 +119,7 @@ where
         native_config_digest,
         cursor_key,
         admission,
+        None,
         None,
         shutdown,
     )

@@ -792,7 +792,10 @@ fn projects_only_completed_selected_vehicle_history() {
         ProjectionReport {
             completed_drives: 1,
             skipped_open_drives: 1,
-            skipped_unattached_positions: 1,
+            broken_drives: 1,
+            detached_positions: 0,
+            held_open_session_positions: 1,
+            skipped_unattached_positions: 0,
             projected_positions: 1,
             projected_charges: 1,
             projected_charge_samples: 1,
@@ -947,9 +950,14 @@ fn validates_a_complete_open_session_fixture_and_rejects_cross_car_rows() {
 }
 
 #[test]
-fn mapped_history_is_accepted_by_the_typed_pack_gate() {
+fn broken_drive_mapped_history_is_accepted_by_the_typed_pack_gate() {
     let temporary = TempDir::new().unwrap();
-    let projected = project_vehicle(&history(), 1).unwrap();
+    let mut source = history();
+    let mut other_open = source.drives[1].clone();
+    other_open.id = 12;
+    source.drives.push(other_open);
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.detached_positions, 1);
     let request = ProjectionPackRequest {
         pack_id: Uuid::from_u128(1),
         snapshot_id: Uuid::from_u128(2),
@@ -968,7 +976,145 @@ fn mapped_history_is_accepted_by_the_typed_pack_gate() {
         snapshot: &projected.snapshot,
     };
     let built = ProjectionPackWriter::new(temporary.path())
-        .write_full_snapshot(&request)
+        .write_full_snapshot_with_states_and_updates(
+            &request,
+            &projected.states,
+            &projected.updates,
+        )
         .unwrap();
-    assert_eq!(built.metadata.row_count, 5);
+    assert_eq!(built.metadata.row_count, 7);
+}
+
+#[test]
+fn broken_drive_run_keeps_positions_without_inventing_journeys() {
+    let mut source = history();
+    source.drives.retain(|d| d.id == 10);
+    source.positions.retain(|p| p.id == 20);
+    for id in 1..=3 {
+        let mut drive = source.drives[0].clone();
+        drive.id = id;
+        drive.start_date_ms -= (4 - id) * 5_000;
+        drive.end_date_ms = None;
+        drive.distance_km = None;
+        drive.duration_min = None;
+        drive.start_position_id = Some(100 + id);
+        drive.end_position_id = None;
+        let mut position = source.positions[0].clone();
+        position.id = 100 + id;
+        position.drive_id = Some(id);
+        position.date_ms = drive.start_date_ms;
+        source.drives.push(drive);
+        source.positions.push(position);
+    }
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.snapshot.drives.len(), 1);
+    assert_eq!(projected.snapshot.positions.len(), 4);
+    assert_eq!(projected.report.broken_drives, 3);
+    assert_eq!(projected.report.detached_positions, 3);
+    assert!(
+        projected
+            .snapshot
+            .positions
+            .iter()
+            .filter(|p| p.id > 100)
+            .all(|p| p.drive_id.is_none())
+    );
+}
+
+#[test]
+fn broken_drive_terminal_candidate_retains_its_sample_without_guessing_an_end() {
+    let mut source = history();
+    source.drives.retain(|d| d.id == 11);
+    source.positions.retain(|p| p.id == 21);
+    source.charging_processes.clear();
+    source.charges.clear();
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert!(projected.snapshot.drives.is_empty());
+    assert!(projected.snapshot.positions.is_empty());
+    assert_eq!(projected.report.held_open_session_positions, 1);
+    assert_eq!(projected.report.skipped_open_drives, 1);
+    // The report counts the shape even when lifecycle ownership retains the sample.
+    assert_eq!(projected.report.broken_drives, 1);
+    assert_eq!(source.drives[0].end_date_ms, None);
+    assert_eq!(source.positions[0].drive_id, Some(11));
+}
+
+#[test]
+fn broken_drive_policy_does_not_classify_in_progress_or_completed_short_drives() {
+    let mut source = history();
+    source.drives[0].distance_km = None;
+    source.drives[0].duration_min = None;
+    assert!(source.drives[0].start_date_ms < source.drives[1].start_date_ms);
+    let mut second = source.positions[1].clone();
+    second.id = 22;
+    second.date_ms += 5_000;
+    source.positions.push(second);
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 0);
+    assert_eq!(projected.report.completed_drives, 1);
+    assert_eq!(projected.report.projected_positions, 1);
+    assert_eq!(projected.report.detached_positions, 0);
+    assert_eq!(projected.report.held_open_session_positions, 2);
+    assert_eq!(projected.snapshot.drives[0].distance_km, None);
+}
+
+#[test]
+fn broken_drive_shape_counts_tied_starts_and_the_whole_terminal_run() {
+    let mut source = history();
+    source.drives.clear();
+    source.positions.clear();
+    source.charging_processes.clear();
+    source.charges.clear();
+    let template = history();
+    for (id, at) in [(1, 100), (2, 200), (3, 300), (4, 300)] {
+        let mut drive = template.drives[1].clone();
+        drive.id = id;
+        drive.start_date_ms = at;
+        // Duration is not one of DEC-191's three shape conditions.
+        drive.duration_min = Some(0);
+        source.drives.push(drive);
+        let mut position = template.positions[1].clone();
+        position.id = 100 + id;
+        position.drive_id = Some(id);
+        position.date_ms = at;
+        source.positions.push(position);
+    }
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 4);
+    assert_eq!(projected.report.detached_positions, 4);
+    assert!(projected.snapshot.drives.is_empty());
+}
+
+#[test]
+fn broken_drive_tracker_filters_both_cars_and_their_observations() {
+    let mut source = history();
+    let mut other_drive = source.drives[1].clone();
+    other_drive.id = 12;
+    other_drive.car_id = 2;
+    source.drives.push(other_drive);
+    let mut other_position = source.positions[1].clone();
+    other_position.id = 22;
+    other_position.car_id = 2;
+    other_position.drive_id = Some(12);
+    source.positions.push(other_position.clone());
+    let projected = project_vehicle(&source, 1).unwrap();
+    assert_eq!(projected.report.broken_drives, 1);
+    assert_eq!(projected.report.held_open_session_positions, 1);
+    assert_eq!(projected.report.detached_positions, 0);
+    let second = project_vehicle(&source, 2).unwrap();
+    assert_eq!(second.report.broken_drives, 1);
+    assert_eq!(second.report.held_open_session_positions, 1);
+    assert_eq!(second.report.detached_positions, 0);
+    // The tracker also rejects a foreign-car observation even if its parent
+    // reference collides with a selected-car row in an inconsistent capture.
+    let mut tracker = BrokenDriveTracker::new(&source.drives, 1);
+    for position in &source.positions { tracker.observe(position); }
+    let mut wrong_parent = source.positions[1].clone();
+    wrong_parent.id = 23;
+    wrong_parent.drive_id = Some(12);
+    tracker.observe(&wrong_parent);
+    assert_eq!(tracker.count(), 1, "foreign parent rows must not become candidates");
+    other_position.drive_id = Some(11);
+    tracker.observe(&other_position);
+    assert_eq!(tracker.count(), 1);
 }
