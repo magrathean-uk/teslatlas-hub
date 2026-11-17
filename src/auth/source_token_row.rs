@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Separate read-only source credential snapshot. History import and its
-//! private-schema witness do not call this module.
+//! Separate read-only source credential snapshot for the take-over. It lives
+//! outside the history import so the import's credential guard
+//! (`source_credential_disabled_import_never_names_source_credential_relations`)
+//! covers every import file without exception. History import and its
+//! private-schema witness do not call this module; it only borrows the
+//! import's read-only connection and snapshot primitives.
 
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use super::{
-    reader::{
-        SourceDbReadLimits, SourceDbSnapshotSession, SourceReadBudget, connect_source,
-        prepare_read_only_snapshot, query_bounded,
-    },
-    source::ReadOnlySource,
-};
 use crate::{
     credentials::{OwnerTokens, SourceDbPassword},
+    import::source_db::{
+        reader::{
+            SourceDbReadLimits, SourceDbSnapshotSession, SourceReadBudget, connect_source,
+            prepare_read_only_snapshot, query_bounded,
+        },
+        source::ReadOnlySource,
+    },
     legacy_auth::{AuthEndpointConfig, AuthMode, LegacyAuth},
     source_token_envelope::{
         MAX_SOURCE_TOKEN_CIPHERTEXT_BYTES, SourceDbTokenError, decrypt_legacy_owner_tokens,

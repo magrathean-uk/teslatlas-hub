@@ -338,6 +338,27 @@ fn claim_lifetime_ms(claim: &serde_json::Value) -> i64 {
 /// snapshot against Cargo's real executable, or a separately built Hub binary:
 /// TESATLAS_HUB_SMOKE_BINARY=/absolute/path/tesatlas-hub cargo test --test
 /// tls_import_e2e source_binary_standalone_mode_serves_seeded_schema_21_snapshot -- --exact
+/// The serving binary binds `<data_dir>/operator/control.sock`, and macOS
+/// refuses a Unix socket path over 103 bytes. The smoke root stays in the
+/// routed temporary directory unless that directory is long enough to push
+/// the socket over the limit (a job folder's `tmp`, for example); only then
+/// does it fall back to `/tmp`, as the operator channel tests do.
+fn smoke_root() -> tempfile::TempDir {
+    const SOCKET_PATH_MAX: usize = 103;
+    // "/" + ".tmpXXXXXX" + "/hub/operator/control.sock"
+    const SUFFIX: usize = 1 + 10 + 26;
+    let base = std::env::temp_dir();
+    let base = if base.as_os_str().len() + SUFFIX <= SOCKET_PATH_MAX {
+        base
+    } else {
+        PathBuf::from("/tmp")
+    };
+    let root = tempfile::tempdir_in(base).expect("isolated smoke root");
+    let socket = root.path().join("hub/operator/control.sock");
+    assert!(socket.as_os_str().len() <= SOCKET_PATH_MAX, "{}", socket.display());
+    root
+}
+
 #[tokio::test]
 async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
@@ -347,7 +368,7 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
         
     };
 
-    let root = tempfile::tempdir().expect("isolated smoke root");
+    let root = smoke_root();
     let data_dir = root.path().join("hub");
     let store = HubStore::initialize(&data_dir).expect("smoke store");
     let cursor_key = load_or_create_cursor_key(&data_dir).expect("durable synthetic signing key");

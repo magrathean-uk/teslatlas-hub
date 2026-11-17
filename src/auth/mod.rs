@@ -13,4 +13,5 @@ pub mod fleet_credentials;
 pub mod legacy_auth;
 pub mod legacy_owner_credentials;
 pub mod source_token_envelope;
+pub mod source_token_row;
 pub(crate) mod credential_migration;

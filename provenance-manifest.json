@@ -452,6 +452,7 @@
         "src/auth/legacy_auth.rs",
         "src/auth/legacy_owner_credentials.rs",
         "src/auth/source_token_envelope.rs",
+        "src/auth/source_token_row.rs",
         "src/collection/fake_tesla.rs",
         "src/collection/source_db_current/current_key_tests.rs"
       ],
