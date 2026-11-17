@@ -840,6 +840,11 @@ impl VehicleScheduler {
         error: &CollectorError,
         now: Instant,
     ) {
+        // This attempt has answered. Any retry or later 408 check belongs to
+        // the ordinary scheduler, independent of the stream's check cooldown.
+        if let Some(vehicle) = self.vehicles.get_mut(&id) {
+            vehicle.stream_state_check_pending = false;
+        }
         let class = classify(error, RequestKind::Record, self.mode);
         if class != ErrorClass::Unreachable && class != ErrorClass::GateNotConfirmed {
             self.note_answered(now);

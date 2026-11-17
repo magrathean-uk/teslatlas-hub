@@ -641,10 +641,10 @@ async fn sc73_retry_after_as_an_http_date_is_read_against_the_wall_clock() {
     let (rows, gap, _) = upgrade_refusal_run(503, Some(DATE_PLUS_600)).await;
     assert_eq!(rows[0].retry_after_seconds, Some(600));
     assert_eq!(gap, Duration::from_secs(600));
-    // A date in the past floors at 0, so the schedule's own 1 s applies.
+    // Ruling 1: a past date floors at 0, so the Busy schedule's own wait applies.
     let (rows, gap, _) = upgrade_refusal_run(503, Some(DATE_MINUS_3600)).await;
     assert_eq!(rows[0].retry_after_seconds, Some(0));
-    assert_eq!(gap, Duration::from_secs(1));
+    assert_eq!(gap, Duration::from_secs(150));
 }
 
 #[test]
