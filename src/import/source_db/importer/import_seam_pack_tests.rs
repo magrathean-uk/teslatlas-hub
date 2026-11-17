@@ -184,6 +184,10 @@ fn capture(
 
 /// A store with a published direct base of [`base_history`].
 fn fixture() -> Fixture {
+    fixture_with_history(&base_history())
+}
+
+fn fixture_with_history(source_history: &SourceDbHistory) -> Fixture {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let source = store
@@ -203,7 +207,7 @@ fn fixture() -> Fixture {
         selected_car_id: CAR,
     };
     let gate = store.try_acquire_publication_gate().expect("gate");
-    let projected = project_vehicle(&base_history(), CAR).expect("base projection");
+    let projected = project_vehicle(source_history, CAR).expect("base projection");
     let car = projected.snapshot.cars[0].clone();
     let fixture = Fixture {
         _temporary: temporary,
@@ -214,6 +218,16 @@ fn fixture() -> Fixture {
         cursor_key: CursorKey::from_bytes([41; 32]),
     };
     let run_id = begin_run(&fixture, T - HOUR);
+    if let Some(id) = crate::source_db_projection::handed_over_drive_id(&source_history.drives, CAR) {
+        let session = SourceDbOpenSession {
+            car_id: CAR,
+            drive: source_history.drives.iter().find(|d| d.id == id).cloned(),
+            drive_positions: source_history.positions.iter().filter(|p| p.drive_id == Some(id)).cloned().collect(),
+            ..Default::default()
+        };
+        fixture.store.stage_import_generation_session(run_id, &session).unwrap();
+    }
+
     let state = capture(&fixture, run_id, false, &projected).into_state();
     let sequence = fixture
         .store
@@ -1634,4 +1648,94 @@ fn rebuild_incremental_one_corrected_drive_is_the_only_row_sent_or_rewritten() {
         "every earlier pack is kept"
     );
     assert!(packs_after.len() > packs_before.len(), "the delta adds its pack");
+}
+
+#[test]
+fn broken_drive_handover_lifecycle_close_then_reimport_has_one_position_form() {
+    use crate::lifecycle::{OpenSessionState, force_close_open_sessions};
+    let mut drive = source_drive(70, T, T + 2 * MINUTE);
+    drive.end_date_ms = None;
+    let mut positions = vec![
+        source_position(701, Some(70), T),
+        source_position(702, Some(70), T + MINUTE),
+    ];
+    positions[0].odometer = Some(100.0);
+    positions[1].odometer = Some(101.0);
+    let source = history(vec![drive.clone()], positions.clone());
+    let fixture = fixture_with_history(&source);
+    let vehicle = fixture.binding.vehicle_id;
+    let session = SourceDbOpenSession {
+        car_id: CAR,
+        drive: Some(drive),
+        drive_positions: positions,
+        ..Default::default()
+    };
+    assert_eq!(fixture.store.load_imported_open_session(fixture.binding.account_id, vehicle).unwrap(), Some(session.clone()));
+    let record = fixture
+        .store
+        .load_lifecycle_state(vehicle)
+        .unwrap()
+        .unwrap();
+    let state = OpenSessionState::decode(&record.open_session_json).unwrap();
+    let closed = force_close_open_sessions(state, CAR, T + 3 * MINUTE).unwrap();
+    assert_eq!(
+        closed.delta.drives.len(),
+        1,
+        "the lifecycle really closes the inherited drive"
+    );
+    fixture
+        .store
+        .commit_lifecycle_delta(&crate::db::LifecycleCommit {
+            vehicle_id: vehicle,
+            car_id: CAR,
+            open_session_json: &closed.state.encode().unwrap(),
+            last_observation_id: closed.state.last_observation_id,
+            quarantined: false,
+            updated_at_ms: T + 3 * MINUTE,
+            delta: &closed.delta,
+        })
+        .unwrap();
+    let second = project_vehicle(&source, CAR).unwrap();
+    assert_eq!(second.report.held_open_session_positions, 2);
+    // Publish the close as the collector does, then take the production
+    // unchanged-fingerprint import branch for the same source snapshot.
+    publish_sync_mutations_ahead_of_packs(
+        &fixture.store, &fixture.gate, &fixture.cursor_key, vehicle,
+    ).unwrap();
+    let run_id = begin_run(&fixture, T + HOUR);
+    fixture.store.stage_import_generation_session(run_id, &session).unwrap();
+    let fingerprint = Sha256Digest::of_bytes(b"import-seam-base");
+    assert!(fixture.store.source_fingerprint_matches(vehicle, fingerprint).unwrap());
+    let mut capture = StagedProjectionPacks::new(vec![], second.report, fingerprint, vec![]);
+    promote_unchanged_direct_import(
+        &fixture.store, &fixture.gate, run_id, fixture.binding.account_id,
+        vehicle, CAR, T + HOUR, &mut capture,
+        Some((&second.snapshot.cars[0], &second.snapshot.drives)),
+    ).unwrap();
+    let after = fixture.store.load_lifecycle_state(vehicle).unwrap().unwrap();
+    assert!(OpenSessionState::decode(&after.open_session_json).unwrap().open_drive.is_none());
+    let all = heads(&fixture.store, vehicle);
+    for id in [701, 702] {
+        let forms: Vec<_> = all
+            .iter()
+            .flat_map(|(_, rows)| &rows.positions)
+            .filter(|p| p.0 == id)
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(
+            forms,
+            vec![Some(70)],
+            "one attached publication for source position {id}"
+        );
+    }
+    let stored = fixture.store.materialised_history(vehicle).unwrap();
+    for id in [701, 702] {
+        let forms: Vec<_> = stored
+            .positions
+            .iter()
+            .filter(|p| p.id == id)
+            .map(|p| p.drive_id)
+            .collect();
+        assert_eq!(forms, vec![Some(70)]);
+    }
 }

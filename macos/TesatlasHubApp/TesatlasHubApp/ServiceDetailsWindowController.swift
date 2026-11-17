@@ -367,7 +367,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     @objc private func startStopPressed() {
         guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         serviceHealth == .stopped ? lifecycleActions.start() : lifecycleActions.stop()
@@ -375,7 +375,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     @objc private func restartPressed() {
         guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         lifecycleActions.restart()
@@ -385,7 +385,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     /// pending surface and gate as Stop.
     @objc private func removePressed() {
         guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         guard confirmationPresenter(Self.removeConfirmation(), .alertFirstButtonReturn)
@@ -397,7 +397,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     /// and the transition (section 2.3.10.4).
     @objc private func deleteDataPressed() {
         guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return
         }
         lifecycleActions.deleteHubAndData()

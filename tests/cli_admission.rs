@@ -965,3 +965,55 @@ mod source_takeover {
         assert_eq!(hub.endpoint.connections(), 0, "nothing was sent to Tesla");
     }
 }
+
+/// M08-T18: a Legacy Hub's command line refuses every vehicle action with the
+/// fixed refusal, before the configuration or catalogue is read and before it
+/// connects to the running service; nothing is sent. Without `--confirm` the
+/// parser refuses it as a usage error before that.
+#[test]
+fn legacy_hub_refuses_every_vehicle_action_at_the_command_line() {
+    let hub = Hub::new();
+    fs::create_dir(hub.data()).expect("data dir");
+    fs::set_permissions(hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
+    drop(tesatlas_hub::db::HubStore::initialize(hub.data()).expect("store"));
+    let actions: [&[&str]; 10] = [
+        &["wake"],
+        &["climate-start"],
+        &["climate-stop"],
+        &["charge-start"],
+        &["charge-stop"],
+        &["set-charge-limit", "--percent", "80"],
+        &["lock"],
+        &["unlock"],
+        &["flash-lights"],
+        &["honk-horn"],
+    ];
+    for action in actions {
+        for target in [&[][..], &["--vehicle-id", "00000000-0000-4000-8000-000000000007"][..]] {
+            let mut arguments = vec!["control"];
+            arguments.extend_from_slice(target);
+            arguments.extend_from_slice(action);
+            let mut confirmed = arguments.clone();
+            confirmed.push("--confirm");
+            let output = hub.run(&confirmed, b"");
+            assert_refused(&output, "vehicle_commands_not_offered", &confirmed);
+            assert!(
+                stderr(&output).contains(
+                    "vehicle_commands_not_offered: vehicle commands are not offered: the Hub only reads vehicle data and never sends a command to a car"
+                ),
+                "{confirmed:?}: {}",
+                stderr(&output)
+            );
+            assert!(stdout(&output).is_empty(), "{confirmed:?}: nothing reported");
+            let output = hub.run(&arguments, b"");
+            assert_ne!(output.status.code(), Some(0), "{arguments:?} without --confirm");
+            assert!(stdout(&output).is_empty(), "{arguments:?} without --confirm");
+        }
+    }
+    // Refused before the configuration is read: an unreadable one changes nothing.
+    fs::set_permissions(hub.path("config.toml"), fs::Permissions::from_mode(0o000)).expect("seal config");
+    let output = hub.run(&["control", "wake", "--confirm"], b"");
+    fs::set_permissions(hub.path("config.toml"), fs::Permissions::from_mode(0o600)).expect("config mode");
+    assert_refused(&output, "vehicle_commands_not_offered", &["control", "wake", "--confirm"]);
+    assert_eq!(hub.endpoint.connections(), 0, "nothing sent");
+}

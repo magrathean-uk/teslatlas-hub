@@ -1382,3 +1382,89 @@ fn collection_window_operator_channel_refuses_an_unrelated_owner_process() {
         .expect("the Hub's own command still closes the window");
     assert_eq!(status["phase"], "closing");
 }
+
+/// M04-T11: the window status answer carries the intake latency figures of the
+/// window it names. The service and a collector thread share one recorder, as the
+/// process-wide one is shared in production: samples a collector run records as its
+/// window's cross the operator channel; refused opens change nothing; and the next
+/// window shows empty figures until its own first sample.
+#[test]
+fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
+    let rig = Rig::new();
+    std::fs::create_dir_all(rig.data()).expect("data dir");
+    let recorder: &'static crate::collection::collector::IntakeRecorder =
+        Box::leak(Box::new(crate::collection::collector::IntakeRecorder::new()));
+    let _server = ChannelServer::bind(
+        &rig.data(),
+        Arc::new(rig.service().with_intake_latency(recorder)),
+    )
+    .expect("channel bound");
+    rig.forward(&OperatorRequest::WindowTrust {
+        document: encoded(&rig.trust),
+    })
+    .expect("trust");
+    let closed = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(closed["intakeLatency"]["count"], 0);
+    assert!(closed["intakeLatency"]["seq"].is_null());
+
+    let first_grant = rig.grant(3_600);
+    let opened = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&first_grant),
+        })
+        .expect("open");
+    assert_eq!(opened["intakeLatency"]["count"], 0);
+    assert_eq!(opened["intakeLatency"]["seq"], opened["seq"]);
+    let seq = opened["seq"].as_u64().expect("a grant sequence");
+
+    // A collector run of the window records on its own thread.
+    std::thread::spawn(move || {
+        for millis in [12, 30, 400] {
+            recorder.record(seq, std::time::Duration::from_millis(millis));
+        }
+    })
+    .join()
+    .expect("collector thread");
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    let latency = status["intakeLatency"].clone();
+    assert_eq!(latency["count"], 3, "{status}");
+    assert!(latency.get("dropped").is_none(), "no dropped count: {latency}");
+    assert_eq!(latency["maxMs"].as_f64(), Some(400.0));
+    assert_eq!(latency["overTargetCount"], 1);
+    assert_eq!(latency["p95WithinTarget"], false);
+    assert_eq!(latency["seq"], status["seq"]);
+    assert_eq!(latency["grantDigest"], status["grantDigest"]);
+
+    // Two refused opens in a row (the grant replayed) change nothing.
+    for _ in 0..2 {
+        let refused = rig
+            .forward(&OperatorRequest::WindowOpen {
+                grant: encoded(&first_grant),
+            })
+            .unwrap_err();
+        assert_eq!(refused.code, "grant_consumed");
+    }
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["intakeLatency"], latency, "{status}");
+
+    // The next window shows empty figures beside its own identity until its first
+    // sample; a late sample of the window before reaches nothing.
+    rig.controller.close(CloseReason::OperatorClose);
+    rig.controller.finish_close().expect("closed");
+    rig.clock.advance(3_600 + 16 * 60);
+    let next = rig
+        .forward(&OperatorRequest::WindowOpen {
+            grant: encoded(&rig.grant(3_600)),
+        })
+        .expect("next open");
+    assert_ne!(next["seq"], opened["seq"]);
+    assert_eq!(next["intakeLatency"]["count"], 0, "{next}");
+    assert_eq!(next["intakeLatency"]["seq"], next["seq"]);
+    assert!(next["intakeLatency"]["maxMs"].is_null());
+    let next_seq = next["seq"].as_u64().expect("a grant sequence");
+    recorder.record(next_seq, std::time::Duration::from_millis(8));
+    recorder.record(seq, std::time::Duration::from_millis(900));
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["intakeLatency"]["count"], 1, "{status}");
+    assert_eq!(status["intakeLatency"]["maxMs"].as_f64(), Some(8.0));
+}

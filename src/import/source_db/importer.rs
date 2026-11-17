@@ -22,6 +22,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS;
+
 use crate::{
     credentials::SourceDbPassword,
     db::{
@@ -2421,7 +2423,7 @@ fn source_history_fingerprint(
 ) -> Result<Sha256Digest, SourceDbImportError> {
     let canonical = serde_json::to_vec(&(selected_car_id, history))?;
     let mut digest = Sha256::new();
-    digest.update(crate::runtime::legacy_names::SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
+    digest.update(SOURCE_HISTORY_V2_STANDALONE_POSITIONS.as_bytes());
     digest.update(
         u64::try_from(canonical.len())
             .map_err(|_| SourceDbImportError::SourceFingerprintTooLarge)?

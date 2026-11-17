@@ -26,6 +26,7 @@ use super::{
     channel::{FleetSignInInput, OperatorHandler, OperatorRequest, SetupMaterial},
     trust::{DialogConfirmation, TrustAuthority},
 };
+use crate::collection::collector::IntakeRecorder;
 use crate::collection::window::{
     AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, Handback, HandbackSource,
     HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
@@ -338,6 +339,8 @@ pub struct OperatorService {
     trust: TrustAuthority,
     window_dir: PathBuf,
     recovery: Arc<RecoveryGate>,
+    /// The collector's intake latency recorder (M04-T11), read only.
+    intake: &'static IntakeRecorder,
 }
 
 impl OperatorService {
@@ -357,7 +360,15 @@ impl OperatorService {
             trust,
             window_dir: super::window_dir(data_dir),
             recovery: RecoveryGate::new(false),
+            intake: IntakeRecorder::process_wide(),
         }
+    }
+
+    /// Answers with the intake latency figures of `recorder` (the process's own by
+    /// default).
+    pub fn with_intake_latency(mut self, recorder: &'static IntakeRecorder) -> Self {
+        self.intake = recorder;
+        self
     }
 
     /// Answers in the recovery state of `recovery` while it is pending.
@@ -380,8 +391,12 @@ impl OperatorService {
     }
 
     fn status(&self) -> Value {
-        let mut status = status_json(&self.controller.status());
+        // One read of the window: the intake latency figures (M04-T11) are shown
+        // only beside the identity of the window they belong to.
+        let window = self.controller.status();
+        let mut status = status_json(&window);
         status["credentialRecoveryPending"] = json!(self.recovery.pending());
+        status["intakeLatency"] = self.intake.status(&window);
         status
     }
 

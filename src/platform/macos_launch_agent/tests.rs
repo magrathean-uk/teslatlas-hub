@@ -1073,6 +1073,112 @@ fn idle_start_refuses_a_configured_but_broken_hub() {
     assert!(preflight_hub_for_serve(&config, None).is_err(), "damaged store refused");
 }
 
+/// The rename hand-over reads which program the loaded job runs from
+/// `launchctl print` (layout as printed by macOS: one tab, then `program = `).
+#[test]
+fn the_loaded_jobs_program_is_read_from_its_own_line_only() {
+    let installed = Path::new("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    let print = "gui/501/com.tesatlas.hub = {\n\tactive count = 1\n\tstate = running\n\n\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\targuments = {\n\t\t/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(launchctl_print_program(print).as_deref(), Some(installed));
+    assert_eq!(loaded_job(Some(print), installed), LoadedJob::Installed);
+    assert_eq!(loaded_job(None, installed), LoadedJob::Absent);
+    let other = print.replace("program = /Applications/Tesatlas Hub.app", "program = /Users/o/Applications/Tesatlas Hub.app");
+    assert_eq!(loaded_job(Some(other.as_str()), installed), LoadedJob::Stale, "another bundle's binary");
+    // No own line (a nested or relative one does not count): not shown to be
+    // the installed program, so the definition is loaded again.
+    let nested = "gui/501/com.tesatlas.hub = {\n\tendpoints = {\n\t\tprogram = /Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub\n\t}\n}\n";
+    assert_eq!(loaded_job(Some(nested), installed), LoadedJob::Stale);
+    assert_eq!(loaded_job(Some("\tprogram = tesatlas-hub\n"), Path::new("tesatlas-hub")), LoadedJob::Stale);
+}
+
+#[test]
+fn the_installed_files_program_and_configuration_are_both_absolute() {
+    let temporary = crate::private_tempdir().unwrap();
+    let plist = temporary.path().join("installed.plist");
+    let write = |program: &str| {
+        fs::write(&plist, format!("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>{program}</string><string>--config</string><string>/h/Tesatlas Hub/config.toml</string><string>serve</string></array></dict></plist>")).unwrap();
+    };
+    write("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub");
+    assert_eq!(
+        installed_arguments_from_plist(&plist).unwrap(),
+        (
+            PathBuf::from("/Applications/Tesatlas Hub.app/Contents/Resources/tesatlas-hub"),
+            PathBuf::from("/h/Tesatlas Hub/config.toml")
+        )
+    );
+    write("tesatlas-hub");
+    assert!(installed_arguments_from_plist(&plist).is_err(), "a relative program is refused");
+}
+
+#[test]
+fn a_stale_loaded_definition_is_replaced_without_disabling_the_service() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // bootout, print (still loaded), print (gone), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([true, true, false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("reload");
+    assert_eq!(
+        calls,
+        [
+            "bootout gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+
+    // A bootstrap that fails is reported, never followed by another request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([true, false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    let refused = reload_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).unwrap_err();
+    assert_eq!(calls, 3);
+    // Unloaded and not loaded again: the owner is told so, and what Try Again does.
+    assert_eq!(refused.to_string(), format!("{RELOAD_LEFT_UNLOADED} (launchctl failed)"));
+    assert!(refused.to_string().starts_with("the Hub service is not running now"));
+    assert!(refused.to_string().contains("Try Again starts it"));
+}
+
+#[test]
+fn a_job_that_is_not_loaded_is_loaded_without_a_restart() {
+    let plist = Path::new("/private/tmp/com.tesatlas.hub.plist");
+    let mut calls: Vec<String> = Vec::new();
+    // print (absent), bootstrap, print (loaded).
+    let mut answers = std::collections::VecDeque::from([false, true, true]);
+    let mut runner = |arguments: &[&OsStr]| {
+        calls.push(arguments.iter().map(|argument| argument.to_string_lossy()).collect::<Vec<_>>().join(" "));
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut runner).expect("load");
+    assert_eq!(
+        calls,
+        [
+            "print gui/501/com.tesatlas.hub",
+            "bootstrap gui/501 /private/tmp/com.tesatlas.hub.plist",
+            "print gui/501/com.tesatlas.hub",
+        ]
+    );
+    assert!(calls.iter().all(|call| !call.starts_with("kickstart")), "RunAtLoad starts it; no throttled restart");
+
+    // A bootstrap that is refused is reported, with no further request.
+    let mut calls = 0;
+    let mut answers = std::collections::VecDeque::from([false, false]);
+    let mut failing = |_: &[&OsStr]| {
+        calls += 1;
+        answers.pop_front().ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    assert!(load_installed_with_runner(plist, "gui/501", "gui/501/com.tesatlas.hub", &mut failing).is_err());
+    assert_eq!(calls, 2);
+}
+
 fn takeover_pair(refresh: &str) -> crate::credentials::OwnerTokens {
     crate::credentials::OwnerTokens::from_secret_parts("synthetic-access-0001".to_owned(), refresh.to_owned()).expect("synthetic pair")
 }
@@ -1351,4 +1457,134 @@ async fn fleet_setup_admits_each_unfinished_step() {
     legacy.collector.provider = CollectorProvider::Legacy;
     assert_eq!(hub_awaits_fleet_setup(&legacy).expect("readable"), None);
     drop(store);
+}
+
+// M08-T22: the production start's admission reads a number of rows that grows
+// with the number of cars, not with the history or the packs.
+
+/// A configured collecting Legacy Hub with imported history and no Owner login.
+fn seed_awaiting_hub(data: &Path) -> HubConfig {
+    let store = seed_selected_car(data);
+    load_or_create_cursor_key(data).expect("cursor key");
+    drop(crate::auth::credential_vault::fixtures::legacy_vault(&store, data));
+    drop(store);
+    let mut config = idle_start_config(data);
+    config.collector.interval_seconds = 300;
+    config
+}
+
+/// Makes every stored pack unreadable: any pack open or hash fails.
+fn make_packs_unreadable(data: &Path) -> Vec<PathBuf> {
+    let packs: Vec<PathBuf> = fs::read_dir(data.join("packs").join("sha256"))
+        .expect("pack folder")
+        .map(|entry| entry.expect("pack entry").path())
+        .filter(|path| path.is_file())
+        .collect();
+    assert!(!packs.is_empty(), "the imported car references packs");
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o000)).expect("pack mode");
+    }
+    packs
+}
+
+/// Overwrites the root page of a table no admission reads, so the whole-store
+/// `PRAGMA quick_check` fails while every read of the admission still answers.
+fn break_unread_table(data: &Path, table: &str) {
+    use std::os::unix::fs::FileExt as _;
+    let path = data.join("hub.sqlite");
+    let connection = rusqlite::Connection::open(&path).expect("store");
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").expect("checkpoint");
+    let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0)).expect("page size");
+    let root: i64 = connection
+        .query_row("SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |row| row.get(0))
+        .expect("root page");
+    drop(connection);
+    let (page_size, root) = (u64::try_from(page_size).expect("page size"), u64::try_from(root).expect("root page"));
+    assert!(root > 1, "not the schema page");
+    let file = fs::OpenOptions::new().write(true).open(&path).expect("store file");
+    file.write_all_at(&vec![0xA5_u8; usize::try_from(page_size).expect("page size")], (root - 1) * page_size).expect("broken page");
+}
+
+/// M08-T22: a production start decides the awaiting-sign-in admission without the
+/// whole-store check and without opening a pack. Unreadable packs and a damaged page
+/// in a table it never reads leave the production admission unchanged, while the
+/// command-line form (the whole-store check) refuses the same store.
+#[test]
+fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    assert!(hub_awaits_owner_sign_in(&config).expect("healthy store"), "awaiting on the healthy store");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    assert!(hub_awaits_owner_sign_in(&config).is_err(), "the command-line form keeps the whole-store check");
+    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without opening a pack");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without the whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}
+
+/// M08-T22: on a healthy store the bounded production admission and the command-line
+/// whole-store form decide every reviewed state alike.
+#[test]
+fn production_start_admission_decides_as_the_whole_store_form() {
+    let same = |config: &HubConfig, label: &str| {
+        let whole = hub_awaits_owner_sign_in(config).map_err(|error| error.to_string());
+        let bounded = awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded).map_err(|error| error.to_string());
+        assert_eq!(bounded, whole, "{label}");
+        whole
+    };
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    assert_eq!(same(&config, "awaiting"), Ok(true));
+    let mut other = config.clone();
+    other.collector.legacy_auth.enabled = false;
+    assert_eq!(same(&other, "Legacy refresh disabled"), Ok(false));
+    let mut other = config.clone();
+    other.collector.provider = CollectorProvider::Fleet;
+    assert_eq!(same(&other, "Fleet provider"), Ok(false));
+    assert_eq!(same(&idle_start_config(&data), "collector off"), Ok(false));
+
+    // A quarantined car: refused by both, before any credential is read.
+    let store = HubStore::open_read_only(&data).expect("store");
+    let (vehicle, _, _) = store.configured_tesla_vehicles().expect("cars").into_iter().next().expect("the configured car");
+    let connection = rusqlite::Connection::open(data.join("hub.sqlite")).expect("writable");
+    let quarantine = |value: i64| {
+        connection
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(vehicle_id, car_id, last_observation_id, open_session_json, quarantined, updated_at_ms)
+                 VALUES (?1, 1, 0, CAST('{}' AS BLOB), ?2, 1)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET quarantined = excluded.quarantined",
+                rusqlite::params![vehicle.to_string(), value],
+            )
+            .expect("lifecycle row")
+    };
+    quarantine(1);
+    assert!(same(&config, "quarantined").is_err(), "quarantined: refused");
+    quarantine(0);
+    assert_eq!(same(&config, "released"), Ok(true));
+    drop(connection);
+
+    // The Hub's own login is stored.
+    let store = HubStore::initialize(&data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, &data, "access-0001", "refresh-0001", None).expect("own login");
+    assert_eq!(same(&config, "signed in"), Ok(false));
+
+    // No configured car.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let empty = temporary.path().join("data");
+    HubStore::initialize(&empty).expect("empty store");
+    let mut config = idle_start_config(&empty);
+    config.collector.interval_seconds = 300;
+    assert_eq!(same(&config, "no configured car"), Ok(false));
 }

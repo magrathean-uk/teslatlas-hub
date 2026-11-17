@@ -135,7 +135,33 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// store that is absent stays admitted (the sign-in creates it); one that
 /// exists but cannot be used is refused here with the vault's own refusal,
 /// rather than at the sign-in (M09-T16, N1).
+///
+/// This is the command-line `preflight`'s form: the catalogue must pass the
+/// whole-store `catalogue_check` (`PRAGMA quick_check` and a hash of every
+/// referenced pack), as every configured Hub's `preflight` did before the
+/// take-over. The production serve admission decides by the same rule on a
+/// read that grows with the number of cars only (M08-T22).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
+    awaits_owner_sign_in(config, AdmissionStoreCheck::WholeStore)
+}
+
+/// How much of the catalogue the awaiting-sign-in admission reads (M08-T22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AdmissionStoreCheck {
+    /// `HubStore::catalogue_check`: the whole store and every referenced pack.
+    WholeStore,
+    /// `HubStore::readiness_check`: the catalogue opens at a supported schema,
+    /// its core tables respond and no car is quarantined; the same
+    /// readable-catalogue gate `/readyz` applies. With the configured-car join,
+    /// the Owner slot's format row and its presence row that follow, the
+    /// admission reads a number of rows that grows with the number of cars,
+    /// not with the history or the packs; no pack is opened and no
+    /// `PRAGMA quick_check` runs. Used at a production start, before the
+    /// listener opens.
+    Bounded,
+}
+
+fn awaits_owner_sign_in(config: &crate::config::HubConfig, check: AdmissionStoreCheck) -> io::Result<bool> {
     if config.collector.provider != crate::config::CollectorProvider::Legacy
         || config.collector.interval_seconds == 0
         || !config.collector.legacy_auth.enabled
@@ -150,7 +176,11 @@ pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    match check {
+        AdmissionStoreCheck::WholeStore => store.catalogue_check(),
+        AdmissionStoreCheck::Bounded => store.readiness_check(),
+    }
+    .map_err(|error| unavailable(&error))?;
     if store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty() {
         return Ok(false);
     }
@@ -333,8 +363,11 @@ pub fn preflight_hub_for_serve(
             return Ok(());
         }
         // A configured Hub without the Hub's own login serves for the
-        // owner's sign-in, collecting nothing until then (M09-T16, B2).
-        if hub_awaits_owner_sign_in(config)? {
+        // owner's sign-in, collecting nothing until then (M09-T16, B2). The
+        // rule is decided on a read that grows with the number of cars only:
+        // no whole-store check and no pack is read before the listener opens
+        // (M08-T22).
+        if awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded)? {
             tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
             return Ok(());
         }
@@ -702,6 +735,158 @@ fn provider_credentials_are_usable(
 fn configured_identity_from_plist(
     plist: &Path,
 ) -> io::Result<(crate::config::HubConfig, crate::protocol::Sha256Digest)> {
+    crate::config::HubConfig::load_with_digest(configured_config_path_from_plist(plist)?)
+        .map_err(io::Error::other)
+}
+
+/// The configuration the installed current LaunchAgent serves: its `--config`
+/// argument. The rename hand-over confirms the started service against it.
+pub fn installed_config_path() -> io::Result<PathBuf> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub configuration is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        configured_config_path_from_plist(&installed_plist()?)
+    }
+}
+
+pub use crate::platform::name_migration::hand_over::LoadedJob;
+
+/// Reads (never changes) what launchd holds for the current Hub job. The
+/// rename hand-over uses it to choose between confirming, restarting and
+/// loading the installed definition.
+pub fn installed_job() -> io::Result<LoadedJob> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let (program, _) = installed_arguments_from_plist(&installed_plist()?)?;
+        let (_, service) = service_identifiers();
+        Ok(loaded_job(real_launchctl_print(&service)?.as_deref(), &program))
+    }
+}
+
+/// Loads the installed definition afresh: `bootout`, wait until it is
+/// unloaded, then `bootstrap` (the agent runs at load). Used in place of a
+/// stale definition, and for a loaded job that is not serving: a fresh load
+/// starts at once, where `kickstart -k` of a job launchd throttles after
+/// failed runs is held until the throttle ends. A transient stop: nothing is
+/// disabled. When the definition cannot be loaded after the unload, the error
+/// says so ([`RELOAD_LEFT_UNLOADED`]).
+pub fn reload_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let plist = installed_plist()?;
+        let (domain, service) = service_identifiers();
+        reload_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+    }
+}
+
+/// Loads the installed definition of a job that is not loaded: `bootstrap`
+/// (the agent runs at load), then check it is loaded. It is not restarted
+/// after: a `kickstart -k` straight after the load would wait out launchd's
+/// throttle. A job already loaded is left as it is.
+pub fn load_installed() -> io::Result<()> {
+    #[cfg(feature = "credential-relocation-fixture")]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the installed Hub job is unavailable in the fixture build",
+        ))
+    }
+    #[cfg(not(feature = "credential-relocation-fixture"))]
+    {
+        let plist = installed_plist()?;
+        let (domain, service) = service_identifiers();
+        load_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+    }
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn load_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    if !service_is_loaded_with_runner(service, runner)? {
+        run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])?;
+    }
+    if !service_is_loaded_with_runner(service, runner)? {
+        return Err(io::Error::other("Hub LaunchAgent is not loaded after start"));
+    }
+    Ok(())
+}
+
+/// The refusal when a reload unloaded the job and could not load it again:
+/// nothing runs the Hub until the next attempt loads it.
+pub const RELOAD_LEFT_UNLOADED: &str =
+    "the Hub service is not running now: it was stopped to be loaded again, and could not be loaded. Try Again starts it";
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn loaded_job(print: Option<&str>, installed_program: &Path) -> LoadedJob {
+    match print {
+        None => LoadedJob::Absent,
+        Some(output) if launchctl_print_program(output).as_deref() == Some(installed_program) => {
+            LoadedJob::Installed
+        }
+        Some(_) => LoadedJob::Stale,
+    }
+}
+
+/// The job's own `program = ` line, one tab deep in `launchctl print`.
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn launchctl_print_program(output: &str) -> Option<PathBuf> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix("\tprogram = "))
+        .map(|program| PathBuf::from(program.trim_end()))
+        .filter(|program| program.is_absolute())
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn reload_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    let _ = runner(&[OsStr::new("bootout"), OsStr::new(service)])?;
+    wait_for_service_unloaded_with_runner(service, runner)?;
+    let loaded = run_launchctl(runner, &[OsStr::new("bootstrap"), OsStr::new(domain), plist.as_os_str()])
+        .and_then(|()| service_is_loaded_with_runner(service, runner));
+    match loaded {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(io::Error::other(format!("{RELOAD_LEFT_UNLOADED} (Hub LaunchAgent is not loaded after start)"))),
+        Err(error) => Err(io::Error::other(format!("{RELOAD_LEFT_UNLOADED} ({error})"))),
+    }
+}
+
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn configured_config_path_from_plist(plist: &Path) -> io::Result<PathBuf> {
+    installed_arguments_from_plist(plist).map(|(_, config)| config)
+}
+
+/// The installed file's program and `--config` path, both absolute.
+#[cfg(any(test, not(feature = "credential-relocation-fixture")))]
+fn installed_arguments_from_plist(plist: &Path) -> io::Result<(PathBuf, PathBuf)> {
     if fs::metadata(plist)?.len() > 1024 * 1024 {
         return Err(io::Error::other("installed plist is too large"));
     }
@@ -736,7 +921,15 @@ fn configured_identity_from_plist(
             "installed plist config path must be absolute",
         ));
     }
-    crate::config::HubConfig::load_with_digest(config_path).map_err(io::Error::other)
+    let program = Path::new(
+        args[0]
+            .as_str()
+            .ok_or_else(|| io::Error::other("installed plist program is absent"))?,
+    );
+    if !program.is_absolute() {
+        return Err(io::Error::other("installed plist program must be absolute"));
+    }
+    Ok((program.to_path_buf(), config_path.to_path_buf()))
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
@@ -1169,6 +1362,27 @@ fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
         "launchctl print failed ({}): {detail}",
         output.status
     )))
+}
+
+/// `launchctl print` of `service`: its description, or `None` when it is not loaded.
+#[cfg(not(feature = "credential-relocation-fixture"))]
+fn real_launchctl_print(service: &str) -> io::Result<Option<String>> {
+    refuse_real_launchctl_in_unit_tests()?;
+    let output = Command::new("/bin/launchctl")
+        .arg("print")
+        .arg(service)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    if output.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()));
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    if expected_launchctl_absence("print", output.status.code(), &detail) {
+        return Ok(None);
+    }
+    Err(io::Error::other(format!("launchctl print failed ({}): {detail}", output.status)))
 }
 
 #[cfg(any(test, not(feature = "credential-relocation-fixture")))]
