@@ -671,6 +671,7 @@ impl AppState {
         Some(PackDeviceSlot {
             device_id,
             counts: Arc::clone(&self.pack_streams_by_device),
+            authorization: None,
         })
     }
 
@@ -2254,13 +2255,21 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let Some(device_slot) = state.try_acquire_pack_device_slot(device.device_id) else {
+    let Some(mut device_slot) = state.try_acquire_pack_device_slot(device.device_id) else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::RETRY_AFTER, HeaderValue::from_static("1"))],
         )
             .into_response();
     };
+    if state.require_device_auth {
+        device_slot.authorization = Some(Arc::new(PackStreamAuthorization {
+            store: Arc::clone(&state.store),
+            bearer: zeroize::Zeroizing::new(
+                bearer_from_headers(&headers).expect("authenticated bearer").to_owned(),
+            ),
+        }));
+    }
     let permit = match state.pack_stream_slots.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(_) => {
@@ -2488,6 +2497,12 @@ fn no_store_lineage_manifest(
 struct PackDeviceSlot {
     device_id: Uuid,
     counts: Arc<Mutex<HashMap<Uuid, usize>>>,
+    authorization: Option<Arc<PackStreamAuthorization>>,
+}
+
+struct PackStreamAuthorization {
+    store: Arc<HubStore>,
+    bearer: zeroize::Zeroizing<String>,
 }
 
 impl Drop for PackDeviceSlot {
@@ -2664,7 +2679,7 @@ fn verified_pack_body(
 fn pack_stream_body<R>(
     mut reader: R,
     permit: tokio::sync::OwnedSemaphorePermit,
-    device_slot: PackDeviceSlot,
+    mut device_slot: PackDeviceSlot,
     idle_timeout: Duration,
 ) -> Body
 where
@@ -2674,6 +2689,7 @@ where
     // stops reading fills this small channel; the bounded send then expires and
     // releases the file, global slot, and per-device slot.
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
+    let authorization = device_slot.authorization.take();
     tokio::spawn(async move {
         let _permit = permit;
         let _device_slot = device_slot;
@@ -2702,9 +2718,33 @@ where
             }
         }
     });
-    Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
-        receiver.recv().await.map(|item| (item, receiver))
-    }))
+    // Check at delivery, including queued chunks: a revocation, expiry or
+    // superseded bearer must stop an existing response as well as new requests.
+    Body::from_stream(stream::unfold(
+        Some((receiver, authorization)),
+        |state| async move {
+            let (mut receiver, authorization) = state?;
+            let item = receiver.recv().await?;
+            if let Some(access) = authorization.as_ref() {
+                let access = Arc::clone(access);
+                let allowed = tokio::task::spawn_blocking(move || {
+                    matches!(access.store.authenticate_device(&access.bearer), Ok(Some(_)))
+                })
+                .await
+                .unwrap_or(false);
+                if !allowed {
+                    return Some((
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            "pack access is no longer authorised",
+                        )),
+                        None,
+                    ));
+                }
+            }
+            Some((item, Some((receiver, authorization))))
+        },
+    ))
 }
 
 fn range_not_satisfiable(complete_length: u64) -> Response {
