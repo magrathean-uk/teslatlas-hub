@@ -315,10 +315,8 @@ fn migration_progress_is_online_snapshot_only() {
 #[cfg(unix)]
 #[tokio::test]
 async fn source_credential_disabled_raw_token_setup_is_refused_by_the_dispatcher_first() {
-    // No token input exists any more (M02-T10): Fleet telemetry is refused
-    // `provider_parked` before the configuration is read, and `setup` and
-    // `setup-fleet` are forwarded to the service, so they read the
-    // configuration and nothing else.
+    // No token input exists any more (M02-T10): Fleet telemetry is refused before the configuration is
+    // read; `setup` and `setup-fleet` are forwarded to the service, so they read the configuration only.
     let temporary = tempfile::tempdir().expect("temporary directory");
     let sealed = temporary.path().join("sealed");
     fs::create_dir(&sealed).expect("sealed directory");
@@ -1898,12 +1896,9 @@ fn fleet_sign_in_setup_fleet_grammar_routes_to_the_service() {
     assert!(matches!(parse(&["setup-fleet", "--vehicle-id", "70"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: Some(70), all_vehicles: false }));
     assert!(matches!(parse(&["setup-fleet", "--all-vehicles"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: true }));
     assert!(matches!(parse(&["setup-fleet", "begin"]).expect("begin"), Command::SetupFleet { step: Some(FleetSetupStep::Begin), .. }));
-    for args in [
-        vec!["setup-fleet", "--sign-in"], vec!["setup-fleet", "--vehicle-id", "70", "--all-vehicles"],
-        vec!["setup-fleet", "begin", "--all-vehicles"], vec!["setup-fleet", "--vehicle-id", "70", "begin"],
-        vec!["setup-fleet", "--client-secret", "x"], vec!["setup-fleet", "--access-token-file", "x"],
-    ] {
-        assert!(parse(&args).is_err(), "{args:?}");
+    for args in [&["setup-fleet", "--sign-in"][..], &["setup-fleet", "--vehicle-id", "70", "--all-vehicles"], &["setup-fleet", "begin", "--all-vehicles"],
+        &["setup-fleet", "--vehicle-id", "70", "begin"], &["setup-fleet", "--client-secret", "x"], &["setup-fleet", "--access-token-file", "x"]] {
+        assert!(parse(args).is_err(), "{args:?}");
     }
     for command in [parse(&["setup-fleet"]).expect("redeem"), parse(&["setup-fleet", "begin"]).expect("begin")] {
         assert_eq!(route(&command), Route::Service);
