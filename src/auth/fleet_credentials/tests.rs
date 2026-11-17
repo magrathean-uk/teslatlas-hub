@@ -41,7 +41,6 @@ fn fleet_scope_claims_are_bounded_and_collection_scopes_are_required() {
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn fleet_setup_round_trips_encrypted_and_redacted() {
     let (root, store) = due_fleet_store();
     let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), root.path());
@@ -54,7 +53,7 @@ fn fleet_setup_round_trips_encrypted_and_redacted() {
 }
 
 #[test]
-fn stored_fleet_credentials_are_refused_before_their_scopes_are_read() {
+fn stored_fleet_credentials_require_collection_scopes() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
@@ -75,7 +74,34 @@ fn stored_fleet_credentials_are_refused_before_their_scopes_are_read() {
     )
     .expect("persist");
 
-    // M02-T02: the stored Fleet pair is refused at load before its scopes are read.
+    assert!(matches!(
+        crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, temporary.path()),
+        Err(FleetCredentialError::MissingCollectionScopes)
+    ));
+}
+
+#[test]
+fn stored_supplied_fleet_credentials_are_refused_before_their_scopes_are_read() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
+    let credentials = FleetSetupCredentials::new(
+        "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig".to_owned(),
+        "fleet-refresh".to_owned(),
+        "fleet-client".to_owned(),
+        FleetRegion::EuropeMiddleEastAndAfrica,
+        28_800,
+    )
+    .expect("syntactically valid credentials");
+    crate::auth::credential_vault::fixtures::seed_blocked_fleet_setup_credentials(
+        temporary.path(),
+        &credentials,
+        UNIX_EPOCH + std::time::Duration::from_secs(1_000),
+    );
+
+    // A supplied Fleet pair an older Hub stored is refused at load (M09-T08)
+    // before its scopes are read.
     let refused = crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, temporary.path());
     assert!(
         matches!(refused, Err(FleetCredentialError::Store(crate::db::StoreError::WriteRefused("source_credential_disabled")))),
@@ -84,7 +110,6 @@ fn stored_fleet_credentials_are_refused_before_their_scopes_are_read() {
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn operational_validation_rejects_a_refresh_that_begins_after_its_first_check() {
     let root = crate::private_tempdir().expect("root");
     let store = HubStore::initialize(root.path()).expect("store");
@@ -99,18 +124,17 @@ fn operational_validation_rejects_a_refresh_that_begins_after_its_first_check() 
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
-fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
-    let (root, access, refresh) = crate::auth::credential_migration::g24_m2_m::seed_admitted_cursor_fleet();
+fn schema_55_cursor_encrypted_fleet_row_stays_refused_unread() {
+    // A pre-upgrade cursor-encrypted Fleet row is pre-un-park material
+    // (M02-T02, M09-T08): it is never converted into an admitted pair. The
+    // slot stays pending, the load refuses it unread and nothing is stored.
+    let (root, _access, _refresh) = crate::auth::credential_migration::g24_m2_m::seed_admitted_cursor_fleet();
     let lane = HubStore::open_immutable_read_only(root.path()).expect("immutable lane");
     assert!(lane.credential_format_state().expect("format").expect("state").fleet_api_state == crate::db::CredentialSlotFormatState::Pending, "preflight is pending");
     lane.verify_immutable_snapshot_unchanged().expect("preflight unchanged"); drop(lane);
     let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(HubStore::initialize(root.path()).expect("store"),root.path());
-    let plain = vault.load(CredentialSlot::FleetApi).expect("converted load").expect("pair");
-    assert!(plain.access.as_str() == access && plain.refresh.as_str() == refresh, "cursor-derived predecessor converted");
-    assert!(root.path().join("secrets").join("credential-keys").exists(), "new keyring");
-    let state = HubStore::initialize(root.path()).expect("status").credential_format_state().expect("format").expect("state");
-    assert!(state.completed_at_ms.is_some() && !state.purge_required && state.wal_scrubbed, "conversion purged and scrubbed");
+    assert!(matches!(vault.load(CredentialSlot::FleetApi), Err(CredentialStoreError::SourceCredentialDisabled(CredentialSlot::FleetApi))), "refused unread");
+    assert!(vault.credential_pair_presence(CredentialSlot::FleetApi).expect("presence").is_none(), "nothing converted or stored");
 }
 
 #[test]
@@ -126,7 +150,6 @@ fn signout_deletes_fleet_key_and_preserves_cursor_authority() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -175,7 +198,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
                 (
                     StatusCode::OK,
                     [("content-type", "application/json")],
-                    r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                    r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                 )
             }
         }),
@@ -197,7 +220,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
         .await
         .expect("due refresh succeeds");
     assert_eq!(*requests.lock().expect("request ledger"), vec![true]);
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
 
     let rotated = fleet_snapshot(&store)
         .expect("rotated Fleet row")
@@ -209,7 +232,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     assert_ne!(rotated.0.as_slice(), initial_access_ciphertext.as_slice());
     assert_ne!(rotated.1.as_slice(), initial_refresh_ciphertext.as_slice());
     let successor = manager.vault.load(CredentialSlot::FleetApi).expect("proved successor").expect("pair");
-    assert!(successor.access.as_str() == "fleet-next-access" && successor.refresh.as_str() == "fleet-next-refresh", "successor opens through vault");
+    assert!(successor.access.as_str() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access" && successor.refresh.as_str() == "fleet-next-refresh", "successor opens through vault");
 
     let receipt =(store
         .open()
@@ -263,7 +286,7 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     );
     let restarted_manager =
         FleetAuthManager::from_store(restarted, temporary.path()).expect("restart loads successor");
-    assert!(restarted_manager.access_token().expose() == "fleet-next-access");
+    assert!(restarted_manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     assert_eq!(restarted_manager.credential_generation, output_generation);
 
     server.abort();
@@ -271,7 +294,6 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn post_send_refresh_error_remains_fenced_after_restart() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -376,6 +398,70 @@ async fn post_send_refresh_error_remains_fenced_after_restart() {
     let _ = server.await;
 }
 
+/// M09-T11 B1: a refreshed pair meets the check a new grant meets before it
+/// replaces a login. A successor without both collection scopes, or with
+/// claims the collector cannot read, is refused before the encryption and the
+/// commit: the earlier own-grant pair, its ciphertext and its generation stay,
+/// the receipt stays started and fenced as after Tesla's refusal of a sent
+/// request (`post_send_refresh_error_remains_fenced_after_restart`), nothing
+/// is sent again, and every later use asks the owner to sign in again.
+#[tokio::test]
+async fn a_narrowed_refresh_is_refused_before_the_commit_and_fences_the_earlier_pair() {
+    use crate::auth::credential_vault::fixtures::{open_fixture_vault, refresh_fleet_pair_answered_with, seed_fleet_setup_credentials, validate_fixture_fleet_credentials};
+    for (label, narrowed, claims_unreadable) in [
+        ("openid only", "e30.eyJzY3AiOlsib3BlbmlkIl19.sig", false),
+        ("no location", "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig", false),
+        ("no vehicle data", "e30.eyJzY3AiOlsidmVoaWNsZV9sb2NhdGlvbiJdfQ.sig", false),
+        ("unreadable claims", "fleet-opaque-successor", true),
+    ] {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+        let credentials = FleetSetupCredentials::new(TEST_SCOPED_ACCESS.to_owned(), "fleet-old-refresh".to_owned(),
+            "fleet-client".to_owned(), FleetRegion::EuropeMiddleEastAndAfrica, 3_600).expect("setup credentials");
+        seed_fleet_setup_credentials(&store, temporary.path(), &credentials, SystemTime::now()).expect("the Hub's own grant");
+        validate_fixture_fleet_credentials(&store, temporary.path()).expect("a scoped own grant");
+        let before = fleet_snapshot(&store).expect("Fleet row").expect("Fleet pair");
+
+        let probe = refresh_fleet_pair_answered_with(&store, temporary.path(), narrowed).await;
+        if claims_unreadable {
+            assert!(matches!(probe.first, Err(FleetCredentialError::InvalidAccessTokenClaims)), "{label}: {:?}", probe.first);
+        } else {
+            assert!(matches!(probe.first, Err(FleetCredentialError::MissingCollectionScopes)), "{label}: {:?}", probe.first);
+        }
+        assert!(matches!(probe.second, Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}: the manager is terminal");
+        assert_eq!(probe.requests, 1, "{label}: one request, the input is never sent again");
+
+        // Nothing was committed: the earlier pair is the stored pair.
+        let after = fleet_snapshot(&store).expect("Fleet row").expect("Fleet pair");
+        assert_eq!(after.4, before.4, "{label}: generation");
+        assert_eq!(after.0.as_slice(), before.0.as_slice(), "{label}: access ciphertext");
+        assert_eq!(after.1.as_slice(), before.1.as_slice(), "{label}: refresh ciphertext");
+        let receipt = store.open().expect("catalogue").query_row(
+            "SELECT r.outcome, r.completed_at_ms IS NULL, b.output_generation IS NULL
+               FROM outbound_request_receipts AS r JOIN credential_refresh_attempts AS b ON b.receipt_id = r.id
+              WHERE r.transport = 'fleet_api' AND r.operation = 'token_refresh' ORDER BY r.id DESC LIMIT 1",
+            [], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?)),
+        ).expect("refresh receipt");
+        assert_eq!(receipt, ("started".to_owned(), true, true), "{label}: the receipt stays unresolved");
+        assert!(store.unresolved_fleet_refresh_status().expect("refresh state"), "{label}");
+
+        // Afterwards: the operational check and a plain load refuse with the
+        // unknown outcome (replace credentials: sign in again), and the
+        // collector's supervised start admits only the fenced manager, the
+        // reconnect stop that sends nothing.
+        assert!(matches!(validate_fixture_fleet_credentials(&store, temporary.path()), Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}");
+        assert!(matches!(FleetAuthManager::from_store(store.clone(), temporary.path()), Err(FleetCredentialError::RotationOutcomeUnknown)), "{label}");
+        let vault = open_fixture_vault(store.clone(), temporary.path());
+        let stored = vault.load(CredentialSlot::FleetApi).expect("readable").expect("pair");
+        assert!(stored.access.as_str() == TEST_SCOPED_ACCESS && stored.refresh.as_str() == "fleet-old-refresh", "{label}: the narrowed successor was never stored");
+        let admission = vault.test_admission();
+        let fenced = FleetAuthManager::from_store_for_supervised_start(vault, temporary.path(), admission, None)
+            .unwrap_or_else(|error| panic!("{label}: the reconnect stop: {error:?}"));
+        assert!(fenced.is_input_fenced(), "{label}");
+    }
+}
+
 #[test]
 fn only_definitively_unconsumed_refresh_failures_are_retryable() {
     assert_eq!(
@@ -408,7 +494,6 @@ fn only_definitively_unconsumed_refresh_failures_are_retryable() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn invalidated_admission_blocks_due_refresh_before_transport() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -460,7 +545,7 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
                 (
                     StatusCode::OK,
                     [("content-type", "application/json")],
-                    r#"{"access_token":"next","refresh_token":"next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                    r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.next","refresh_token":"next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                 )
             }
         }),
@@ -502,7 +587,6 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
 /// caller has gone; the successor is still written, the receipt resolved, and a
 /// graceful shutdown that waits for the exchange applies it to the manager.
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -541,7 +625,7 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
             (
                 StatusCode::OK,
                 [("content-type", "application/json")],
-                r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
             )
         }),
     );
@@ -576,7 +660,7 @@ async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
         .finish_exchange()
         .await
         .expect("the exchange finishes");
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     assert!(
         !store.unresolved_fleet_refresh_status().expect("resolved"),
         "the successor is written and the attempt closed"
@@ -642,7 +726,7 @@ impl GatedAuth {
                     (
                         StatusCode::OK,
                         [("content-type", "application/json")],
-                        r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                        r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
                     )
                 }
             }),
@@ -773,7 +857,6 @@ async fn start_and_drop_the_caller(manager: &mut FleetAuthManager, auth: &GatedA
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_exchange_refuses_persistence_after_admission_loss() {
     let (temporary, store) = due_fleet_store();
     let admission =
@@ -856,7 +939,6 @@ fn loss_fence_for(manager: &mut FleetAuthManager) -> Arc<std::sync::atomic::Atom
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_exchange_refuses_persistence_after_the_loss_fence_while_the_admission_passes()
 {
     // R-P3bF-1: the supervisor observed the loss while the answer was held back, and
@@ -920,7 +1002,6 @@ async fn nb_detached_exchange_refuses_persistence_after_the_loss_fence_while_the
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_failure_receipt_is_not_completed_after_the_loss_fence() {
     // The request never went out (R-P3bF-1: a receipt completion is a store write). With
     // no fence the failure completes its receipt as a transport error and the input is
@@ -1001,7 +1082,6 @@ async fn nb_detached_failure_receipt_is_not_completed_after_the_loss_fence() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_exchange_persists_with_admission_intact() {
     let (temporary, store) = due_fleet_store();
     let admission =
@@ -1030,7 +1110,7 @@ async fn nb_detached_exchange_persists_with_admission_intact() {
         .expect("the exchange finishes");
 
     assert_eq!(encryption.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert!(manager.access_token().expose() == "fleet-next-access");
+    assert!(manager.access_token().expose() == "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access");
     let after = fleet_ledger(&store).expect("pair");
     assert_ne!(after.generation, input.generation);
     assert_ne!(after.access, input.access);
@@ -1047,7 +1127,6 @@ async fn nb_detached_exchange_persists_with_admission_intact() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_exchange_cannot_resurrect_removed_credentials() {
     let (temporary, store) = due_fleet_store();
     let mut manager =
@@ -1082,7 +1161,6 @@ async fn nb_detached_exchange_cannot_resurrect_removed_credentials() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
     let (temporary, store) = due_fleet_store();
     let mut manager =
@@ -1091,9 +1169,9 @@ async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
 
     start_and_drop_the_caller(&mut manager, &auth).await;
     // The owner connects another pair while the answer is held back.
-    let mut entry = crate::auth::credential_vault::CredentialEntry::fleet_supplied(Zeroizing::new("fleet-replacement-access".into()),Zeroizing::new("fleet-replacement-refresh".into()),"fleet-client".into(),FleetRegion::EuropeMiddleEastAndAfrica,28800).expect("replacement entry");
-    entry.set_schedule(9_000_000_000,8_999_999_000);
-    manager.vault.store_supplied_entry(entry,crate::db::ReplacePolicy::ReplaceAny).expect("replacement accepted");
+    // A Fleet replacement is stored only by the Hub's own Fleet grant (M09-T08).
+    crate::auth::credential_vault::fixtures::seed_own_fleet_grant_as(&manager.vault, "fleet-replacement-access", "fleet-replacement-refresh",
+        "fleet-client", FleetRegion::EuropeMiddleEastAndAfrica, 28_800, Some(9_000_000_000 - 28_800)).expect("replacement accepted");
     let replacement = fleet_snapshot(&store).expect("replacement snapshot").expect("replacement row");
     let installed = fleet_ledger(&store).expect("pair");
     auth.release.notify_one();
@@ -1127,7 +1205,6 @@ async fn nb_detached_exchange_cannot_overwrite_replacement_credentials() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r06_sent_timeout_leaves_the_attempt_unresolved() {
     // The request timeout is 200 ms and the double answers only when the test says,
     // after the timeout has ended the call: the answer comes too late to count, and
@@ -1174,7 +1251,6 @@ async fn r06_sent_timeout_leaves_the_attempt_unresolved() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn p3bf2_the_reservation_and_a_late_denial_write_no_receipt_after_the_loss() {
     // B2 fix round, P3b fix 2, R-P3bF2-1 (Opus N2): the reservation of the single-use
     // input is a store mutation, so the loss gate stands immediately in front of it; and

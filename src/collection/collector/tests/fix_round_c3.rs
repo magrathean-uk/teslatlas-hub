@@ -401,7 +401,6 @@ async fn r47_a_terminal_read_leaves_no_car_marked_in_flight_and_every_car_due_af
 /// exchange to store its successor before the clients are dropped, so an ordinary
 /// stop does not cost the refresh chain (C3 R8, Codex R06).
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -431,7 +430,7 @@ async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor(
             (
                 StatusCode::OK,
                 [("content-type", "application/json")],
-                r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+                r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
             )
         }),
     );
@@ -553,7 +552,7 @@ impl SettlementBed {
     async fn start_exchange(&self, hold: impl Future<Output = ()> + Send + 'static) {
         let scripted = crate::fleet_credentials::ScriptedExchange {
             refreshed: crate::fleet_api::FleetRefreshedTokens {
-                access_token: crate::fleet_api::FleetAccessToken::new("fleet-next-access")
+                access_token: crate::fleet_api::FleetAccessToken::new("e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access")
                     .expect("access token"),
                 refresh_token: crate::fleet_api::FleetRefreshToken::new("fleet-next-refresh")
                     .expect("refresh token"),
@@ -605,7 +604,6 @@ impl SettlementBed {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r06_settlement_covers_completion_before_65_seconds() {
     // An exchange whose answer is due at 64 seconds, through the real receipt,
     // validation, encryption and guarded write, with no socket: the settlement's
@@ -631,7 +629,6 @@ async fn r06_settlement_covers_completion_before_65_seconds() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn r06_settlement_expires_at_65_seconds() {
     // The same exchange due at 66 seconds: the settlement gives up at 65 with its
     // typed timeout, the attempt unresolved and the original pair stored. The job is
@@ -655,7 +652,6 @@ async fn r06_settlement_expires_at_65_seconds() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_settlement_returns_late_sensitive_failure() {
     // A held real job whose admission was intact when it started and is denied
     // before the encryption: the settlement returns the sensitive failure typed, and
@@ -1202,7 +1198,6 @@ fn assert_an_unrecorded_stop_recovers_with_one_downtime_gap(store: &HubStore, mo
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_an_unrecorded_stop_preserves_the_actual_lease_heartbeat() {
     // A failed stop: the transaction that records it is made to abort, as a store
     // fault would. The run still ends and joins its renewal, and the lease is kept.
@@ -1272,7 +1267,6 @@ async fn b2_an_unrecorded_stop_preserves_the_actual_lease_heartbeat() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_skipped_stop_preserves_the_actual_lease_heartbeat() {
     // A skipped stop: the retained admission is invalidated, so the run records
     // nothing at all. The same retention and recovery follow.
@@ -1308,7 +1302,6 @@ async fn b2_a_skipped_stop_preserves_the_actual_lease_heartbeat() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn b2_a_recorded_ordinary_stop_releases_its_lease() {
     let mut bed = FleetLoopBed::start("asleep", false, false).await;
     let lists_seen = Arc::clone(&bed.fake.lists);

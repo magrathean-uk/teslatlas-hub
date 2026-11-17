@@ -46,7 +46,7 @@ use crate::{
     config::{CollectorProvider, HubConfig, TlsListenerConfig},
     db::{HubStore, },
     fleet_api::FleetRegion,
-    fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
+    fleet_credentials::FleetSetupCredentials,
     hub_pack::ProjectionCarSettings,
     legacy_owner_credentials::{load_or_create_cursor_key, },
     protocol::CursorKey,
@@ -258,11 +258,9 @@ fn provider_preflight_accepts_only_the_selected_usable_credentials() {
     let temporary = crate::private_tempdir().expect("temporary directory");
     seed_fleet_ready_hub(temporary.path());
 
-    // M02-T02: the stored Fleet pair is refused, so no provider preflight passes.
-    let refused = preflight_hub_for_provider(temporary.path(), CollectorProvider::Fleet)
-        .expect_err("Fleet preflight refuses the stored Fleet pair");
-    assert!(refused.to_string().contains("source_credential_disabled"), "{refused}");
-    assert!(preflight_hub(temporary.path()).is_err(), "generic provider preflight");
+    preflight_hub_for_provider(temporary.path(), CollectorProvider::Fleet)
+        .expect("Fleet preflight");
+    preflight_hub(temporary.path()).expect("generic provider preflight");
     assert!(preflight_hub_for_provider(temporary.path(), CollectorProvider::Legacy).is_err());
 }
 
@@ -315,7 +313,6 @@ fn preflight_snapshot(store: &HubStore, data_dir: &Path) -> String {
 }
 
 #[test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
     let temporary = crate::private_tempdir().expect("temporary directory");
     let data_dir = temporary.path().join("state");
@@ -429,38 +426,6 @@ fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
     assert!(preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err());
     assert!(preflight_hub(&data_dir).is_err());
     assert_eq!(preflight_snapshot(&store, &data_dir), before);
-}
-
-#[test]
-#[ignore = "G-FLEET-PREFLIGHT-WITNESS (DEC-068 item 3): the non-decrypting preflight has no recorded Fleet scope witness yet"]
-fn fleet_unresolved_preflight_rejects_missing_collection_scopes() {
-    const UNSCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIl19.sig";
-    let (label, fault): (&str, PreflightFault) =
-        ("missing collection scopes", |directory, store, _| {
-            // A pair that lacks `vehicle_location` carries its own generation: fence it
-            // afresh, so the refresh is unresolved and identified but the scopes fail.
-            let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), directory);
-            let slot = crate::auth::credential_envelope::CredentialSlot::FleetApi;
-            vault.clear_credential_pair(slot).expect("clear");
-            let entry = crate::CredentialVaultEntry::for_test(std::sync::Arc::clone(&vault));
-            persist_fleet_setup_credentials(
-                &entry,
-                directory,
-                &FleetSetupCredentials::new(
-                    UNSCOPED_ACCESS.to_owned(),
-                    "fleet-refresh-two".to_owned(),
-                    "fleet-client".to_owned(),
-                    FleetRegion::EuropeMiddleEastAndAfrica,
-                    3_600,
-                )
-                .expect("credentials"),
-                SystemTime::now(),
-            )
-            .expect("replacement pair");
-            let generation = vault.stored_generation(slot).expect("tokens").expect("generation");
-            vault.begin_refresh(slot, generation).expect("unresolved refresh");
-        });
-    assert_fleet_preflight_rejects(label, fault);
 }
 
 #[test]
@@ -1618,4 +1583,114 @@ fn production_start_fleet_admission_reads_neither_the_whole_store_nor_a_pack() {
     for pack in &packs {
         fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
     }
+}
+
+// M09-T11 Fleet cases (G-FLEET-PREFLIGHT-WITNESS closed). The non-decrypting
+// preflight's scope witness is the stored pair's clear origin header: only the
+// Hub's own Fleet grant is admitted, and the sign-in stores a grant only after
+// its claims carry the collection scopes (M09-T19 ruling 6); the claims
+// themselves are read at each collector start, not here.
+#[test]
+fn fleet_preflight_rejects_a_pair_without_the_recorded_scope_witness() {
+    const UNSCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIl19.sig";
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data_dir = temporary.path().join("state");
+    let store = seed_selected_car(&data_dir);
+    load_or_create_cursor_key(&data_dir).expect("cursor key");
+    // An unscoped pair stored before the Hub's first own Fleet grant (a
+    // supplied pair an older Hub held): it carries no scope witness.
+    crate::auth::credential_vault::fixtures::seed_blocked_fleet_setup_credentials(
+        &data_dir,
+        &FleetSetupCredentials::new(
+            UNSCOPED_ACCESS.to_owned(),
+            "fleet-refresh-two".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("credentials"),
+        SystemTime::now(),
+    );
+    let mut config = source_run_config(temporary.path(), &data_dir);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = 30;
+    let before = preflight_snapshot(&store, &data_dir);
+    let refused = preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet)
+        .expect_err("no recorded scope witness");
+    assert!(refused.to_string().contains("source_credential_disabled"), "{refused}");
+    assert!(preflight_hub_for_config(&config).is_err());
+    assert!(preflight_hub_for_serve(&config, None).is_err());
+    assert!(preflight_hub(&data_dir).is_err());
+    assert_eq!(preflight_snapshot(&store, &data_dir), before, "no write");
+}
+
+/// The Fleet configuration with `interval` used by the M09-T11 B3 cases.
+fn m09_t11_fleet_config(data: &Path, interval: u64) -> HubConfig {
+    let mut config = idle_start_config(data);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = interval;
+    config
+}
+
+/// M09-T11 B3, beside the older-row case above: a Fleet grant without
+/// `vehicle_location` is refused by the sign-in before anything is stored, so
+/// the provider preflight and the full admission refuse, and the admission
+/// reports the sign-in step (`awaiting_sign_in`), the service running with
+/// the collector off. Nothing is written by the preflights.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_admission_refuses_a_grant_without_the_collection_scopes() {
+    const NARROWED: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig";
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    assert!(
+        !crate::auth::credential_vault::fixtures::fleet_sign_in_answered_with(&store, &data, NARROWED).await,
+        "the narrowed grant is refused"
+    );
+    let config = m09_t11_fleet_config(&data, 300);
+    let before = preflight_snapshot(&store, &data);
+    assert!(preflight_hub_for_provider(&data, CollectorProvider::Fleet).is_err(), "no login is admitted");
+    assert!(preflight_hub_for_config(&config).is_err(), "the full admission refuses");
+    assert_eq!(hub_awaits_fleet_setup(&config).expect("readable"), Some(FleetSetupPending::SignIn), "sign in again");
+    preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in, collector off");
+    assert_eq!(preflight_snapshot(&store, &data), before, "no write");
+}
+
+/// M09-T11 B1 and B3: the Hub's own scoped grant whose refresh comes back
+/// without `vehicle_location`. The successor is refused before the commit, so
+/// the preflight reads the earlier, scoped generation with its unresolved
+/// refresh and admits only the reconnect stop (the collector starts fenced
+/// and sends nothing), while the operational check refuses with the unknown
+/// outcome (sign in again). Nothing is written by the preflights.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_preflight_after_a_narrowed_refresh_admits_only_the_reconnect_stop() {
+    const NARROWED: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig";
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    load_or_create_cursor_key(&data).expect("cursor key");
+    m09_t19_fleet_sign_in(&store, &data).await;
+    let config = m09_t11_fleet_config(&data, 300);
+    preflight_hub_for_config(&config).expect("the full admission of the scoped grant");
+    let probe = crate::auth::credential_vault::fixtures::refresh_fleet_pair_answered_with(&store, &data, NARROWED).await;
+    assert!(
+        matches!(probe.first, Err(crate::fleet_credentials::FleetCredentialError::MissingCollectionScopes)),
+        "{:?}",
+        probe.first
+    );
+    assert_eq!(probe.requests, 1);
+    let before = preflight_snapshot(&store, &data);
+    assert!(
+        crate::fleet_credentials::inspect_stored_fleet_credentials(&store, &data)
+            .expect("the earlier grant")
+            .unresolved_refresh
+    );
+    preflight_hub_for_provider(&data, CollectorProvider::Fleet).expect("the reconnect stop is admitted");
+    preflight_hub_for_config(&config).expect("the reconnect stop is admitted");
+    assert!(matches!(
+        crate::auth::credential_vault::fixtures::validate_fixture_fleet_credentials(&store, &data),
+        Err(crate::fleet_credentials::FleetCredentialError::RotationOutcomeUnknown)
+    ));
+    assert_eq!(preflight_snapshot(&store, &data), before, "no write");
 }

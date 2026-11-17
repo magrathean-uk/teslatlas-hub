@@ -130,6 +130,33 @@ pub(crate) fn seed_own_fleet_grant(vault: &CredentialVault, access: &str, refres
     vault.store_hub_grant(grant)?;
     vault.stored_generation(CredentialSlot::FleetApi)?.ok_or(CredentialStoreError::SlotOccupied)
 }
+/// [`seed_own_fleet_grant`] with the application, region and lifetime of the
+/// grant, sent at `sent_at_s` (the sign-in's own time when `None`), so the
+/// stored schedule is `sent_at_s + expires_in` as for a real exchange. Test
+/// builds only (`cfg(test)`, or the test-only `journey-doubles` feature for the
+/// binary's tests), M09-T11 B2: it stores a grant no exchange produced.
+#[cfg(any(test, feature = "journey-doubles"))]
+pub(crate) fn seed_own_fleet_grant_as(vault: &CredentialVault, access: &str, refresh: &str, client_id: &str, region: crate::fleet_api::FleetRegion,
+    expires_in: u64, sent_at_s: Option<i64>) -> Result<Uuid, CredentialStoreError> {
+    let session = vault.begin_sign_in(CredentialSlot::FleetApi)?;
+    let sent_at_s = sent_at_s.unwrap_or((session.expires_at_ms - 600_000) / 1000);
+    let grant = RedeemedGrant::from_validated_redemption_at(session, Zeroizing::new(access.to_owned()), Zeroizing::new(refresh.to_owned()), expires_in,
+        Some(client_id.to_owned()), Some(region), sent_at_s)?;
+    vault.store_hub_grant(grant)?;
+    vault.stored_generation(CredentialSlot::FleetApi)?.ok_or(CredentialStoreError::SlotOccupied)
+}
+/// Stores Fleet set-up credentials as the Hub's own Fleet grant sent at `now`
+/// (M09-T11): the same tokens, application, region and schedule the retired
+/// supplied path wrote, through the only admitted Fleet writer. Test builds
+/// only, as [`seed_own_fleet_grant_as`].
+#[cfg(any(test, feature = "journey-doubles"))]
+pub(crate) fn seed_own_fleet_credentials(vault: &CredentialVault, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Result<Uuid, CredentialStoreError> {
+    let entry = credentials.credential_entry(now).map_err(|_| CredentialStoreError::InvalidOrigin)?;
+    let sent_at_s = i64::try_from(now.duration_since(UNIX_EPOCH).map_err(|_| CredentialStoreError::InvalidOrigin)?.as_secs()).map_err(|_| CredentialStoreError::InvalidOrigin)?;
+    let expires_in = u64::try_from(entry.expires_at - sent_at_s).map_err(|_| CredentialStoreError::InvalidOrigin)?;
+    let region = crate::fleet_api::FleetRegion::from_storage_code(entry.region.as_deref().unwrap_or_default()).map_err(|_| CredentialStoreError::InvalidOrigin)?;
+    seed_own_fleet_grant_as(vault, &entry.access, &entry.refresh, entry.client_id.as_deref().unwrap_or_default(), region, expires_in, Some(sent_at_s))
+}
 #[cfg(test)]
 pub(crate) fn seed_entry(data: &Path, entry: CredentialEntry) -> Uuid {
     let store = HubStore::initialize(data).expect("fixture store");
@@ -194,14 +221,89 @@ pub(in crate::auth) fn seed_rotation_vector(data: &Path) -> Uuid {
 #[cfg(test)]
 const OWNER_SLOT: CredentialSlot = CredentialSlot::OwnerApi;
 #[cfg(test)]
-pub(crate) fn seed_fleet_setup_credentials(_store: &HubStore, data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Result<(), crate::fleet_credentials::FleetCredentialError> {
-    seed_entry(data, credentials.credential_entry(now)?);
+/// Seeds Fleet set-up credentials through the Hub's own grant (M09-T11); a
+/// supplied Fleet row is refused at the write gate and blocked at load.
+pub(crate) fn seed_fleet_setup_credentials(store: &HubStore, data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Result<(), crate::fleet_credentials::FleetCredentialError> {
+    credentials.credential_entry(now)?;
+    let vault = open_fixture_vault(store.clone(), data);
+    seed_own_fleet_credentials(&vault, credentials, now).expect("own Fleet grant");
     Ok(())
+}
+/// The supplied Fleet row an older Hub could hold, written past the write
+/// gate: the un-park barrier blocks it and the load refuses it
+/// `source_credential_disabled` (M09-T08).
+#[cfg(test)]
+pub(crate) fn seed_blocked_fleet_setup_credentials(data: &Path, credentials: &crate::fleet_credentials::FleetSetupCredentials, now: SystemTime) -> Uuid {
+    seed_entry(data, credentials.credential_entry(now).expect("fixture entry"))
 }
 #[cfg(test)]
 pub(crate) fn validate_fixture_fleet_credentials(store: &HubStore, data: &Path) -> Result<(), crate::fleet_credentials::FleetCredentialError> {
     let vault = open_fixture_vault(store.clone(), data);
     crate::fleet_credentials::validate_stored_fleet_credentials(&crate::CredentialVaultEntry::for_test(vault), data)
+}
+/// The outcome of [`refresh_fleet_pair_answered_with`]: the first refresh, a
+/// second attempt on the same manager, and the token requests the double saw.
+#[cfg(test)]
+pub(crate) struct FleetRefreshProbe {
+    pub(crate) first: Result<(), crate::fleet_credentials::FleetCredentialError>,
+    pub(crate) second: Result<(), crate::fleet_credentials::FleetCredentialError>,
+    pub(crate) requests: usize,
+}
+/// M09-T11 B1: refreshes the stored Fleet pair through the collector's manager
+/// against a loopback token double that answers `access` with a new refresh
+/// token, then tries once more on the same manager. The manager's vault is
+/// released before it returns.
+#[cfg(test)]
+pub(crate) async fn refresh_fleet_pair_answered_with(store: &HubStore, data: &Path, access: &str) -> FleetRefreshProbe {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&requests);
+    let body = serde_json::json!({"access_token": access, "refresh_token": "fleet-narrowed-refresh", "expires_in": 28_800, "token_type": "Bearer"}).to_string();
+    let router = axum::Router::new().route("/oauth2/v3/token", axum::routing::post(move || {
+        let (counted, body) = (Arc::clone(&counted), body.clone());
+        async move {
+            counted.fetch_add(1, Ordering::SeqCst);
+            ([("content-type", "application/json")], body)
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("token double");
+    let endpoint = url::Url::parse(&format!("http://{}/oauth2/v3/token", listener.local_addr().expect("address"))).expect("token URL");
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("token double") });
+    let api = crate::fleet_api::FleetAuthApi::for_fake_http(endpoint, std::time::Duration::from_secs(2)).expect("token client");
+    let mut manager = crate::fleet_credentials::FleetAuthManager::from_store(store.clone(), data).expect("Fleet manager");
+    let first = manager.refresh_now(&api, SystemTime::now()).await;
+    let second = manager.refresh_now(&api, SystemTime::now()).await;
+    drop(manager);
+    server.abort();
+    let _ = server.await;
+    FleetRefreshProbe { first, second, requests: requests.load(Ordering::SeqCst) }
+}
+/// M09-T11 B3: the Hub's own Fleet sign-in through its real begin and redeem,
+/// against a loopback token double that answers `access`, inside an open
+/// window. Returns whether the sign-in stored a login.
+#[cfg(test)]
+pub(crate) async fn fleet_sign_in_answered_with(store: &HubStore, data: &Path, access: &str) -> bool {
+    crate::crypto::install_default_provider();
+    let body = serde_json::json!({"access_token": access, "refresh_token": "fleet-sign-in-refresh", "expires_in": 28_800, "token_type": "Bearer"}).to_string();
+    let router = axum::Router::new().route("/oauth2/v3/token", axum::routing::post(move || { let body = body.clone(); async move { body } }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("token double");
+    let token = format!("http://{}/oauth2/v3/token", listener.local_addr().expect("address"));
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.expect("token double") });
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+    let _route = window.route(&token);
+    let vault = open_fixture_vault(store.clone(), data);
+    let entry = crate::CredentialVaultEntry::for_test(Arc::clone(&vault));
+    let begin = serde_json::json!({"clientId": "m09-t11-client", "region": "eu", "redirectUri": "https://owner.example/fleet/callback"}).to_string();
+    let binding = crate::auth::credential_sign_in::begin_fleet_sign_in_with_stub_for_test(&entry, begin.as_bytes(), &token).expect("begin");
+    let redeem = serde_json::json!({"code": format!("m09-t11-{}", Uuid::new_v4()), "redirectUri": "https://owner.example/fleet/callback",
+        "clientId": "m09-t11-client", "clientSecret": "m09-t11-secret", "region": "eu", "binding": binding.id().to_string()}).to_string();
+    let mut held = Some(binding);
+    let stored = crate::auth::credential_sign_in::exchange_fleet_code_with_stub_for_test(&entry, &mut held, redeem.as_bytes(), &token).await.is_ok();
+    drop(entry);
+    drop(vault);
+    server.abort();
+    let _ = server.await;
+    stored
 }
 #[cfg(test)]
 pub(crate) fn open_fixture_vault(store: HubStore, data: &Path) -> Arc<CredentialVault> {

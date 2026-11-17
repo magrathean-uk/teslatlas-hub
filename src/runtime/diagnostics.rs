@@ -415,28 +415,62 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         refresh_owner: legacy_tokens.refresh_owner,
         store_state: legacy_tokens.store_state,
     };
+    // R68 diagnostic admission uses clear presence, headers, keyring checks
+    // and recorded refresh outcomes; an identified unresolved refresh is
+    // attention, not a failed admission.
+    let fleet_inspection = fleet_tokens
+        .present
+        .then(|| crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir).ok())
+        .flatten();
+    let fleet_admitted = fleet_tokens.present
+        && fleet_tokens.store_state == "ok"
+        && credential_projection.credential_store.keyring == "ok"
+        && fleet_inspection.is_some()
+        && !auth_status.as_ref().is_some_and(|row| row.state == "signed_out");
+    // The recorded Fleet scope witness (G-DIAGNOSTIC-FLEET-WITNESS, M09-T11),
+    // read without a key or a decryption: the stored pair's clear origin
+    // header. Only the Hub's own Fleet grant (`fleet_oauth`, refreshed by the
+    // Hub, past the un-park barrier) is admitted. The witness is true by
+    // construction, for every generation of that pair: the Hub's writers of
+    // it check the access token's claims for vehicle information and location
+    // before their commit, the Fleet sign-in before it stores a grant
+    // (`exchange.rs`, M09-T19 ruling 6) and the refresh before it stores a
+    // successor (M09-T11 B1: a narrowed successor is never stored and leaves
+    // the reconnect stop). The header is written in the pair's own
+    // transaction and replaced with it. Any other stored pair has no witness.
+    // Command scopes are not recorded and are never needed.
+    let fleet_scope_witnessed = fleet_tokens.present
+        && store
+            .credential_pair_presence(crate::auth::credential_envelope::CredentialSlot::FleetApi)
+            .ok()
+            .flatten()
+            .is_some_and(|presence| {
+                presence.header_check.is_ok()
+                    && crate::auth::credential_vault::admit_stored_origin(
+                        presence.slot,
+                        presence.origin,
+                        presence.refresh_owner,
+                    )
+                    .is_ok()
+            });
     let fleet = FleetCredentialDiagnostics {
         present: fleet_tokens.present,
         expires_at: fleet_tokens.expires_at,
         next_refresh_at: fleet_tokens.next_refresh_at,
-        scope_status: None,
-        vehicle_device_data: None,
-        vehicle_location: None,
+        scope_status: fleet_tokens.present.then(|| {
+            if fleet_scope_witnessed { "ready" } else { "unwitnessed" }.to_owned()
+        }),
+        vehicle_device_data: fleet_scope_witnessed.then_some(true),
+        vehicle_location: fleet_scope_witnessed.then_some(true),
         vehicle_commands: None,
         vehicle_charging_commands: None,
-        valid_for_collection: false,
+        valid_for_collection: fleet_admitted
+            && fleet_scope_witnessed
+            && fleet_inspection.is_some_and(|inspection| !inspection.unresolved_refresh),
         origin: fleet_tokens.origin,
         refresh_owner: fleet_tokens.refresh_owner,
         store_state: fleet_tokens.store_state,
     };
-    // R68 diagnostic admission uses clear presence, headers, keyring checks
-    // and recorded refresh outcomes. Scope evidence is a separate check.
-    let fleet_admitted = fleet_tokens.present
-        && fleet_tokens.store_state == "ok"
-        && credential_projection.credential_store.keyring == "ok"
-        && crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir)
-            .is_ok_and(|inspection| !inspection.unresolved_refresh)
-        && !auth_status.as_ref().is_some_and(|row| row.state == "signed_out");
 
     let selected_credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present && legacy.valid_for_collection,
@@ -641,7 +675,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             3,
             DoctorCheck {
                 name: "fleetCollectionScopes".to_owned(),
-                passed: false, // G-DIAGNOSTIC-FLEET-WITNESS: no recorded scope evidence.
+                passed: fleet_scope_witnessed,
                 detail: fleet
                     .scope_status
                     .clone()

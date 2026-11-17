@@ -77,6 +77,10 @@ pub use manager_fixture::{record_provider_admission_for_test, refresh_owner_mana
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub use manager_fixture::{seed_owner_pair_for_test, seed_fleet_pair_for_test};
+// The Hub's own Fleet grant without an exchange: test builds only (M09-T11 B2).
+#[cfg(any(test, feature = "journey-doubles"))]
+#[doc(hidden)]
+pub use manager_fixture::seed_own_fleet_pair_for_test;
 
 #[cfg(test)]
 #[path = "credential_sign_in/tests.rs"]
