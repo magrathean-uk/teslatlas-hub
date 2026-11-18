@@ -11,6 +11,8 @@ use serde_json::Value;
 use url::Url;
 use zeroize::Zeroizing;
 
+use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
+
 use super::StreamError;
 
 /// The subscribed columns, in the order the server returns their values (R15).
@@ -54,11 +56,6 @@ const TIME_DIGITS_MAX: usize = 19;
 /// Most digits in a tag (R8): the largest `u64` has 20 decimal digits, and the
 /// tag is the stream vehicle id's decimal text.
 const TAG_DIGITS_MAX: usize = 20;
-
-/// Largest access token the subscribe frame accepts, in bytes (R8). A token in
-/// JSON Web Token form (RFC 7519) with a handful of claims is a few KiB at
-/// most, so 8,192 bytes bounds the outbound frame with headroom.
-const TOKEN_BYTES_MAX: usize = 8_192;
 
 /// Longest endpoint override, in bytes (R3): ample room for any host plus path,
 /// and a bound on a configuration value.
@@ -132,7 +129,7 @@ pub(crate) fn validate_tag(tag: &str) -> Result<(), StreamError> {
 
 /// Builds the subscribe frame (R8): exactly the members `msg_type`, `token`,
 /// `value` and `tag`. The tag must be 1 to 20 ASCII digits; the token must be
-/// non-empty, at most 8,192 bytes and free of ASCII control characters (a
+/// non-empty, within the credential store's size limit and free of ASCII control characters (a
 /// control character cannot occur in a token, so its presence means a
 /// corrupted credential). No error value mentions the token or the frame.
 ///
@@ -157,7 +154,7 @@ pub(crate) fn subscribe_frame_zeroizing(
 ) -> Result<Zeroizing<Vec<u8>>, StreamError> {
     validate_tag(tag)?;
     if token.is_empty()
-        || token.len() > TOKEN_BYTES_MAX
+        || token.len() > MAX_TOKEN_PLAINTEXT_BYTES
         || token.bytes().any(|b| b.is_ascii_control())
     {
         return Err(StreamError::InvalidToken);
