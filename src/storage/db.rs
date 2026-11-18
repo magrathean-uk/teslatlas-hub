@@ -6,7 +6,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Component, Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(test)]
@@ -582,28 +582,115 @@ impl HubStore {
     }
 }
 
+/// How far apart, at most, the stream writer's commits that flush the drive's cache
+/// are (M08-T38, review finding #19). An ordinary commit is synced (`synchronous =
+/// FULL`), but on macOS a plain `fsync` stops at the drive's cache, so a power cut can
+/// lose frames that SQLite reported as committed. The first frame a writer commits, and
+/// then the first frame committed this long after the last flushed one, commits with
+/// `fullfsync` (`F_FULLFSYNC`). That flush empties the whole drive cache, so it makes
+/// every earlier frame durable too: a power cut loses at most the frames committed in
+/// one such interval, under five seconds of stream, without a flush per frame (C5-R3-03,
+/// R3C-02 keep the per-commit flush for the credential commits alone).
+pub(crate) const STREAM_DEVICE_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
+
 /// One collector-owned SQLite handle for high-rate stream writes. Each
 /// observation still commits independently; only repeated connection setup,
-/// schema reads, and PRAGMA work leave the hot path.
+/// schema reads, and PRAGMA work leave the hot path. One commit in each
+/// [`STREAM_DEVICE_FLUSH_INTERVAL`] flushes the drive's cache.
 pub(crate) struct StreamObservationWriter {
     store: HubStore,
     connection: Connection,
+    /// When the last commit that flushed the drive's cache returned; none before the
+    /// writer's first commit.
+    last_device_flush: Option<Instant>,
+    /// Test only: for each flushed commit, the `fullfsync` the connection held while
+    /// it committed.
+    #[cfg(test)]
+    device_flushes: Vec<i64>,
 }
 
 impl StreamObservationWriter {
+    fn new(store: HubStore, connection: Connection) -> Self {
+        Self {
+            store,
+            connection,
+            last_device_flush: None,
+            #[cfg(test)]
+            device_flushes: Vec::new(),
+        }
+    }
+
     pub(crate) fn accept(
         &mut self,
         input: &ObservationInput,
         received_at_ms: i64,
         car_id: i64,
     ) -> Result<StreamObservationResult, StoreError> {
-        self.store.accept_stream_observation_and_lifecycle_on(
+        self.accept_at(input, received_at_ms, car_id, Instant::now())
+    }
+
+    /// Commit a frame, flushing the drive's cache with it when the last flushed
+    /// commit is [`STREAM_DEVICE_FLUSH_INTERVAL`] old or there is none. `now` is the
+    /// monotonic time of the commit; a test gives it.
+    fn accept_at(
+        &mut self,
+        input: &ObservationInput,
+        received_at_ms: i64,
+        car_id: i64,
+        now: Instant,
+    ) -> Result<StreamObservationResult, StoreError> {
+        let flush = self
+            .last_device_flush
+            .is_none_or(|at| now.saturating_duration_since(at) >= STREAM_DEVICE_FLUSH_INTERVAL);
+        if flush {
+            set_commit_device_flush(&self.connection, true)?;
+        }
+        #[cfg(test)]
+        let held: i64 = if flush {
+            self.connection
+                .query_row("PRAGMA fullfsync", [], |row| row.get(0))
+                .map_err(StoreError::Query)?
+        } else {
+            0
+        };
+        let result = self.store.accept_stream_observation_and_lifecycle_on(
             &mut self.connection,
             input,
             received_at_ms,
             car_id,
-        )
+        );
+        // Restored even when the commit failed: the next frames commit without it.
+        let restored = if flush {
+            set_commit_device_flush(&self.connection, false)
+        } else {
+            Ok(())
+        };
+        let result = result?;
+        restored?;
+        // Only a commit that wrote a frame was synced; an ignored duplicate wrote none.
+        if flush && matches!(result, StreamObservationResult::Committed { .. }) {
+            self.last_device_flush = Some(now);
+            #[cfg(test)]
+            self.device_flushes.push(held);
+        }
+        Ok(result)
     }
+}
+
+/// Turn the flush of the drive's cache at commit on or off for one connection. Only
+/// macOS needs it: elsewhere the commit's `fsync` already reaches the disk.
+fn set_commit_device_flush(connection: &Connection, on: bool) -> Result<(), StoreError> {
+    #[cfg(target_os = "macos")]
+    connection
+        .execute_batch(if on {
+            "PRAGMA fullfsync = ON;"
+        } else {
+            "PRAGMA fullfsync = OFF;"
+        })
+        .map_err(StoreError::Configure)?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = (connection, on);
+    Ok(())
 }
 
 
