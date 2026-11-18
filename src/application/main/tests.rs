@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 use std::{
     fs,
@@ -159,7 +158,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(81),
-            location_name: Some("Home".into()),
+            location_name: None,
             telemetry_status: "cached",
         }
     );

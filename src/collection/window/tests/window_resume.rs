@@ -135,6 +135,75 @@ fn window_resume_watermark_rollback_closes_running_and_at_start() {
 }
 
 #[test]
+fn astra_p03_clock_rollback_handback_preserves_verified_coverage() {
+    use super::import_seam_coverage::{coverage_row, data_dir, raw, store_with_vehicles};
+
+    for restart in [false, true] {
+        let rig = Rig::new();
+        let (_store, _, _) = store_with_vehicles(&rig);
+        let hub = open_hub(&rig, 0, 3600);
+        rig.clock.advance(60);
+        assert_eq!(hub.tick().unwrap(), Phase::Open);
+        rig.clock.shift_wall(-3600);
+
+        let handback = if restart {
+            drop(hub);
+            let (hub, outcome) = rig.start_hub();
+            assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::ClockInvalid));
+            hub.status().last_handback.unwrap()
+        } else {
+            assert_eq!(hub.tick().unwrap(), Phase::Closing);
+            hub.finish_close().unwrap().unwrap()
+        };
+        assert_eq!(handback.reason, CloseReason::ClockInvalid);
+        assert_eq!(handback.opened_at, Some(T0));
+        assert_eq!(handback.closed_at, T0 + 60, "restart={restart}");
+        assert_eq!(handback.coverage_seconds, 60);
+        let (_, closed_at_ms, _) = coverage_row(&raw(&data_dir(&rig)), handback.seq as i64);
+        assert_eq!(closed_at_ms, Some((T0 + 60) * 1000));
+    }
+}
+
+#[test]
+fn astra_p03_clock_rollback_handback_keeps_pending_gap_and_exchange_grace() {
+    use crate::collection::window::{
+        CredentialCustody, EXCHANGE_GRACE_SECONDS, EXCHANGE_WRITE_MARGIN_SECONDS, Gap,
+    };
+
+    let rig = Rig::new();
+    let hub = Arc::new(open_hub(&rig, 0, 3600));
+    let slot = FakeSlot::default();
+    let mut supervisor = Supervisor::new(hub.clone(), slot.clone())
+        .with_custody(CredentialCustody::new());
+    assert!(supervisor.step().collector_running);
+    let exchange = hub.gate().permit(Provider::Legacy, PermitKind::TokenExchange).unwrap();
+
+    rig.clock.advance(45);
+    {
+        let mut log = slot.log.lock().unwrap();
+        log.running = false;
+        log.fail_starts = 1;
+    }
+    assert!(!supervisor.step().collector_running);
+    rig.clock.advance(15);
+    // The controller records a valid clock reading while the collector is down.
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    rig.clock.shift_wall(-3600);
+    assert_eq!(supervisor.step().phase, Phase::Closing);
+    assert!(!exchange.is_cancelled());
+
+    rig.clock.advance((EXCHANGE_GRACE_SECONDS - EXCHANGE_WRITE_MARGIN_SECONDS) as u64);
+    supervisor.step();
+    assert!(exchange.is_cancelled(), "the coverage boundary must not extend exchange grace");
+    rig.clock.advance(EXCHANGE_WRITE_MARGIN_SECONDS as u64);
+    supervisor.step();
+    let handback = hub.status().last_handback.unwrap();
+    assert_eq!(handback.closed_at, T0 + 60);
+    assert_eq!(handback.gaps, vec![Gap { start: T0 + 45, end: T0 + 60 }]);
+    assert_eq!(handback.coverage_seconds, 45);
+}
+
+#[test]
 fn window_resume_repeated_small_rollbacks_are_caught_by_drift() {
     let rig = Rig::new();
     let hub = open_hub(&rig, 0, 3600);
@@ -502,13 +571,15 @@ fn window_resume_restored_open_snapshot_after_trust_reset_is_refused() {
     drop(open_hub(&rig, 0, 3600));
     rig.anchor.set_fail_reads(true);
     let (hub, outcome) = rig.start_hub();
-    assert_eq!(
-        outcome,
-        ResumeOutcome::ClosedAtStart(CloseReason::StateUnverifiable)
-    );
+    assert_eq!(outcome, ResumeOutcome::Faulted);
     assert!(permit_refused(&hub));
     rig.anchor.set_fail_reads(false);
-    assert!(rig.anchor.read(&anchor_name()).unwrap().is_some());
+    drop(hub);
+    // The close was persisted, but could not confirm its external pin. A
+    // later load completes it once the anchor can be read again.
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::StateUnverifiable));
+    assert!(permit_refused(&hub));
 }
 
 const GRANT_GAP: i64 = crate::collection::window::GRANT_GAP_SECONDS;
@@ -795,4 +866,56 @@ fn window_resume_system_clock_reading_behind_its_anchor_closes() {
     assert_eq!(hub.tick().unwrap(), Phase::Closing);
     assert_eq!(hub.status().close_reason, Some(CloseReason::ClockInvalid));
     assert!(permit_refused(&hub));
+}
+
+
+#[test]
+fn astra_p03_closed_window_snapshot_cannot_resume() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    let snapshot = rig.tmp.path().join("open-snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    rig.clock.advance(10);
+    let (hub, _) = rig.start_hub();
+    assert!(permit_refused(&hub), "restoring an Open snapshot must not undo the owner's close");
+    assert_ne!(hub.status().phase, Phase::Open);
+}
+
+#[test]
+fn astra_p03_close_waits_for_the_external_anchor() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.anchor.set_fail_writes(true);
+    hub.close(CloseReason::OperatorClose);
+    assert_eq!(hub.finish_close(), Err(Refusal::AnchorUnavailable));
+    assert_eq!(hub.status().phase, Phase::Closing);
+    assert!(permit_refused(&hub));
+    rig.anchor.set_fail_writes(false);
+    assert!(hub.finish_close().unwrap().is_some());
+    assert_eq!(hub.status().phase, Phase::Closed);
+}
+
+#[test]
+fn astra_p03_restored_closing_snapshot_does_not_lower_a_newer_anchor() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    hub.close(CloseReason::OperatorClose);
+    let snapshot = rig.tmp.path().join("closing-snapshot");
+    copy_dir(&rig.window_dir(), &snapshot);
+    hub.finish_close().unwrap();
+    let trust = rig.issuer.bump_trust_epoch(&rig.key_path).unwrap();
+    hub.trust(&trust).unwrap();
+    let newer = rig.anchor.read(&anchor_name()).unwrap();
+    drop(hub);
+    fs::remove_dir_all(rig.window_dir()).unwrap();
+    copy_dir(&snapshot, &rig.window_dir());
+    let (hub, _) = rig.start_hub();
+    assert!(permit_refused(&hub));
+    assert_eq!(rig.anchor.read(&anchor_name()).unwrap(), newer);
 }

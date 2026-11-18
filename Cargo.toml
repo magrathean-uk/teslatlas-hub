@@ -52,6 +52,7 @@ flate2 = "1"
 futures-util = "0.3"
 hex = "0.4"
 http = "1"
+hyper-util = { version = "=0.1.21", default-features = false, features = ["http1", "http2", "server-auto", "service", "tokio"] }
 rcgen = { version = "0.14.9", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["http2", "json", "query", "rustls-no-provider", "stream"] }
 rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }

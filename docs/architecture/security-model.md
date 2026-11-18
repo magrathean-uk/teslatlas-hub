@@ -13,8 +13,8 @@
 
 | Boundary | Control |
 |---|---|
-| Local plaintext HTTP | Loopback only. Protected routes require the private local bearer and one matching `Host` header. Health, readiness, discovery, and Fleet ingress have explicit route handling; Fleet ingress has its own bearer check. |
-| Remote sync | TLS plus paired-device bearer authentication. |
+| Local plaintext HTTP | Loopback only. The owner API checks one matching `Host` header; protected owner routes also require the private local bearer. Health, readiness and discovery require no bearer. Fleet ingress uses its separate private bearer. |
+| Remote sync | TLS plus paired-device bearer authentication for protected vehicle, history, sync and device routes. Health, readiness and discovery are intentionally public metadata routes. |
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
 | Tesla credentials | Hub uses a login from its own sign-in or takes over the source application's login during migration, with the source application stopped and kept stopped. Hub becomes its only refresher. Only the resident service, inside an open collection window, sends Tesla traffic and refreshes that login; one refresh runs at a time. |
@@ -22,6 +22,8 @@
 | history import | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
 | Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
+
+Health, readiness and discovery remain unauthenticated on both TLS and loopback listeners. Their current response fields support the Mac app, the upgrade serving check and the phone. The registered GET routes also support HEAD with the same public metadata headers and no body. Browser requests still pass CORS admission; an admitted preflight needs no device bearer and grants no data access. Actual protected requests require their bearer. Any later reduction of public metadata requires compatible consumer migration; the [public-field inventory](https://github.com/magrathean-uk/tesatlas-hub/issues/35) records proposals, not a change to this policy.
 
 ## Source login take-over
 

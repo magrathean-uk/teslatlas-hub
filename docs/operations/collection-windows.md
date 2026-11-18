@@ -78,9 +78,14 @@ sign out in Hub before restarting the source application. See the
   collector lease and a per-host claim all apply, and the issuer refuses
   overlapping grants for any host, with a gap of at least 15 minutes between
   hosts.
-- Hub checks its clock against an NTP server (not a Tesla endpoint) when a
-  window opens and every five minutes inside it, and closes if the offset
-  exceeds 30 seconds or cannot be measured.
+- Hub checks its clock against an NTP server when you request a window and
+  every five minutes while it is Pending or Open. A measured offset of more
+  than 30 seconds in either direction refuses the open with `clock_offset`,
+  or closes an active window with `clock_invalid`. After a missed probe, Hub retries after 30 seconds. It
+  closes on the third consecutive miss, or on a miss at least five minutes
+  after the first. A measurement within the limit clears the miss count.
+  At service restart, Hub requires a measurement within the limit before it
+  resumes a window.
 - On close Hub writes a handback record: grant id, opened and closed times,
   reason, coverage (the open interval minus recorded gaps) and per-table
   high-water marks for drives, charges and positions. The same write closes a
@@ -306,7 +311,9 @@ time you want Hub to stop collecting.
      run `window trust TRUST` on the Hub, so no earlier grant can open a
      window.
    Hub's consumption anchor stays in the login keychain, so restoring an older
-   data directory does not make a used grant valid again.
+   data directory does not make a used grant valid again. The anchor also pins
+   a close before its handback is confirmed, so restoring an Open copy cannot
+   undo a completed close. If that pin cannot be saved, the close stays pending.
    When the login keychain is locked while Hub reads an anchor, macOS may ask to unlock it. For the read of an anchor saved by an earlier build, Hub waits five seconds, never stops the system helper, and treats the anchor as unavailable until a later load.
 3. **Confirm the other logger resumed.** In the other logger's database, check
    that the newest position timestamp for each vehicle advances over several
@@ -324,6 +331,9 @@ time you want Hub to stop collecting.
 - If the service restarts while a window is Open or Pending, on the same boot,
   with a sound clock and before the deadline, it resumes until the original
   deadline, retakes the lease and claim, and records a `resumed` entry.
+- An active snapshot whose older consumption anchor did not record whether
+  the grant was open refuses resume. Trust a newer issuer trust document and
+  issue a new grant; an old snapshot cannot establish that it was never closed.
 - After a reboot the window closes with reason `reboot`; a new grant is needed.
 - At or after the deadline it closes once with reason `expired`, timed at the
   deadline.

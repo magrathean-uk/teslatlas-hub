@@ -236,7 +236,7 @@ impl PreparedRequest {
 
     /// The POST with `body` moved into the client as it is, with no copy: the
     /// allocation passes once to the request, which owns it from then on.
-    pub(super) fn from_body(client: &Client, endpoint: Url, mut body: Zeroizing<Vec<u8>>) -> Self {
+    pub(super) fn from_body(client: &Client, endpoint: Url, body: Zeroizing<Vec<u8>>) -> Self {
         #[cfg(test)]
         probe::handed(&body);
         let mut request = client.post(endpoint);
@@ -244,7 +244,7 @@ impl PreparedRequest {
             request = request.header(name, value);
         }
         Self {
-            request: request.body(std::mem::take(&mut *body)),
+            request: request.body(axum::body::Bytes::from_owner(body)),
         }
     }
 
@@ -818,10 +818,37 @@ fn accept_tokens(
 mod request_tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "Linux process-memory probe; run explicitly with one test thread and the system allocator"]
+    fn the_prepared_token_request_wipes_its_body_on_drop() {
+        use std::os::unix::fs::FileExt;
+
+        // Open before constructing the request, and read into a stack array:
+        // no new allocation can reuse the released body before it is sampled.
+        // The only address inspected belongs to this synthetic JSON body.
+        let memory = std::fs::File::open("/proc/self/mem").expect("own process memory");
+        crate::crypto::install_default_provider();
+        let client = build_auth_client(true).expect("auth client");
+        let token = "synthetic-refresh-body-not-a-real-token-".repeat(32);
+        let endpoint = Url::parse("http://127.0.0.1:9/oauth2/v3/token").expect("URL");
+        let prepared = PreparedRequest::new(&client, endpoint, &token).expect("prepared");
+        let request = prepared.request.build().expect("built without sending");
+        let bytes = request.body().and_then(reqwest::Body::as_bytes).expect("body");
+        let start = bytes.windows(token.len()).position(|part| part == token.as_bytes())
+            .expect("synthetic token in JSON") + token.len() / 2;
+        assert!(start + 64 <= bytes.len());
+        let address = bytes.as_ptr() as u64 + start as u64;
+        let mut sample = [0xff; 64];
+        drop(request);
+        memory.read_exact_at(&mut sample, address).expect("sample only the released synthetic body");
+        assert_eq!(sample, [0; 64], "the application-owned request body must be wiped on release");
+    }
+
     /// CL-16: through `PreparedRequest::new`, the one path production uses, the
     /// body is measured and filled once at its exact length, reaches
     /// `from_body` as that same allocation and passes to the request builder
-    /// by `mem::take`, so the request's body is that allocation, not a copy.
+    /// with its wiping owner, so the request's body is that allocation, not a copy.
     #[test]
     fn the_prepared_token_request_moves_the_measured_allocation_once() {
         crate::crypto::install_default_provider();

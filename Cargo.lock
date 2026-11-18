@@ -2416,6 +2416,7 @@ dependencies = [
  "hex",
  "http",
  "http-body-util",
+ "hyper-util",
  "log",
  "rcgen",
  "reqwest",

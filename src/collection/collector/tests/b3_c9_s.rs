@@ -487,3 +487,33 @@ fn c9_st49_attribution() {
         }
     }
 }
+
+#[test]
+fn p21_f01_invalid_nodes_cannot_be_interpolated_into_valid_elevations() {
+    for invalid in [20_000, -1_000] {
+        for index in 0..4 {
+            let mut nodes = [1_000; 4];
+            nodes[index] = invalid;
+            let sampled = sample_elevation(
+                &tile("N10E020", &square(nodes)),
+                10.53125,
+                20.46875,
+            )
+            .unwrap();
+            assert_eq!(sampled, SampleOutcome::OutOfRange, "node {index}: {invalid}");
+        }
+    }
+}
+
+#[test]
+fn p21_f01_zero_weight_invalid_nodes_do_not_discard_a_valid_sample() {
+    let mut cells = blank(N);
+    put(&mut cells, N, 600, 600, 100);
+    put(&mut cells, N, 600, 601, 20_000);
+    put(&mut cells, N, 601, 600, -1_000);
+    put(&mut cells, N, 601, 601, 20_000);
+    assert_eq!(
+        sample_elevation(&tile("N10E020", &cells), 10.5, 20.5).unwrap(),
+        SampleOutcome::Elevation(100)
+    );
+}
