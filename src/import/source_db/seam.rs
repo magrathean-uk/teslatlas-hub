@@ -487,17 +487,22 @@ fn plan_sessions(
         .collect();
     items.sort_unstable_by_key(|(side, row)| (row.extent(), *side, row.id));
     let mut groups: Vec<Vec<(Side, SessionRow)>> = Vec::new();
-    let mut group_end = i64::MIN;
+    let mut active_group: Option<(usize, i64)> = None;
     for (side, row) in items {
         let (start, end) = row.extent();
-        match groups.last_mut() {
-            Some(group) if group_end.min(end).saturating_sub(start) > SEAM_SLACK_MS => {
-                group.push((side, row));
-                group_end = group_end.max(end);
+        if end.saturating_sub(start) <= SEAM_SLACK_MS {
+            // A short session cannot join an overlap group or end one.
+            groups.push(vec![(side, row)]);
+            continue;
+        }
+        match active_group {
+            Some((index, group_end)) if group_end.saturating_sub(start) > SEAM_SLACK_MS => {
+                groups[index].push((side, row));
+                active_group = Some((index, group_end.max(end)));
             }
             _ => {
+                active_group = Some((groups.len(), end));
                 groups.push(vec![(side, row)]);
-                group_end = end;
             }
         }
     }
