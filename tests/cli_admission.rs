@@ -1025,8 +1025,7 @@ fn setup_fleet_figures_answer_without_the_service_or_a_data_folder() {
     let hub = Hub::new();
     hub.seal(true);
     let legacy = hub.run(&["setup-fleet", "figures"], TOKENS);
-    assert_refused(&legacy, "fleet_provider_not_selected", &["setup-fleet", "figures"]);
-    assert!(stdout(&legacy).is_empty());
+    assert_figures_refused(&legacy, FIGURES_NOT_FLEET);
     let config = format!(
         "data_dir = {:?}\nbind = '127.0.0.1:18443'\n[collector]\nprovider = \"fleet\"\n\
          interval_seconds = 300\n\n[collector.\"fleet\\u005fpolling\"]\nmonthly_cap_cents = 2000\n\
@@ -1047,7 +1046,142 @@ fn setup_fleet_figures_answer_without_the_service_or_a_data_folder() {
     assert_eq!(extra.status.code(), Some(2), "{}", stderr(&extra));
     fs::remove_file(hub.path("config.toml")).expect("remove config");
     let missing = hub.run(&["setup-fleet", "figures"], TOKENS);
-    assert_refused(&missing, "config_unreadable", &["setup-fleet", "figures"]);
+    assert_figures_refused(&missing, FIGURES_UNREADABLE);
     assert!(!hub.data().exists(), "no Hub state was created");
     assert_eq!(hub.endpoint.connections(), 0);
+}
+
+const FIGURES_UNREADABLE: &str = "config_unreadable: the configuration file cannot be read safely\n";
+const FIGURES_INVALID: &str = "config_invalid: the configuration is not a valid Hub configuration\n";
+const FIGURES_NOT_FLEET: &str =
+    "fleet_provider_not_selected: the configuration does not select the Fleet provider\n";
+const FIGURES_CADENCE: &str = "collector_cadence_invalid: a polling setting of the configuration is invalid; \
+     the service does not collect with it\n";
+
+/// A refused `setup-fleet figures`: exit 1, nothing on standard output, and
+/// standard error exactly the one bare `<code>: <text>` line of interface
+/// section 12 (M09-T21 R4: the line the Mac app's refusal reader parses).
+fn assert_figures_refused(output: &Output, line: &str) {
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(output));
+    assert!(stdout(output).is_empty(), "{}", stdout(output));
+    assert_eq!(stderr(output), line);
+}
+
+/// The reviewer's configuration of the M09-T21 review with `state` as the
+/// state check interval and `extra` appended.
+fn figures_config(hub: &Hub, state: &str, extra: &str) -> String {
+    format!(
+        "data_dir = {:?}\nbind = '127.0.0.1:8080'\n[collector]\nprovider = 'fleet'\n\
+         interval_seconds = 300\n[collector.fleet_polling]\nstate_poll_seconds = {state}\n{extra}",
+        hub.data()
+    )
+}
+
+/// M09-T21 R3 and R4: success leaves standard error empty, also with an
+/// accepted deprecated table name, and each of the four refusals is exactly its
+/// one line, also when the file uses that name.
+#[test]
+fn setup_fleet_figures_streams_are_exactly_the_contract_lines() {
+    let hub = Hub::new();
+    let deprecated = format!(
+        "[{}]\n",
+        tesatlas_hub::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE
+    );
+    for extra in ["", deprecated.as_str()] {
+        fs::write(hub.path("config.toml"), figures_config(&hub, "1200", extra)).expect("config");
+        let output = hub.run(&["setup-fleet", "figures"], b"");
+        assert_eq!(output.status.code(), Some(0), "{extra:?}: {}", stderr(&output));
+        assert_eq!(stderr(&output), "", "{extra:?}");
+        assert!(stdout(&output).contains("\"stateCheck\":1200,"), "{}", stdout(&output));
+        assert_eq!(stdout(&output).lines().count(), 1);
+
+        // The reviewer's example: an interval beyond the scheduler's horizon.
+        fs::write(hub.path("config.toml"), figures_config(&hub, "9223372036854775807", extra))
+            .expect("config");
+        assert_figures_refused(&hub.run(&["setup-fleet", "figures"], b""), FIGURES_CADENCE);
+        let horizon = 100 * 365 * 24 * 60 * 60_u64;
+        fs::write(hub.path("config.toml"), figures_config(&hub, &(horizon + 1).to_string(), extra))
+            .expect("config");
+        assert_figures_refused(&hub.run(&["setup-fleet", "figures"], b""), FIGURES_CADENCE);
+        fs::write(hub.path("config.toml"), figures_config(&hub, &horizon.to_string(), extra))
+            .expect("config");
+        let largest = hub.run(&["setup-fleet", "figures"], b"");
+        assert_eq!(stderr(&largest), "", "{extra:?}");
+        assert!(stdout(&largest).contains(&format!("\"stateCheck\":{horizon},")), "{}", stdout(&largest));
+
+        fs::write(hub.path("config.toml"), figures_config(&hub, "1200", &format!("{extra}unknown_key = 1\n")))
+            .expect("config");
+        assert_figures_refused(&hub.run(&["setup-fleet", "figures"], b""), FIGURES_INVALID);
+        let legacy = figures_config(&hub, "1200", extra).replace("provider = 'fleet'", "provider = 'legacy'");
+        fs::write(hub.path("config.toml"), legacy).expect("config");
+        assert_figures_refused(&hub.run(&["setup-fleet", "figures"], b""), FIGURES_NOT_FLEET);
+    }
+    fs::set_permissions(hub.path("config.toml"), fs::Permissions::from_mode(0o666)).expect("mode");
+    assert_figures_refused(&hub.run(&["setup-fleet", "figures"], b""), FIGURES_UNREADABLE);
+    assert!(!hub.data().exists(), "no Hub state was created");
+}
+
+/// Every file name, mode and content below `folder`.
+fn folder_snapshot(folder: &Path) -> Vec<(String, u32, Vec<u8>)> {
+    let mut entries: Vec<_> = fs::read_dir(folder)
+        .expect("folder")
+        .map(|entry| {
+            let entry = entry.expect("entry");
+            let metadata = entry.metadata().expect("metadata");
+            let bytes = if metadata.is_file() { fs::read(entry.path()).expect("file") } else { Vec::new() };
+            (entry.file_name().to_string_lossy().into_owned(), metadata.permissions().mode(), bytes)
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+/// M09-T21 R2: with the development variables set, the verb creates and
+/// changes nothing in a usable journal folder, and an unusable one does not
+/// turn its answer into a journal error.
+#[test]
+fn setup_fleet_figures_leave_the_development_journal_alone() {
+    let hub = Hub::new();
+    fs::write(hub.path("config.toml"), figures_config(&hub, "1200", "")).expect("config");
+    let journal = hub.path("journal");
+    fs::create_dir(&journal).expect("journal folder");
+    fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).expect("journal mode");
+    fs::write(journal.join("hub-events.0.jsonl"), b"{\"earlier\":true}\n").expect("segment");
+    fs::set_permissions(journal.join("hub-events.0.jsonl"), fs::Permissions::from_mode(0o600))
+        .expect("segment mode");
+    let before = folder_snapshot(&journal);
+    let development = |folder: &Path| -> Output {
+        hub.run_with(
+            &["setup-fleet", "figures"],
+            b"",
+            &[
+                ("TESATLAS_HUB_DEVELOPMENT", Path::new("1")),
+                ("TESATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY", folder),
+            ],
+        )
+    };
+    for folder in [journal.as_path(), hub.path("config.toml").as_path(), hub.path("absent").as_path()] {
+        let output = development(folder);
+        assert_eq!(output.status.code(), Some(0), "{folder:?}: {}", stderr(&output));
+        assert_eq!(stderr(&output), "", "{folder:?}");
+        assert!(stdout(&output).contains("\"stateCheck\":1200,"), "{}", stdout(&output));
+    }
+    assert_eq!(folder_snapshot(&journal), before, "the journal folder is byte-identical");
+    assert!(!hub.path("absent").exists());
+    fs::remove_file(hub.path("config.toml")).expect("remove config");
+    for folder in [journal.as_path(), hub.path("absent").as_path()] {
+        assert_figures_refused(&development(folder), FIGURES_UNREADABLE);
+    }
+    assert_eq!(folder_snapshot(&journal), before, "a refusal writes nothing either");
+    // The folder is usable: another command records its events there.
+    let other = hub.run_with(
+        &["control", "wake", "--confirm"],
+        b"",
+        &[
+            ("TESATLAS_HUB_DEVELOPMENT", Path::new("1")),
+            ("TESATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY", journal.as_path()),
+        ],
+    );
+    assert_eq!(other.status.code(), Some(1), "{}", stderr(&other));
+    assert_ne!(folder_snapshot(&journal), before, "the journal folder was usable");
 }
