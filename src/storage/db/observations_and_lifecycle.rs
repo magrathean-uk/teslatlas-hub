@@ -543,10 +543,7 @@ impl HubStore {
     }
 
     pub(crate) fn stream_observation_writer(&self) -> Result<StreamObservationWriter, StoreError> {
-        Ok(StreamObservationWriter {
-            store: self.clone(),
-            connection: self.open()?,
-        })
+        Ok(StreamObservationWriter::new(self.clone(), self.open()?))
     }
 
     pub(crate) fn stream_watermark(&self, vehicle_id: Uuid) -> Result<Option<i64>, StoreError> {

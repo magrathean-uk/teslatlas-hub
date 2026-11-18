@@ -2047,3 +2047,134 @@ fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
     assert_eq!(current_id("owner_api_discovery_v1"), 5_002);
     assert_eq!(append(70_100, serde_json::json!({"speed": 2})), 5_003);
 }
+
+/// A parked stream frame at `observed_at_ms`, synthetic and without a position.
+fn stream_device_flush_frame(
+    source: &SourceRecord,
+    vehicle: &VehicleRecord,
+    observed_at_ms: i64,
+) -> ObservationInput {
+    ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms,
+        payload: serde_json::json!({
+            "record_type": "tesla_stream_update_v1",
+            "source_vehicle_state": "online",
+            "fields": {
+                "drive_state": {
+                    "timestamp": observed_at_ms,
+                    "speed": 0,
+                    "shift_state": "P"
+                }
+            }
+        }),
+    }
+}
+
+/// What a flushed commit held for `fullfsync`: on, on macOS, where a plain `fsync`
+/// stops at the drive's cache; elsewhere the setting is left alone.
+fn stream_device_flush_expected() -> i64 {
+    i64::from(cfg!(target_os = "macos"))
+}
+
+#[test]
+fn stream_device_flush_runs_on_the_first_frame_then_once_per_interval() {
+    // Review finding #19 (M08-T38): a stream frame's commit stops at the drive's cache
+    // on macOS. The writer flushes that cache with its first frame and then with the
+    // first frame committed an interval after the last flush, never with every frame.
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let mut writer = store.stream_observation_writer().expect("writer");
+    let start = Instant::now();
+    let mut flushed_at = Vec::new();
+    for second in 0..=11_u64 {
+        let before = writer.device_flushes.len();
+        let observed_at_ms = 1_000_000 + i64::try_from(second).expect("second") * 1_000;
+        let result = writer
+            .accept_at(
+                &stream_device_flush_frame(&source, &vehicle, observed_at_ms),
+                observed_at_ms,
+                1,
+                start + Duration::from_secs(second),
+            )
+            .expect("frame commits");
+        assert!(matches!(result, StreamObservationResult::Committed { .. }));
+        if writer.device_flushes.len() > before {
+            flushed_at.push(second);
+        }
+    }
+    assert_eq!(STREAM_DEVICE_FLUSH_INTERVAL, Duration::from_secs(5));
+    assert_eq!(flushed_at, vec![0, 5, 10], "one flushed commit per interval");
+    assert_eq!(
+        writer.device_flushes,
+        vec![stream_device_flush_expected(); 3],
+        "each flushed commit held fullfsync"
+    );
+    // The setting is restored after the flushed commit: the other frames commit
+    // without it, and the store's ordinary connections never had it (C5-R3-03).
+    let held: i64 = writer
+        .connection
+        .query_row("PRAGMA fullfsync", [], |row| row.get(0))
+        .expect("pragma");
+    assert_eq!(held, 0);
+    let ordinary: i64 = store
+        .open()
+        .expect("connection")
+        .query_row("PRAGMA fullfsync", [], |row| row.get(0))
+        .expect("pragma");
+    assert_eq!(ordinary, 0);
+    assert_eq!(
+        store
+            .stream_watermark(vehicle.vehicle_id)
+            .expect("watermark"),
+        Some(1_011_000),
+        "every frame was committed"
+    );
+}
+
+#[test]
+fn stream_device_flush_is_not_spent_on_an_ignored_duplicate() {
+    // An ignored duplicate writes nothing, so its commit syncs nothing: the flush it
+    // was due stays due and goes with the next frame that is written.
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let mut writer = store.stream_observation_writer().expect("writer");
+    let start = Instant::now();
+    let frame = stream_device_flush_frame(&source, &vehicle, 2_000_000);
+    assert!(matches!(
+        writer.accept_at(&frame, 2_000_000, 1, start).expect("first frame"),
+        StreamObservationResult::Committed { .. }
+    ));
+    assert_eq!(writer.device_flushes.len(), 1);
+    assert!(matches!(
+        writer
+            .accept_at(&frame, 2_000_000, 1, start + Duration::from_secs(6))
+            .expect("duplicate"),
+        StreamObservationResult::IgnoredDuplicate
+    ));
+    assert_eq!(writer.device_flushes.len(), 1, "a duplicate is not a flush");
+    let held: i64 = writer
+        .connection
+        .query_row("PRAGMA fullfsync", [], |row| row.get(0))
+        .expect("pragma");
+    assert_eq!(held, 0, "restored after the duplicate");
+    assert!(matches!(
+        writer
+            .accept_at(
+                &stream_device_flush_frame(&source, &vehicle, 2_001_000),
+                2_001_000,
+                1,
+                start + Duration::from_millis(6_500),
+            )
+            .expect("next frame"),
+        StreamObservationResult::Committed { .. }
+    ));
+    assert_eq!(
+        writer.device_flushes,
+        vec![stream_device_flush_expected(); 2],
+        "the next written frame carries the due flush"
+    );
+}
