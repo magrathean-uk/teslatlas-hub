@@ -1,5 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+pub(crate) struct CurrentVehicleRows {
+    pub(crate) observations: Vec<ObservationRecord>,
+    pub(crate) car: Option<crate::hub_pack::ProjectionCar>,
+    pub(crate) lifecycle: Option<LifecycleStateRecord>,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static AFTER_CURRENT_OBSERVATIONS_READ: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn after_current_observations_read(callback: impl FnOnce() + 'static) {
+    AFTER_CURRENT_OBSERVATIONS_READ.with(|hook| *hook.borrow_mut() = Some(Box::new(callback)));
+}
+
 impl HubStore {
     /// Store one geocoder lookup under its own version-2 key.
     ///
@@ -860,6 +877,25 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
+    /// Read the current vehicle summary's inputs from one committed catalogue snapshot.
+    pub(crate) fn current_vehicle_rows(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<CurrentVehicleRows, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(StoreError::Begin)?;
+        Ok(CurrentVehicleRows {
+            observations: Self::current_observations_on(&transaction, vehicle_id)?,
+            car: Self::materialised_car_on(&transaction, vehicle_id)?,
+            lifecycle: load_lifecycle_state_in_transaction(&transaction, vehicle_id)?,
+        })
+    }
+
     /// Latest durable discovery, Owner API, and streaming observations used by
     /// the bounded current-state endpoint. Processed raw history can be pruned
     /// without losing these three replacement snapshots.
@@ -871,6 +907,13 @@ impl HubStore {
             return Err(StoreError::NilVehicleId);
         }
         let connection = self.open_read_only_connection()?;
+        Self::current_observations_on(&connection, vehicle_id)
+    }
+
+    fn current_observations_on(
+        connection: &Connection,
+        vehicle_id: Uuid,
+    ) -> Result<Vec<ObservationRecord>, StoreError> {
         let exists = connection
             .query_row(
                 "SELECT 1 FROM vehicles WHERE vehicle_id = ?1",
@@ -890,11 +933,18 @@ impl HubStore {
                  ORDER BY observed_at_ms, observation_id",
             )
             .map_err(StoreError::Query)?;
-        statement
+        let observations = statement
             .query_map(params![vehicle_id.to_string()], observation_from_row)
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::Query)
+            .map_err(StoreError::Query)?;
+        #[cfg(test)]
+        AFTER_CURRENT_OBSERVATIONS_READ.with(|hook| {
+            if let Some(callback) = hook.take() {
+                callback();
+            }
+        });
+        Ok(observations)
     }
 
     /// Return only the newest durable current-snapshot metadata. Fleet
@@ -947,6 +997,13 @@ impl HubStore {
             return Err(StoreError::NilVehicleId);
         }
         let connection = self.open()?;
+        Self::materialised_car_on(&connection, vehicle_id)
+    }
+
+    fn materialised_car_on(
+        connection: &Connection,
+        vehicle_id: Uuid,
+    ) -> Result<Option<crate::hub_pack::ProjectionCar>, StoreError> {
         connection
             .query_row(
                 "SELECT car_json FROM materialised_cars WHERE vehicle_id = ?1",
