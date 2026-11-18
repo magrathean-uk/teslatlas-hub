@@ -680,7 +680,9 @@ impl SourceDbProjectionState {
             if !row.entity.tombstone_allowed() {
                 continue;
             }
-            if missing.contains(&(row.entity, row.id)) {
+            if missing.contains(&(row.entity, row.id))
+                && !is_seam_left_out_digest(row.entity, &row.digest)
+            {
                 tombstones.push(ProjectionTombstone {
                     entity: projection_delta_entity(row.entity),
                     id: row.id,
