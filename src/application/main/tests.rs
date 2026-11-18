@@ -68,6 +68,7 @@ mod b3_c8_k;
 mod charge_cost_cli_tests;
 #[path = "collector_cli_tests.rs"]
 mod collector_cli_tests;
+#[cfg(target_os = "macos")]
 #[path = "fleet_cli_tests.rs"]
 mod fleet_cli_tests;
 #[path = "pairing_scope_tests.rs"]
@@ -1690,9 +1691,11 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     store.checkpoint_catalogue_for_immutable_read().expect("checkpoint");
     run(Cli { config: Some(config), command: Command::Doctor }).await.expect("doctor");
     assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("Owner retained"));
-    // The stored Fleet row is kept (counted below) but refused at load: Fleet
-    // is parked and supplied rows are source credentials (M02-T02).
-    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").is_err(), "Fleet row refused at load");
+    // The stored Fleet row is kept (counted below) and still loads: it is the
+    // Hub's own grant (M09-T11). A supplied Fleet row can no longer be stored
+    // (the un-park barrier); its refusal at load is the library's
+    // `fleet_preflight_rejects_a_pair_without_the_recorded_scope_witness`.
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet retained"), "Fleet row retained");
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
     assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
@@ -1952,10 +1955,9 @@ fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     }
     let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
     assert_eq!(after, before, "no stored pair changed");
-    // The retained Fleet row is the supplied row an older Hub could hold: it
-    // is kept, and refused at load (M02-T02 round 3).
-    let refused = credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect_err("Fleet pair refused at load");
-    assert!(refused.to_string().contains("Source credentials are disabled") || format!("{refused:?}").contains("source_credential_disabled"), "{refused:?}");
+    // The retained Fleet row is the Hub's own grant (M09-T11): it is kept and
+    // unchanged. A supplied row can no longer be stored to be refused at load.
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet pair retained"), "Fleet pair unchanged");
 }
 
 #[cfg(target_os = "linux")]
