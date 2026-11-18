@@ -1138,27 +1138,7 @@ impl HubStore {
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            let expected_bytes =
-                u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
-            let path = self
-                .packs_dir
-                .join("sha256")
-                .join(format!("{sha256}.sqlite.zst"));
-            let metadata =
-                fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
-                    path: path.clone(),
-                    source,
-                })?;
-            if !metadata.file_type().is_file() {
-                return Err(StoreError::CatalogPackNotRegular { path });
-            }
-            if metadata.len() != expected_bytes {
-                return Err(StoreError::CatalogPackSizeMismatch {
-                    path,
-                    expected: expected_bytes,
-                    actual: metadata.len(),
-                });
-            }
+            self.verify_catalogued_pack_file_metadata(&sha256, compressed_bytes)?;
             let entry = (
                 snapshot_id,
                 ordinal,
@@ -1208,6 +1188,13 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?;
+        // Pin the admission and its chunk rows to the same catalogue snapshot
+        // while a physical head can be replaced by another connection.
+        let physical_catalogue = connection.unchecked_transaction().map_err(StoreError::Begin)?;
+        for (digest, _, bytes) in pending_physical_v3_pack_rows(&physical_catalogue)? {
+            self.verify_catalogued_pack_file_metadata(&digest, bytes)?;
+        }
+        drop(physical_catalogue);
         drop(connection);
         for vehicle_id in lineage_vehicle_ids {
             let vehicle_id = Uuid::parse_str(&vehicle_id)
@@ -1425,37 +1412,43 @@ impl HubStore {
         let rows = referenced_pack_rows_at(&connection, now_ms)?;
 
         for (sha256, relative_path, compressed_bytes) in rows {
-            let compressed_bytes =
-                u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
             if !is_sha256_hex(&sha256)
                 || relative_path != format!("/v1/packs/sha256/{sha256}.sqlite.zst")
             {
                 return Err(StoreError::UnsafeStoredPackPath);
             }
-            let path = self
-                .packs_dir
-                .join("sha256")
-                .join(format!("{sha256}.sqlite.zst"));
-            let metadata =
-                fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
-                    path: path.clone(),
-                    source,
-                })?;
-            if !metadata.file_type().is_file() {
-                return Err(StoreError::CatalogPackNotRegular { path });
-            }
-            if metadata.len() != compressed_bytes {
-                return Err(StoreError::CatalogPackSizeMismatch {
-                    path,
-                    expected: compressed_bytes,
-                    actual: metadata.len(),
-                });
-            }
+            let path = self.verify_catalogued_pack_file_metadata(&sha256, compressed_bytes)?;
             if sha256_file_hex(&path)? != sha256 {
                 return Err(StoreError::CatalogPackDigestMismatch { path });
             }
         }
         Ok(())
+    }
+
+    fn verify_catalogued_pack_file_metadata(
+        &self,
+        digest: &str,
+        compressed_bytes: i64,
+    ) -> Result<PathBuf, StoreError> {
+        let expected =
+            u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
+        let path = self.packs_dir.join("sha256").join(format!("{digest}.sqlite.zst"));
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
+                path: path.clone(),
+                source,
+            })?;
+        if !metadata.file_type().is_file() {
+            return Err(StoreError::CatalogPackNotRegular { path });
+        }
+        if metadata.len() != expected {
+            return Err(StoreError::CatalogPackSizeMismatch {
+                path,
+                expected,
+                actual: metadata.len(),
+            });
+        }
+        Ok(path)
     }
 
     pub fn sqlite_version(&self) -> Result<String, StoreError> {
