@@ -36,6 +36,53 @@ fn private_imports(temporary: &tempfile::TempDir) -> PathBuf {
 }
 
 #[test]
+fn physical_stage_preserves_all_efficiency_bit_patterns() {
+    use crate::source_db_projection::SourceDbCarPhysicalV2_2;
+
+    let temporary = tempdir().expect("temporary directory");
+    let mut stage = SourceDbStage::create_physical_v3(private_imports(&temporary), limits())
+        .expect("physical stage");
+    let efficiencies = [
+        None,
+        Some(0.145),
+        Some(-0.0),
+        Some(f64::from_bits(0x7ff8_0000_0000_0042)),
+        Some(f64::from_bits(0xfff8_0000_0000_0043)),
+        Some(f64::INFINITY),
+        Some(f64::NEG_INFINITY),
+    ];
+    let mut car: SourceDbCarPhysicalV2_2 = serde_json::from_value(serde_json::json!({
+        "id": 1,
+        "eid": 1,
+        "vid": 1,
+        "display_priority": 0,
+        "inserted_at_pg_us": 0,
+        "updated_at_pg_us": 0,
+        "settings_id": 1
+    }))
+    .expect("physical car fixture");
+    for (index, efficiency) in efficiencies.into_iter().enumerate() {
+        car.id = i16::try_from(index + 1).expect("fixture id");
+        car.efficiency = efficiency;
+        stage.insert(SourceDbStageTable::Cars, car.id.into(), &car).expect("stage car");
+    }
+    stage.seal().expect("seal");
+
+    let page = stage
+        .page::<SourceDbCarPhysicalV2_2>(SourceDbStageTable::Cars, 0, 10)
+        .expect("staged cars");
+    assert_eq!(page.rows.len(), efficiencies.len());
+    for (row, original) in page.rows.into_iter().zip(efficiencies) {
+        assert_eq!(
+            row.value.efficiency.map(f64::to_bits),
+            original.map(f64::to_bits),
+            "efficiency changed for source row {}",
+            row.source_id,
+        );
+    }
+}
+
+#[test]
 fn sealed_reopen_preserves_the_digest_and_rejects_persisted_accounting_mismatch() {
     let temporary = tempdir().expect("temp dir");
     let mut stage =
