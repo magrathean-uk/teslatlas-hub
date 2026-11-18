@@ -174,6 +174,18 @@ fn collecting_probe_queries_end_in_limit_cap_plus_one() {
 }
 
 #[test]
+fn read_only_snapshot_refuses_role_filtered_history() {
+    let transaction_settings = READ_ONLY_SESSION_SQL[2]
+        .split(';')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    assert!(
+        transaction_settings.contains(&"SET LOCAL row_security = off"),
+        "source snapshots must fail if PostgreSQL would filter rows by role"
+    );
+}
+
+#[test]
 fn all_queries_are_fixed_qualified_and_keyset_paginated() {
     assert!(MIGRATION_VERSION_SQL.contains("\"public\".\"schema_migrations\""));
     assert!(MIGRATION_VERSIONS_SQL.contains("\"public\".\"schema_migrations\""));

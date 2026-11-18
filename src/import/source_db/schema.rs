@@ -147,7 +147,8 @@ pub fn is_supported_source_db_revision(revision: &str) -> bool {
 pub const READ_ONLY_SESSION_SQL: [&str; 3] = [
     "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
     "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
-    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '5s'",
+    // Like pg_dump, fail if row-level security would hide part of the source.
+    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '5s'; SET LOCAL row_security = off",
 ];
 
 /// Read the installed Ecto migration high-water mark from the exact source
