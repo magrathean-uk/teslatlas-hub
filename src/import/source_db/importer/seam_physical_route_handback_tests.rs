@@ -2411,7 +2411,10 @@ fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
 /// [`publish_kept`], [`collect`], [`history_stage_unsealed`]). Two
 /// processes, so the handback's peak footprint is its own: `build` writes
 /// the store, `measure` (run under `/usr/bin/time -l`) opens it and runs
-/// one handback. Run by hand only; see `.plan/work/M08-T19/measure.md`.
+/// one handback. Ignored by default: run `m08_t19_lab_build`, then
+/// `m08_t19_lab_measure` with `--ignored`, both given `LAB_DIR` (and the
+/// sizes `build` reads); `measure` prints one `M08T19` line with the outcome,
+/// CPU and wall seconds, packs written and whether the head was served.
 mod m08_t19_lab {
     use super::*;
     use crate::source_db_projection::SourceDbPositionPhysicalV2_2;
