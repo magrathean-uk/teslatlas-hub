@@ -176,6 +176,29 @@ fn promote_imported_open_session_in_transaction(
     updated_at_ms: i64,
     expected: Option<(i64, i64)>,
 ) -> Result<OpenSessionSeedReport, StoreError> {
+    promote_imported_open_session_with_admitted_drives_in_transaction(
+        transaction,
+        source_id,
+        vehicle_id,
+        car_id,
+        session,
+        updated_at_ms,
+        expected,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn promote_imported_open_session_with_admitted_drives_in_transaction(
+    transaction: &Transaction<'_>,
+    source_id: Uuid,
+    vehicle_id: Uuid,
+    car_id: i64,
+    session: &SourceDbOpenSession,
+    updated_at_ms: i64,
+    expected: Option<(i64, i64)>,
+    admitted_completed_drives: Option<WatermarkPair>,
+) -> Result<OpenSessionSeedReport, StoreError> {
     if source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
         return Err(StoreError::InvalidLifecycleCarId);
     }
@@ -243,10 +266,27 @@ fn promote_imported_open_session_in_transaction(
         }
         _ => None,
     };
-    let mut seeded = crate::lifecycle::seed_imported_open_session_state(
+    // The staged maximum describes the raw snapshot. A planned seam supplies
+    // the reach of the completed drives it admitted. Count an open source
+    // drive only when it will actually be inherited.
+    let mut handover_watermarks = session.watermarks.clone();
+    if let Some(mut admitted) = admitted_completed_drives {
+        if let Some(drive) = session.drive.as_ref().filter(|_| kept_open.is_none()) {
+            admitted = merge_watermark(
+                admitted,
+                WatermarkPair {
+                    max_source_row_id: Some(drive.id),
+                    max_timestamp_ms: Some(drive.start_date_ms),
+                },
+            );
+        }
+        handover_watermarks.drives = admitted.into();
+    }
+    let mut seeded = crate::lifecycle::seed_imported_open_session_state_with_watermarks(
         source_id,
         session,
         previous_state.as_ref(),
+        &handover_watermarks,
     )
     .map_err(|_| StoreError::InvalidLifecycleSession)?;
     if kept_open.is_some()
@@ -415,7 +455,7 @@ fn promote_imported_open_session_in_transaction(
     }
     // C2 R80 (g), C2 R80 (d), C1 R84 (b), C1 R90, C9 R58: raise-only merge,
     // all-source cursor raise, then the boundary hook for changed Positions.
-    let watermarks = snapshot_watermark_pairs(&session.watermarks);
+    let watermarks = snapshot_watermark_pairs(&handover_watermarks);
     let changed_domains =
         raise_source_watermarks_in_transaction(transaction, source_id, vehicle_id, &watermarks)?;
     raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;

@@ -320,6 +320,20 @@ pub fn seed_imported_open_session_state(
     session: &SourceDbOpenSession,
     existing: Option<&OpenSessionState>,
 ) -> Result<OpenSessionState, LifecycleError> {
+    seed_imported_open_session_state_with_watermarks(
+        source_id,
+        session,
+        existing,
+        &session.watermarks,
+    )
+}
+
+pub(crate) fn seed_imported_open_session_state_with_watermarks(
+    source_id: uuid::Uuid,
+    session: &SourceDbOpenSession,
+    existing: Option<&OpenSessionState>,
+    watermarks: &SourceDbWatermarks,
+) -> Result<OpenSessionState, LifecycleError> {
     session
         .validate()
         .map_err(|_| LifecycleError::InvalidImportedSession)?;
@@ -336,22 +350,20 @@ pub fn seed_imported_open_session_state(
     };
     let same_open_refs = state.imported_open.as_ref() == Some(&refs);
     state.imported_drive_watermark_ms = state.imported_drive_watermark_ms.max(
-        session
-            .watermarks
+        watermarks
             .drives
             .max_timestamp_ms
-            .max(session.watermarks.positions.max_timestamp_ms),
+            .max(watermarks.positions.max_timestamp_ms),
     );
     state.imported_charge_watermark_ms = state.imported_charge_watermark_ms.max(
-        session
-            .watermarks
+        watermarks
             .charging_processes
             .max_timestamp_ms
-            .max(session.watermarks.charges.max_timestamp_ms),
+            .max(watermarks.charges.max_timestamp_ms),
     );
     state.imported_state_watermark_ms = state
         .imported_state_watermark_ms
-        .max(session.watermarks.states.max_timestamp_ms);
+        .max(watermarks.states.max_timestamp_ms);
     // M03-T12: the inherited open rows keep their source ids (above), and
     // the Hub's own rows take ids from the reserved range, which lies above
     // every source id the importer admits. Import watermarks therefore no

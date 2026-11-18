@@ -20,7 +20,7 @@ use crate::hub_pack::{
 };
 use crate::source_db_projection::{
     SourceDbCharge, SourceDbChargingProcess, SourceDbDrive, SourceDbOpenSession, SourceDbPosition,
-    SourceDbState, project_charge_sample,
+    SourceDbState, SourceDbWatermarks, project_charge_sample,
 };
 
 /// Maximum UTF-8 bytes retained for one vehicle's open-session blob.

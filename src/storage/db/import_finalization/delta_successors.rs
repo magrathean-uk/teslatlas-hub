@@ -217,11 +217,11 @@ fn publish_delta_successors_in_transaction(
         return Err(StoreError::LineageCatalogConflict);
     }
     publish_staged_import_seam_in_transaction(transaction, vehicle_id, seam, deltas)?;
-    match materialisation {
+    let admitted_completed_drives = match materialisation {
         Some((car, drives)) => {
             // The packs were written from a plan; publication plans
             // again from the same store and refuses another one.
-            let charge_seam =
+            let planned_seam =
                 replan_import_seam_in_transaction(transaction, vehicle_id, car_id, drives, seam)?;
             reconcile_imported_materialisation_in_transaction(
                 transaction,
@@ -232,16 +232,34 @@ fn publish_delta_successors_in_transaction(
                 ImportedProjectionRows::Attached,
                 PriorImportedDriveRows::Durable,
             )?;
-            if let Some((plan, charges)) = charge_seam {
+            if let Some((plan, charges)) = planned_seam {
                 apply_import_seam_to_charges_in_transaction(
                     transaction, vehicle_id, &plan, charges, true,
                 )?;
+                let admitted = drives
+                    .iter()
+                    .filter(|drive| plan.drives.imported.binary_search(&drive.id).is_ok())
+                    .fold(WatermarkPair::default(), |maximum, drive| {
+                        merge_watermark(
+                            maximum,
+                            WatermarkPair {
+                                max_source_row_id: Some(drive.id),
+                                max_timestamp_ms: Some(drive.end_date_ms.max(drive.start_date_ms)),
+                            },
+                        )
+                    });
+                Some(admitted)
+            } else {
+                None
             }
         }
         // A successor that does not plan the seam may not publish
         // over the Hub's own collection.
-        None => refuse_unplanned_import_seam_in_transaction(transaction, &vehicle_key)?,
-    }
+        None => {
+            refuse_unplanned_import_seam_in_transaction(transaction, &vehicle_key)?;
+            None
+        }
+    };
     match projection_state {
         SuccessorProjectionState::Replace(transfer) => {
             replace_source_db_import_projection_state_from_attached_in_transaction(
@@ -279,7 +297,7 @@ fn publish_delta_successors_in_transaction(
             )?;
         }
     }
-    promote_imported_open_session_in_transaction(
+    promote_imported_open_session_with_admitted_drives_in_transaction(
         transaction,
         source_id,
         vehicle_id,
@@ -287,6 +305,7 @@ fn publish_delta_successors_in_transaction(
         &session,
         updated_at_ms,
         Some((base_last_observation_id, base_updated_at_ms)),
+        admitted_completed_drives,
     )?;
     upsert_geofences_in_transaction(transaction, vehicle_id, geofences)?;
     transaction
