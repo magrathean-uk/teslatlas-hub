@@ -1487,21 +1487,19 @@ where
                 let now = run.scheduler.clock.mono_now();
                 run.batch.note_result(now);
                 match handle(run, key, result, now) {
-                    Ok(ReadFlow::Continue) => {}
-                    Ok(ReadFlow::SignedOut) => {
-                        // The rest of the tick's requests are not sent (R47), but
-                        // what the tick already received is stored first, with the
-                        // account's stop and its gap (R5, R8). The requests still
-                        // pending are dropped, which settles what they counted
-                        // (a request the credential unit never sent counted nothing;
-                        // a Fleet request's guard, taken when it was built, takes
-                        // its start back though it was never polled), and no car
-                        // stays marked in flight: it would otherwise be hidden from
-                        // every later tick, after the stop is lifted too.
+                    Ok(ReadFlow::Continue)
+                        if !run.scheduler.mode.is_owner_wire()
+                            || !run.scheduler.wait_running(WaitReason::RateLimited, now) => {}
+                    Ok(flow) => {
+                        // After an Owner-wire 429 the shared authentication fuse
+                        // has kept the other requests from sending. Stop polling
+                        // them, just as for a sign-out. Commit the received results
+                        // and account state, then drop the pending requests and
+                        // release the cars so they can be scheduled again.
                         run.commit_now(now).await?;
                         drop(pending);
                         run.scheduler.release_in_flight();
-                        return Ok(ReadFlow::SignedOut);
+                        return Ok(flow);
                     }
                     Err(error) => {
                         // A result that ends the run must not hide the error that
