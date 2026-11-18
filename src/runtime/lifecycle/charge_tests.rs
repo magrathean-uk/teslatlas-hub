@@ -1952,6 +1952,18 @@ fn astra_p07_f05_the_next_battery_reading_can_corroborate_before_a_counter() {
 }
 
 #[test]
+fn astra_p07_f05_a_battery_back_at_its_earlier_value_does_not_corroborate() {
+    // The reading falls to 0, then returns to exactly the earlier 50: not a rise.
+    let result = run(&[
+        cv(1, T0, "Disconnected", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + HOUR, "Complete", Some(10.0), Some(0), Some(1000.0)),
+        cv(3, T0 + HOUR + MIN, "Complete", Some(10.0), Some(50), Some(1000.0)),
+    ]);
+    assert!(result.delta.charges.is_empty());
+    assert!(result.state.open_charge.is_none());
+}
+
+#[test]
 fn astra_p07_f05_a_cached_battery_is_not_the_next_reading() {
     let cached = vd(3, T0 + HOUR + SEC, json!({
         "charge_state": {"timestamp": T0 + HOUR, "battery_level": 0}
