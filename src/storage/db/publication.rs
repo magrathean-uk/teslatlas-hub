@@ -462,7 +462,7 @@ impl HubStore {
             if !valid_final && !valid_temporary {
                 return Err(StoreError::UnsafeSchema22NoOpPath(path));
             }
-            if final_snapshot == keep_snapshot_id {
+            if final_snapshot.is_some() && final_snapshot == keep_snapshot_id {
                 continue;
             }
             unlinkat(&directory.file, name, AtFlags::empty())
