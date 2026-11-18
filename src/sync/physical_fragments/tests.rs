@@ -2010,6 +2010,39 @@ fn physical_v3_admission_survives_restart_and_transfers_pack_ownership() {
 }
 
 #[test]
+fn physical_v3_readiness_reports_missing_or_short_current_pack_after_restart() {
+    use crate::storage::db::ReadinessReasonCode;
+
+    let temporary = tempdir().expect("temp dir");
+    let root = temporary.path().join("hub");
+    let store = HubStore::initialize(&root).expect("store");
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    let binding = registered_admission_binding(&store);
+    let candidate =
+        two_chunk_physical_candidate(temporary.path(), &store, snapshot_id(), binding);
+    let path = candidate.chunks[0].path.clone();
+    store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("publish physical head");
+    store.service_readiness_at(false, 1_000).expect("intact head is ready");
+    drop(gate);
+    drop(store);
+
+    let original = std::fs::read(&path).expect("pack bytes");
+    std::fs::write(&path, &original[..original.len() - 1]).expect("truncate pack");
+    let reopened = HubStore::initialize(&root).expect("reopen catalogue");
+    assert_eq!(
+        reopened.service_readiness_at(false, 1_000).expect_err("short pack").code,
+        ReadinessReasonCode::PublishedContentUnservable
+    );
+    std::fs::remove_file(&path).expect("remove pack");
+    assert_eq!(
+        reopened.service_readiness_at(false, 1_000).expect_err("missing pack").code,
+        ReadinessReasonCode::PublishedContentUnservable
+    );
+}
+
+#[test]
 fn physical_v3_admission_faults_cleanup_only_unretained_objects() {
     use crate::durability_fault::{DurabilityFaultPoint, inject};
 
