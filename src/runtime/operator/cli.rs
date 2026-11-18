@@ -438,8 +438,8 @@ pub enum Command {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
         source: String,
-        /// Positive source car id that will be imported.
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        /// Source car ID from 1 to 32767.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..=i64::from(i16::MAX)))]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
@@ -523,8 +523,8 @@ pub enum Command {
         /// Explicitly allow registration of another import source.
         #[arg(long)]
         new_import_source: bool,
-        /// Positive source car id to import.
-        #[arg(long)]
+        /// Source car ID from 1 to 32767.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..=i64::from(i16::MAX)))]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
