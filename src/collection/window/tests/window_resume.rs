@@ -106,6 +106,24 @@ fn window_resume_reboot_closes() {
 }
 
 #[test]
+fn window_resume_reboot_seen_after_expiry_hands_back_at_the_signed_expiry() {
+    let rig = Rig::new();
+    drop(open_hub(&rig, 0, 3600));
+    // The process is down past the expiry; the reboot is only seen at 3700.
+    rig.clock.advance(3700);
+    rig.clock.set_boot(T0 + 50);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::Reboot));
+    let handback = hub.status().last_handback.unwrap();
+    assert_eq!(handback.reason, CloseReason::Reboot);
+    assert_eq!(
+        handback.closed_at,
+        T0 + 3600,
+        "a hand-back end never passes the signed expiry"
+    );
+}
+
+#[test]
 fn window_resume_watermark_rollback_closes_running_and_at_start() {
     let rig = Rig::new();
     let hub = open_hub(&rig, 0, 3600);
