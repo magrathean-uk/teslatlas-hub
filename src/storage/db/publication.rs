@@ -1071,6 +1071,13 @@ impl HubStore {
             return Err(StoreError::NilVehicleId);
         }
         let connection = self.open_read_only_connection()?;
+        Self::v2_projection_binding_in(&connection, vehicle_id)
+    }
+
+    fn v2_projection_binding_in(
+        connection: &Connection,
+        vehicle_id: Uuid,
+    ) -> Result<ProjectionBinding, StoreError> {
         let immutable: Option<(String, String, String, i64, i64)> = connection
             .query_row(
                 "SELECT binding.snapshot_id, binding.installation_id,
