@@ -1262,86 +1262,32 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
+            // The Mac app's Start: the whole check, with its set-up marker
+            // check and its reader, is the library's (M08-T25).
+            if !*history_only {
+                let answer = tesatlas_hub::macos_launch_agent::start_preflight(&config)?;
+                println!("{answer}");
+                return Ok(());
+            }
             // A Hub that was set up and lost its catalogue is refused, never
             // idle and never new (M02-T21, DEC-116).
             tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
-            if *history_only {
-                validate_history_only_config(&config)?;
-                let published = run_immutable_diagnostic(&config.data_dir, |store| {
-                    store
-                        .service_readiness_at(false, current_epoch_ms()?)
-                        .map_err(|error| {
-                            format!("published history is not ready: {:?}", error.code)
-                        })?;
-                    let published = store.published_vehicles()?;
-                    if published.is_empty() {
-                        return Err("no signed history is published".into());
-                    }
-                    Ok(published.len())
-                })?;
-                println!(
-                    "{}",
-                    serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
-                );
-                return Ok(());
-            }
-            // A Hub that was never configured starts idle (M02-T21, DEC-115):
-            // the store is neither opened nor created here, and the serve
-            // admission applies the same rule. Anything else is checked below.
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "idle",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            // A configured Hub without the Hub's own login starts for the
-            // owner's sign-in, the serve admission's same rule (M09-T16, B2).
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_awaits_owner_sign_in(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "awaiting_sign_in",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            run_immutable_diagnostic(&config.data_dir, |store| {
-                store.catalogue_check()?;
-                let configured = store.configured_tesla_vehicles()?;
-                if configured.is_empty() {
-                    return Err("at least one configured vehicle is required".into());
+            validate_history_only_config(&config)?;
+            let published = run_immutable_diagnostic(&config.data_dir, |store| {
+                store
+                    .service_readiness_at(false, current_epoch_ms()?)
+                    .map_err(|error| {
+                        format!("published history is not ready: {:?}", error.code)
+                    })?;
+                let published = store.published_vehicles()?;
+                if published.is_empty() {
+                    return Err("no signed history is published".into());
                 }
-                let report = inspect_hub(store, &config)?;
-                let present = match config.collector.provider {
-                    CollectorProvider::Legacy => report.credentials.legacy.present,
-                    CollectorProvider::Fleet => report.credentials.fleet.present,
-                };
-                if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
-                    let status = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
-                    return Err(tesatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
-                }
-                Ok(())
+                Ok(published.len())
             })?;
             println!(
                 "{}",
-                serde_json::json!({
-                    "status": "ready",
-                    "version": tesatlas_hub::BUILD_VERSION,
-                    "provider": config.collector.provider,
-                })
+                serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
             );
             return Ok(());
         }

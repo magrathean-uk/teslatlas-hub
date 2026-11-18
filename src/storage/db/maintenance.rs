@@ -1022,6 +1022,8 @@ impl HubStore {
     }
 
     pub fn quick_check(&self) -> Result<(), StoreError> {
+        #[cfg(test)]
+        read_probe::whole_store_read();
         let connection = self.open_read_only_connection()?;
         let result: String = connection
             .query_row("PRAGMA quick_check", [], |row| row.get(0))

@@ -1407,7 +1407,7 @@ fn break_unread_table(data: &Path, table: &str) {
 /// M08-T22: a production start decides the awaiting-sign-in admission without the
 /// whole-store check and without opening a pack. Unreadable packs and a damaged page
 /// in a table it never reads leave the production admission unchanged, while the
-/// command-line form (the whole-store check) refuses the same store.
+/// whole-store check fails on the same store.
 #[test]
 fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     let temporary = crate::private_tempdir().expect("temporary directory");
@@ -1418,13 +1418,12 @@ fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     let packs = make_packs_unreadable(&data);
     let store = HubStore::open_read_only(&data).expect("store");
     assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
-    assert!(hub_awaits_owner_sign_in(&config).is_err(), "the command-line form keeps the whole-store check");
-    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    assert!(hub_awaits_owner_sign_in(&config).expect("bounded read"), "awaiting");
     preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without opening a pack");
 
     break_unread_table(&data, "raw_observations");
     assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
-    assert!(awaits_owner_sign_in(&config, AdmissionStoreCheck::Bounded).expect("bounded read"), "awaiting");
+    assert!(hub_awaits_owner_sign_in(&config).expect("bounded read"), "awaiting");
     preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in without the whole-store check");
     drop(store);
     for pack in &packs {
@@ -1432,16 +1431,11 @@ fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     }
 }
 
-/// M08-T22: on a healthy store the bounded production admission and the command-line
-/// whole-store form decide every reviewed state alike.
+/// M08-T22: on a healthy store the bounded admission decides every reviewed state
+/// as the whole-store form it replaced did (that form was removed in M08-T25).
 #[test]
-fn production_start_admission_decides_as_the_whole_store_form() {
-    let same = |config: &HubConfig, label: &str| {
-        let whole = hub_awaits_owner_sign_in(config).map_err(|error| error.to_string());
-        let bounded = awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded).map_err(|error| error.to_string());
-        assert_eq!(bounded, whole, "{label}");
-        whole
-    };
+fn production_start_admission_decides_every_reviewed_state() {
+    let same = |config: &HubConfig, label: &str| hub_awaits_owner_sign_in(config).map_err(|error| format!("{label}: {error}"));
     let temporary = crate::private_tempdir().expect("temporary directory");
     let data = temporary.path().join("data");
     let config = seed_awaiting_hub(&data);
@@ -1486,4 +1480,373 @@ fn production_start_admission_decides_as_the_whole_store_form() {
     let mut config = idle_start_config(&empty);
     config.collector.interval_seconds = 300;
     assert_eq!(same(&config, "no configured car"), Ok(false));
+}
+
+// M08-T25: the command-line `preflight` the Mac app's Start runs, its answers
+// for every state the app shows, and its reads.
+
+/// `preflight` as the app's Start runs it: the function the command-line verb
+/// runs, with its set-up marker check and its reader. Every call also shows
+/// that it opened no pack and read no whole catalogue (M08-T25 repair).
+fn start(config: &HubConfig) -> Result<serde_json::Value, String> {
+    crate::db::read_probe::take();
+    let answer = start_preflight(config).map_err(|error| error.to_string());
+    assert_eq!(crate::db::read_probe::take(), (0, 0), "Start opened no pack and read no whole catalogue ({answer:?})");
+    answer
+}
+
+/// Whether the `doctor` admits the selected provider's stored pair: the
+/// credential decision `preflight` gives for a configured Hub.
+fn doctor_admits(config: &HubConfig) -> bool {
+    let store = HubStore::open_read_only(&config.data_dir).expect("store");
+    let report = crate::diagnostics::inspect_hub(&store, config).expect("doctor");
+    let present = match config.collector.provider {
+        CollectorProvider::Legacy => report.credentials.legacy.present,
+        CollectorProvider::Fleet => report.credentials.fleet.present,
+    };
+    present && report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed)
+}
+
+/// The refusal `preflight` gives when the selected pair is absent or not admitted.
+fn credential_refusal(config: &HubConfig) -> String {
+    let store = HubStore::open_read_only(&config.data_dir).expect("store");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_clock_ms().expect("clock")).expect("status");
+    crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).to_string()
+}
+
+/// A configured collecting Legacy Hub with the Hub's own login stored.
+fn seed_signed_in_hub(data: &Path) -> HubConfig {
+    let config = seed_awaiting_hub(data);
+    let store = HubStore::initialize(data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&store, data, "access-0001", "refresh-0001", None).expect("own login");
+    config
+}
+
+/// M08-T25: `preflight`'s answer and refusal for every state the app shows. The
+/// credential decision for a configured Hub is the `doctor`'s.
+#[test]
+fn start_preflight_answers_every_state_the_app_shows() {
+    let provider = |provider| serde_json::to_value(provider).expect("provider");
+    let ready = serde_json::json!({"status": "ready", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy)});
+
+    // Never configured: idle, the store is not created.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let fresh = temporary.path().join("fresh");
+    fs::create_dir(&fresh).expect("data folder");
+    assert_eq!(
+        start(&idle_start_config(&fresh)),
+        Ok(serde_json::json!({"status": "ready", "state": "idle", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy), "collectorEnabled": false})),
+    );
+    assert!(!fresh.join("hub.sqlite").exists(), "idle creates no store");
+
+    // Imported history and no login: the answer the imported-history sign-in requires.
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    let awaiting = serde_json::json!({"status": "ready", "state": "awaiting_sign_in", "version": crate::BUILD_VERSION, "provider": provider(CollectorProvider::Legacy), "collectorEnabled": false});
+    assert_eq!(start(&config), Ok(awaiting.clone()), "awaiting the owner's sign-in");
+
+    // No login and Legacy refresh disabled: refused with the credential status.
+    let mut disabled = config.clone();
+    disabled.collector.legacy_auth.enabled = false;
+    assert!(!doctor_admits(&disabled));
+    assert_eq!(start(&disabled), Err(credential_refusal(&disabled)), "Legacy refresh disabled");
+
+    // A quarantined car: refused before any credential is read.
+    let store = HubStore::open_read_only(&data).expect("store");
+    let (vehicle, _, _) = store.configured_tesla_vehicles().expect("cars").into_iter().next().expect("the configured car");
+    let connection = rusqlite::Connection::open(data.join("hub.sqlite")).expect("writable");
+    let quarantine = |value: i64| {
+        connection
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(vehicle_id, car_id, last_observation_id, open_session_json, quarantined, updated_at_ms)
+                 VALUES (?1, 1, 0, CAST('{}' AS BLOB), ?2, 1)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET quarantined = excluded.quarantined",
+                rusqlite::params![vehicle.to_string(), value],
+            )
+            .expect("lifecycle row")
+    };
+    quarantine(1);
+    let unavailable = format!("Hub data is unavailable: {}", store.readiness_check().expect_err("quarantined"));
+    assert_eq!(start(&config), Err(unavailable.clone()), "quarantined, awaiting");
+
+    // The Hub's own login is stored: ready, and still refused while a car is quarantined.
+    let writable = HubStore::initialize(&data).expect("writable store");
+    crate::auth::credential_vault::fixtures::replace_legacy_supplied_pair(&writable, &data, "access-0001", "refresh-0001", None).expect("own login");
+    assert_eq!(start(&config), Err(unavailable), "quarantined, signed in");
+    quarantine(0);
+    drop(connection);
+    assert!(doctor_admits(&config));
+    assert_eq!(start(&config), Ok(ready.clone()), "signed in");
+
+    // Tesla refused the login: attention, not a refusal.
+    write_auth_stop(&writable, "api_refused", None);
+    assert!(doctor_admits(&config));
+    assert_eq!(start(&config), Ok(ready.clone()), "Tesla refused the login");
+
+    // The Hub's collection stopped on the stored login: refused, needs a sign-in.
+    let vault = crate::auth::credential_vault::fixtures::legacy_vault(&writable, &data);
+    let slot = crate::auth::credential_envelope::CredentialSlot::OwnerApi;
+    let generation = vault.stored_generation(slot).expect("generation").expect("pair");
+    write_auth_stop(&writable, "signed_out", Some(generation));
+    let doctor = if doctor_admits(&config) { Ok(ready.clone()) } else { Err(credential_refusal(&config)) };
+    assert_eq!(start(&config), doctor, "stopped on the stored login");
+
+    // A refresh whose outcome is unknown: refused.
+    write_auth_stop(&writable, "api_refused", None);
+    vault.begin_refresh(slot, generation).expect("unresolved refresh");
+    assert!(!doctor_admits(&config));
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "refresh outcome unknown");
+    drop(vault);
+    drop(writable);
+    drop(store);
+
+    // A Fleet Hub: the stored Fleet pair is refused (M02-T02).
+    let fleet = temporary.path().join("fleet");
+    seed_fleet_ready_hub(&fleet);
+    let mut config = idle_start_config(&fleet);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = 30;
+    assert!(!doctor_admits(&config));
+    let refusal = credential_refusal(&config);
+    assert!(refusal.contains("source_credential_disabled"), "{refusal}");
+    assert_eq!(start(&config), Err(refusal), "Fleet");
+
+    // No configured car.
+    let empty = temporary.path().join("empty");
+    HubStore::initialize(&empty).expect("empty store");
+    let mut config = idle_start_config(&empty);
+    config.collector.interval_seconds = 300;
+    assert_eq!(start(&config), Err("at least one configured vehicle is required".to_owned()), "no configured car");
+}
+
+/// M08-T25: a Hub awaiting the owner's sign-in. Every pack unreadable, then the
+/// root page of `raw_observations` overwritten: the whole-store check fails on
+/// the store, and Start's `preflight` still answers `awaiting_sign_in`.
+#[test]
+fn start_preflight_awaiting_sign_in_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    let awaiting = start(&config).expect("healthy store");
+    assert_eq!(awaiting["state"], "awaiting_sign_in");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    let (packs_opened, whole_reads) = crate::db::read_probe::take();
+    assert!(packs_opened > 0 && whole_reads > 0, "the probe counts the whole-store check's reads");
+    assert_eq!(start(&config), Ok(awaiting.clone()), "no pack is opened");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert_eq!(start(&config), Ok(awaiting), "no whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}
+
+/// M08-T25: a Hub with the Hub's own login stored, on the same damaged store:
+/// Start's `preflight` still answers ready.
+#[test]
+fn start_preflight_signed_in_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_signed_in_hub(&data);
+    let ready = start(&config).expect("healthy store");
+    assert_eq!(ready["status"], "ready");
+    assert!(ready.get("state").is_none(), "the credentials-present answer");
+
+    let packs = make_packs_unreadable(&data);
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check opens the packs");
+    let (packs_opened, whole_reads) = crate::db::read_probe::take();
+    assert!(packs_opened > 0 && whole_reads > 0, "the probe counts the whole-store check's reads");
+    assert_eq!(start(&config), Ok(ready.clone()), "no pack is opened");
+
+    break_unread_table(&data, "raw_observations");
+    assert!(store.quick_check().is_err(), "the whole-store check sees the damaged page");
+    assert_eq!(start(&config), Ok(ready), "no whole-store check");
+    drop(store);
+    for pack in &packs {
+        fs::set_permissions(pack, fs::Permissions::from_mode(0o600)).expect("restore mode");
+    }
+}
+
+// M08-T25 repair: Start's `preflight` through the verb's own function, its
+// bounded reads on every branch, and the refusals the service's start has.
+
+/// A Hub never configured whose existing catalogue fails the whole-store check
+/// (the root page of `raw_observations` overwritten): the idle answer comes
+/// from bounded reads only, and the probe sees the old reads.
+#[test]
+fn start_preflight_idle_with_a_catalogue_reads_neither_the_whole_store_nor_a_pack() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    drop(HubStore::initialize(&data).expect("the empty store serve creates"));
+    let config = idle_start_config(&data);
+    let idle = start(&config).expect("idle on the healthy empty store");
+    assert_eq!(idle["state"], "idle");
+
+    break_unread_table(&data, "raw_observations");
+    let store = HubStore::open_read_only(&data).expect("store");
+    assert!(store.catalogue_check().is_err(), "the whole-store check sees the damaged page");
+    assert!(crate::db::read_probe::take().1 > 0, "the probe counts the whole-store check");
+    assert!(HubStore::open_immutable_read_only(&data).is_ok(), "the immutable snapshot opens");
+    assert_eq!(crate::db::read_probe::take().1, 1, "the probe counts the immutable snapshot's hash of the whole file");
+    assert_eq!(start(&config), Ok(idle), "idle without the whole-store check");
+}
+
+/// The stored credential states the first round pinned only through the
+/// admission rule, now through Start: a pending and a blocked Owner slot, and
+/// a key store fault with a login present. Each is refused with the doctor's
+/// refusal.
+#[test]
+fn start_preflight_refuses_pending_blocked_and_key_store_faults() {
+    let slot_state = |config: &HubConfig| {
+        let store = HubStore::open_read_only(&config.data_dir).expect("store");
+        crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, preflight_clock_ms().expect("clock"))
+            .expect("status")
+            .legacy_credentials
+            .store_state
+    };
+    let temporary = crate::private_tempdir().expect("temporary directory");
+
+    // A pending Owner slot: the stored pair is not converted yet.
+    let pending = temporary.path().join("pending");
+    let config = {
+        let store = seed_selected_car(&pending);
+        drop(store);
+        crate::CredentialVaultEntry::seed_migration_for_test(&pending, 0, false, false).expect("pending Owner slot");
+        let mut config = idle_start_config(&pending);
+        config.collector.interval_seconds = 300;
+        config
+    };
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "a pending slot does not await the sign-in");
+    assert!(!doctor_admits(&config));
+    assert_eq!(slot_state(&config), "migration_pending");
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "pending Owner slot");
+
+    // The same slot blocked: its old key is unavailable.
+    rusqlite::Connection::open(pending.join("hub.sqlite"))
+        .expect("writable")
+        .execute("UPDATE credential_format_state SET owner_api_blocked = 'old_key_unavailable' WHERE singleton_id = 1", [])
+        .expect("blocked Owner slot");
+    assert!(!hub_awaits_owner_sign_in(&config).expect("readable"), "a blocked slot does not await the sign-in");
+    assert!(!doctor_admits(&config));
+    assert_eq!(slot_state(&config), "source_credential_disabled");
+    assert_eq!(start(&config), Err(credential_refusal(&config)), "blocked Owner slot");
+
+    // The Hub's own login is stored and its key store is damaged.
+    let signed_in = temporary.path().join("signed-in");
+    let config = seed_signed_in_hub(&signed_in);
+    assert_eq!(start(&config).expect("signed in")["status"], "ready");
+    let keyring = signed_in.join("secrets").join(crate::auth::credential_keys::KEYRING_NAME);
+    fs::write(&keyring, [0_u8; 10]).expect("damaged key file");
+    assert!(!doctor_admits(&config));
+    let store = HubStore::open_read_only(&signed_in).expect("store");
+    let status = crate::auth::credential_sign_in::credential_status(&store, &signed_in, preflight_clock_ms().expect("clock")).expect("status");
+    assert!(status.legacy_credentials.present && status.credential_store.keyring != "ok", "a login with a damaged key store");
+    let refusal = credential_refusal(&config);
+    assert!(refusal.starts_with(&format!("{}: ", status.credential_store.keyring)), "{refusal}");
+    assert_eq!(start(&config), Err(refusal), "key store fault with a login present");
+}
+
+/// A clock before 1970 refuses Start in both branches with the words the
+/// whole-store check gave: "Hub data is unavailable: ..." where the awaiting
+/// rule reads the catalogue (any configured collecting Legacy Hub), and the
+/// clock's own refusal for a Hub that reaches the credentials-present branch
+/// directly (a Fleet Hub).
+#[test]
+fn start_preflight_refuses_a_clock_before_1970_in_both_branches() {
+    struct Clock;
+    impl Drop for Clock {
+        fn drop(&mut self) {
+            PREFLIGHT_CLOCK.with(|clock| clock.set(None));
+        }
+    }
+    let before_1970 = std::time::UNIX_EPOCH - Duration::from_secs(1);
+    let clock_refusal = crate::db::StoreError::RetiredLineageClock(
+        before_1970.duration_since(std::time::UNIX_EPOCH).expect_err("before 1970"),
+    )
+    .to_string();
+    assert!(clock_refusal.starts_with("cannot read the store clock for retired-lineage pack retention: "), "{clock_refusal}");
+    let unavailable = format!("Hub data is unavailable: {clock_refusal}");
+    let temporary = crate::private_tempdir().expect("temporary directory");
+
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    let fleet_data = temporary.path().join("fleet");
+    seed_fleet_ready_hub(&fleet_data);
+    let mut fleet = idle_start_config(&fleet_data);
+    fleet.collector.provider = CollectorProvider::Fleet;
+    fleet.collector.interval_seconds = 30;
+    assert_eq!(start(&awaiting).expect("awaiting")["state"], "awaiting_sign_in");
+    assert_eq!(start(&signed_in).expect("signed in")["status"], "ready");
+
+    let _clock = Clock;
+    PREFLIGHT_CLOCK.with(|clock| clock.set(Some(before_1970)));
+    assert_eq!(start(&awaiting), Err(unavailable.clone()), "awaiting the sign-in");
+    assert_eq!(start(&signed_in), Err(unavailable), "signed in");
+    assert_eq!(start(&fleet), Err(clock_refusal), "credentials present, Fleet");
+}
+
+/// The pack staging folder the service's start sweeps before its listener
+/// opens: one that is not the Hub's own private folder stops that start, and
+/// Start refuses it in both branches, with the old words where the old
+/// `preflight` could not list it either. A folder of the Hub's own that cannot
+/// be listed is made private by the start, so it passes.
+#[test]
+fn start_preflight_refuses_a_staging_folder_the_start_stops_on() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    for config in [&awaiting, &signed_in] {
+        let answer = start(config).expect("healthy");
+        let staging = config.data_dir.join("packs").join(".staging");
+        fs::create_dir_all(&staging).expect("staging folder");
+        let mode = |mode: u32| fs::set_permissions(&staging, fs::Permissions::from_mode(mode)).expect("staging mode");
+
+        mode(0o770);
+        let unsafe_staging = crate::db::StoreError::PackStartupRepair(crate::hub_pack::ProjectionPackError::UnsafeStaging(staging.clone())).to_string();
+        assert_eq!(start(config), Err(unsafe_staging), "group-writable, listable");
+        assert!(HubStore::initialize(&config.data_dir).is_err(), "the service's start stops on it");
+
+        mode(0o020);
+        let refusal = start(config).expect_err("group-writable, not listable");
+        assert!(refusal.starts_with(&format!("cannot inspect catalogue pack {}", staging.display())), "{refusal}");
+
+        mode(0o000);
+        assert_eq!(start(config), Ok(answer.clone()), "the Hub's own folder, not listable: the start makes it private");
+        drop(HubStore::initialize(&config.data_dir).expect("the service's start repairs it"));
+        assert_eq!(fs::metadata(&staging).expect("staging").permissions().mode() & 0o777, 0o700);
+        assert_eq!(start(config), Ok(answer), "repaired");
+    }
+}
+
+/// The import spool the service's start recovers before its listener opens:
+/// one that is not private stops that start, and Start refuses it in both
+/// branches with the start's own words.
+#[test]
+fn start_preflight_refuses_an_import_spool_the_start_stops_on() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let awaiting = seed_awaiting_hub(&temporary.path().join("awaiting"));
+    let signed_in = seed_signed_in_hub(&temporary.path().join("signed-in"));
+    for config in [&awaiting, &signed_in] {
+        let answer = start(config).expect("healthy");
+        let spool = config.data_dir.join("import-spool");
+        fs::create_dir(&spool).expect("import spool");
+        fs::set_permissions(&spool, fs::Permissions::from_mode(0o700)).expect("private");
+        assert_eq!(start(config), Ok(answer.clone()), "a private spool");
+
+        fs::set_permissions(&spool, fs::Permissions::from_mode(0o755)).expect("not private");
+        let refusal = crate::db::StoreError::UnsafeImportSpool(spool.clone()).to_string();
+        assert_eq!(start(config), Err(refusal), "a spool that is not private");
+        assert!(
+            matches!(HubStore::initialize(&config.data_dir), Err(crate::db::StoreError::UnsafeImportSpool(path)) if path == spool),
+            "the service's start stops on it"
+        );
+        fs::remove_dir(&spool).expect("reset");
+        assert_eq!(start(config), Ok(answer), "no spool");
+    }
 }

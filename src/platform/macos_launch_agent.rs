@@ -77,6 +77,12 @@ pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result
 /// (it needs a cadence, a car and the Hub's own pair) and nothing is sent to
 /// Tesla. `Ok(false)` is any other state, which keeps today's admission; a
 /// store that cannot be read is an error, never idle.
+///
+/// An existing catalogue is read through `HubStore::readiness_check` (it opens
+/// at a supported schema, its core tables respond and no car is quarantined)
+/// and the configured-car, published-car and credential-presence rows, a read
+/// that grows with the number of cars only: no pack is opened and no
+/// `PRAGMA quick_check` runs (M08-T25).
 pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<bool> {
     if config.collector.interval_seconds != 0
         || config.collector.fleet_telemetry.is_some()
@@ -101,7 +107,7 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    store.catalogue_check().map_err(|error| unavailable(&error))?;
+    store.readiness_check().map_err(|error| unavailable(&error))?;
     if !store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty()
         || !store.published_vehicles().map_err(|error| unavailable(&error))?.is_empty()
     {
@@ -136,32 +142,25 @@ pub fn hub_is_never_configured(config: &crate::config::HubConfig) -> io::Result<
 /// exists but cannot be used is refused here with the vault's own refusal,
 /// rather than at the sign-in (M09-T16, N1).
 ///
-/// This is the command-line `preflight`'s form: the catalogue must pass the
-/// whole-store `catalogue_check` (`PRAGMA quick_check` and a hash of every
-/// referenced pack), as every configured Hub's `preflight` did before the
-/// take-over. The production serve admission decides by the same rule on a
-/// read that grows with the number of cars only (M08-T22).
+/// The catalogue is read through `HubStore::readiness_check` (M08-T22): it
+/// opens at a supported schema, its core tables respond and no car is
+/// quarantined; the same readable-catalogue gate `/readyz` applies. With the
+/// configured-car join, the Owner slot's format row and its presence row that
+/// follow, the admission reads a number of rows that grows with the number of
+/// cars, not with the history or the packs; no pack is opened and no
+/// `PRAGMA quick_check` runs. The production serve admission uses it before
+/// the listener opens, and the command-line `preflight` the Mac app's Start
+/// runs (M08-T25).
 pub fn hub_awaits_owner_sign_in(config: &crate::config::HubConfig) -> io::Result<bool> {
-    awaits_owner_sign_in(config, AdmissionStoreCheck::WholeStore)
+    awaits_owner_sign_in(config, || Ok(()))
 }
 
-/// How much of the catalogue the awaiting-sign-in admission reads (M08-T22).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AdmissionStoreCheck {
-    /// `HubStore::catalogue_check`: the whole store and every referenced pack.
-    WholeStore,
-    /// `HubStore::readiness_check`: the catalogue opens at a supported schema,
-    /// its core tables respond and no car is quarantined; the same
-    /// readable-catalogue gate `/readyz` applies. With the configured-car join,
-    /// the Owner slot's format row and its presence row that follow, the
-    /// admission reads a number of rows that grows with the number of cars,
-    /// not with the history or the packs; no pack is opened and no
-    /// `PRAGMA quick_check` runs. Used at a production start, before the
-    /// listener opens.
-    Bounded,
-}
-
-fn awaits_owner_sign_in(config: &crate::config::HubConfig, check: AdmissionStoreCheck) -> io::Result<bool> {
+/// [`hub_awaits_owner_sign_in`]'s rule; `after_readiness` runs once the
+/// catalogue's readiness is read (Start's `preflight` reads its clock there).
+fn awaits_owner_sign_in(
+    config: &crate::config::HubConfig,
+    after_readiness: impl FnOnce() -> Result<(), crate::db::StoreError>,
+) -> io::Result<bool> {
     if config.collector.provider != crate::config::CollectorProvider::Legacy
         || config.collector.interval_seconds == 0
         || !config.collector.legacy_auth.enabled
@@ -176,11 +175,8 @@ fn awaits_owner_sign_in(config: &crate::config::HubConfig, check: AdmissionStore
     let unavailable =
         |error: &dyn std::fmt::Display| io::Error::new(io::ErrorKind::InvalidData, format!("Hub data is unavailable: {error}"));
     let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| unavailable(&error))?;
-    match check {
-        AdmissionStoreCheck::WholeStore => store.catalogue_check(),
-        AdmissionStoreCheck::Bounded => store.readiness_check(),
-    }
-    .map_err(|error| unavailable(&error))?;
+    store.readiness_check().map_err(|error| unavailable(&error))?;
+    after_readiness().map_err(|error| unavailable(&error))?;
     if store.configured_tesla_vehicles().map_err(|error| unavailable(&error))?.is_empty() {
         return Ok(false);
     }
@@ -222,6 +218,165 @@ fn owner_sign_in_keyring_usable(data_dir: &Path) -> io::Result<()> {
         Err(_) => return Err(refused(CredentialStoreError::Key(CredentialKeyError::Io { operation: "secrets_directory" }))),
     };
     crate::auth::credential_keys::check_keyring(&secrets).map(drop).map_err(|error| refused(error.into()))
+}
+
+/// The command-line `preflight` (not `--history-only`), whole: the check the Mac
+/// app's Start runs before it starts the service, with a 30-second limit; the
+/// app's diagnostics report shows it, and the imported-history sign-in requires
+/// its `awaiting_sign_in` answer. The answer is the JSON line `preflight` prints;
+/// a refusal is the error it reports.
+///
+/// It answers one question: would the service start, and would it collect
+/// (M08-T25). It reads what the production start reads before its listener
+/// opens, read-only and bounded by the number of cars and by what interrupted
+/// work left behind, never by the history or the packs: the set-up marker, the
+/// catalogue through the live read-only reader (`HubStore::open_read_only`,
+/// SQLite's own consistent read; no immutable snapshot, so no hash of the whole
+/// file), `readiness_check`, the clock, the configured cars, the start's own
+/// pack staging and import spool folders, and the selected pair's credential
+/// rows, decided as the `doctor` decides
+/// ([`crate::diagnostics::selected_credential_decision`]). No `PRAGMA
+/// quick_check` runs and no pack is opened. Damage that only those find is the
+/// `doctor`'s, the app's diagnostics report's (it runs `doctor`), backup's,
+/// restore's and repair's to report.
+pub fn start_preflight(config: &crate::config::HubConfig) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    // A Hub that was set up and lost its catalogue is refused, never idle and
+    // never new (M02-T21, DEC-116).
+    crate::storage::setup_marker::check_catalogue(&config.data_dir)?;
+    // A Hub that was never configured starts idle (M02-T21, DEC-115): the
+    // store is neither opened nor created here, and the serve admission
+    // applies the same rule. Anything else is checked below.
+    #[cfg(target_os = "macos")]
+    if hub_is_never_configured(config)? {
+        return Ok(serde_json::json!({
+            "status": "ready",
+            "state": "idle",
+            "version": crate::BUILD_VERSION,
+            "provider": config.collector.provider,
+            "collectorEnabled": false,
+        }));
+    }
+    // A configured Hub without the Hub's own login starts for the owner's
+    // sign-in, the serve admission's same rule (M09-T16, B2). The clock is read
+    // where the whole-store check read it, with the same refusal.
+    #[cfg(target_os = "macos")]
+    if awaits_owner_sign_in(config, || preflight_clock_ms().map(drop))? {
+        start_folders_usable(&config.data_dir)?;
+        return Ok(serde_json::json!({
+            "status": "ready",
+            "state": "awaiting_sign_in",
+            "version": crate::BUILD_VERSION,
+            "provider": config.collector.provider,
+            "collectorEnabled": false,
+        }));
+    }
+    // The catalogue file as the immutable snapshot's open first inspected it,
+    // with its refusals: present, and a regular file.
+    let catalogue = config.data_dir.join("hub.sqlite");
+    let metadata = fs::symlink_metadata(&catalogue).map_err(crate::db::StoreError::InspectCatalogue)?;
+    if !metadata.file_type().is_file() {
+        return Err(crate::db::StoreError::InvalidCataloguePath.into());
+    }
+    let store = crate::db::HubStore::open_read_only(&config.data_dir)?;
+    store.readiness_check()?;
+    let now_ms = preflight_clock_ms()?;
+    if store.configured_tesla_vehicles()?.is_empty() {
+        return Err("at least one configured vehicle is required".into());
+    }
+    start_folders_usable(&config.data_dir)?;
+    let status = crate::auth::credential_sign_in::credential_status(&store, &config.data_dir, now_ms)?;
+    if !crate::diagnostics::selected_credential_decision(&store, config, &status, now_ms)?.selected_admitted {
+        return Err(crate::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == crate::config::CollectorProvider::Fleet).into());
+    }
+    Ok(serde_json::json!({
+        "status": "ready",
+        "version": crate::BUILD_VERSION,
+        "provider": config.collector.provider,
+    }))
+}
+
+/// The service's start reads two of its own folders before its listener opens
+/// and stops on what it finds there (`HubStore::initialize`,
+/// `src/storage/db/store_opening.rs`): the pack staging folder it sweeps
+/// (`cleanup_stale_pack_staging`) and the import spool it recovers
+/// (`recover_stale_import_projection_state_spools`). Read-only, this refuses
+/// what would stop that start: a staging folder that cannot be inspected or is
+/// not the Hub's own private folder (a folder of the Hub's own that is not
+/// private the start makes private, so it passes here), and an import spool
+/// that cannot be inspected or listed or is not private. Where the old
+/// `preflight` refused the same folder (its catalogue inventory listed the
+/// staging folder), the refusal keeps its words. The leftovers inside either
+/// folder are not read: deciding which of them the start would remove needs its
+/// own rules (M08-T25 notes).
+fn start_folders_usable(data_dir: &Path) -> Result<(), crate::db::StoreError> {
+    use crate::db::StoreError;
+    let own_uid = rustix::process::geteuid().as_raw();
+    let staging = data_dir.join("packs").join(".staging");
+    // The old `preflight`'s words for a pack folder it could not inspect.
+    let inspect = |source: io::Error| StoreError::InspectCatalogPack { path: data_dir.join("packs").join(".staging"), source };
+    match fs::symlink_metadata(&staging) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => return Err(inspect(source)),
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
+                || metadata.uid() != own_uid
+                || metadata.mode() & 0o022 != 0
+            {
+                fs::read_dir(&staging).map_err(inspect)?;
+                return Err(StoreError::PackStartupRepair(crate::hub_pack::ProjectionPackError::UnsafeStaging(staging)));
+            }
+        }
+    }
+    // The import spool: the start's private folder for an interrupted import,
+    // owned like the data folder, mode 0700 (`src/storage/db.rs`).
+    let spool = data_dir.join("import-spool");
+    let spool_metadata = match fs::symlink_metadata(&spool) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(StoreError::InspectImportSpool(error)),
+        Ok(metadata) => metadata,
+    };
+    let root = fs::symlink_metadata(data_dir).map_err(StoreError::InspectImportSpool)?;
+    if root.file_type().is_symlink() || !root.is_dir() {
+        return Err(StoreError::UnsafeImportSpool(data_dir.to_path_buf()));
+    }
+    if spool_metadata.file_type().is_symlink()
+        || !spool_metadata.is_dir()
+        || spool_metadata.uid() != root.uid()
+        || spool_metadata.gid() != root.gid()
+        || spool_metadata.mode() & 0o777 != 0o700
+    {
+        return Err(StoreError::UnsafeImportSpool(spool));
+    }
+    match fs::read_dir(&spool) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied && own_uid != root.uid() => Ok(()),
+        Err(error) => Err(StoreError::InspectImportSpool(error)),
+        Ok(_) => Ok(()),
+    }
+}
+
+/// The clock the whole-store check read before M08-T25 (the retired-lineage
+/// clock of `verify_referenced_packs`), with its refusals: a clock before 1970
+/// or past the millisecond range refuses Start with the words it had.
+fn preflight_clock_ms() -> Result<i64, crate::db::StoreError> {
+    let elapsed = preflight_now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(crate::db::StoreError::RetiredLineageClock)?;
+    i64::try_from(elapsed.as_millis()).map_err(|_| crate::db::StoreError::RetiredLineageClockOverflow)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A clock a test sets for Start's `preflight` on this thread.
+    static PREFLIGHT_CLOCK: std::cell::Cell<Option<std::time::SystemTime>> = const { std::cell::Cell::new(None) };
+}
+
+fn preflight_now() -> std::time::SystemTime {
+    #[cfg(test)]
+    if let Some(now) = PREFLIGHT_CLOCK.with(std::cell::Cell::get) {
+        return now;
+    }
+    std::time::SystemTime::now()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -287,7 +442,7 @@ pub fn preflight_hub_for_serve(
         // rule is decided on a read that grows with the number of cars only:
         // no whole-store check and no pack is read before the listener opens
         // (M08-T22).
-        if awaits_owner_sign_in(config, AdmissionStoreCheck::Bounded)? {
+        if hub_awaits_owner_sign_in(config)? {
             tracing::info!(state = "awaiting_sign_in", "no Tesla login is stored: Hub serves for the owner's sign-in with the collector off");
             return Ok(());
         }
