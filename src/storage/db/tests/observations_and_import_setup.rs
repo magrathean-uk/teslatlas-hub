@@ -233,6 +233,58 @@ fn processed_raw_observations_are_pruned_but_current_snapshot_and_dedup_survive(
 }
 
 #[test]
+fn astra_p06_replay_of_superseded_equal_time_poll_is_idempotent() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let at = 1_800_000_000_000_i64;
+    let reading = |observed_at_ms, battery_level| ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms,
+        payload: serde_json::json!({
+            "record_type": "owner_api_vehicle_data_v1",
+            "source_vehicle_id": "9",
+            "source_vehicle_state": "online",
+            "vehicle_data": {"charge_state": {"battery_level": battery_level}}
+        }),
+    };
+    let first = reading(at, 41);
+    let second = reading(at, 58);
+    assert!(
+        store
+            .accept_owner_observation_and_lifecycle(&first, at + 1, 1)
+            .expect("first reading")
+            .append
+            .inserted
+    );
+    let newest = store
+        .accept_owner_observation_and_lifecycle(&second, at + 2, 1)
+        .expect("different reading at the same time")
+        .append;
+    assert!(newest.inserted);
+
+    drop(store);
+    let store = HubStore::open_existing(temp.path()).expect("reopened store");
+    let replay = store
+        .accept_owner_observation_and_lifecycle(&first, at + 3, 1)
+        .expect("replayed reading")
+        .append;
+    assert!(!replay.inserted, "replaying the first reading must not insert it again");
+    assert_eq!(
+        store.current_observations_for_vehicle(vehicle.vehicle_id).unwrap(),
+        vec![newest.observation]
+    );
+    assert!(
+        store
+            .accept_owner_observation_and_lifecycle(&reading(at + 4, 41), at + 4, 1)
+            .expect("new timestamp permits the same values")
+            .append
+            .inserted
+    );
+}
+
+#[test]
 fn invalid_open_session_rolls_back_observations_without_resetting_state() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");
