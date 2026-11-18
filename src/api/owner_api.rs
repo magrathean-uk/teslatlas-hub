@@ -925,6 +925,15 @@ impl VehicleData {
         }
 
         let mut fields = allowlisted_provider_response_v1(&raw_json)?;
+        // The response's id is the REST identity. Its vehicle_id is a
+        // separate streaming identity and may legitimately have another value.
+        if fields
+            .get("id")
+            .filter(|id| !id.is_null())
+            .is_some_and(|id| parse_vehicle_id(id).ok() != Some(vehicle_id))
+        {
+            return Err(OwnerApiError::InvalidVehicleDataEnvelope);
+        }
         let reflected = secrets.scrub_fields(&mut fields);
         if !reflected.is_empty() {
             // Paths are allowlisted provider key names; no value is logged.
