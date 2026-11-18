@@ -84,6 +84,7 @@ fn finish_selected_schema_22_publication(
     };
     // The negotiated 1.4 route's head, planned with the seam the lineage's
     // publication proved (M03-T21).
+    let physical_target_expected = physical_stage.is_some();
     let physical_v3 = publish_physical_route(
         store,
         cursor_key,
@@ -95,6 +96,12 @@ fn finish_selected_schema_22_publication(
             .as_ref()
             .map(|(drives, charges)| (drives.as_slice(), charges.as_slice())),
     )?;
+    if physical_target_expected && physical_v3.is_none() {
+        return Err(SourceDbImportError::PhysicalHeadWithheld {
+            vehicle_id,
+            legacy_snapshot_id,
+        });
+    }
     Ok(SourceDbSelectedImportReport {
         import: report,
         updates_schema_22,
