@@ -284,7 +284,10 @@ stream_health_timeout_seconds = 60
 ```
 
 A request for a car's data is sent only when Tesla's list says the car is online
-and the Hub has evidence that it is in use. A parked car is left alone for its
+and the Hub has evidence that it is in use. A software install is the one
+exception, on purpose: once the Hub has seen an install start it keeps reading
+the car at `updating_poll_seconds`, also while the list says offline or a read
+gets no answer, until the install ends or goes stale. A parked car is left alone for its
 suspension (`suspend_min`) so that it can fall asleep. The Hub never wakes a car.
 
 What each interval is for:
