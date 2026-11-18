@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use serde_json::{Value, json};
 use url::Url;
 
-use crate::db::StreamSessionTerminalOutcome;
+use crate::{auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES, db::StreamSessionTerminalOutcome};
 
 use super::policy::*;
 use super::wire::*;
@@ -215,7 +215,7 @@ fn sc4_subscribe_frame_validates_tag_and_token() {
         );
     }
     assert!(subscribe_frame(&"9".repeat(20), token).is_ok());
-    let too_big = "a".repeat(8_193);
+    let too_big = "a".repeat(MAX_TOKEN_PLAINTEXT_BYTES + 1);
     for bad_token in ["", too_big.as_str(), "a\nb", "a\u{7f}b", "a\0b"] {
         let error = subscribe_frame(TAG, bad_token).expect_err("an invalid token");
         assert_eq!(error, StreamError::InvalidToken);
@@ -225,7 +225,7 @@ fn sc4_subscribe_frame_validates_tag_and_token() {
             assert!(!format!("{error:?}").contains(bad_token));
         }
     }
-    assert!(subscribe_frame(TAG, &"a".repeat(8_192)).is_ok());
+    assert!(subscribe_frame(TAG, &"a".repeat(MAX_TOKEN_PLAINTEXT_BYTES)).is_ok());
     let tag_error = subscribe_frame("", "secret-token").expect_err("tag");
     assert!(!tag_error.to_string().contains("secret-token"));
 }
@@ -238,7 +238,7 @@ fn r6_the_subscribe_frame_buffer_is_built_once_at_its_exact_length() {
     // writer escapes make the exact length differ from the naive one.
     for token in [
         "tok-1".to_owned(),
-        "a".repeat(8_192),
+        "a".repeat(MAX_TOKEN_PLAINTEXT_BYTES),
         "quote\"and\\backslash".to_owned(),
         "caf\u{e9}-\u{1f697}".to_owned(),
     ] {
@@ -1326,14 +1326,12 @@ fn r33_the_socket_is_bounded_to_64_kib() {
     assert_eq!(config.read_buffer_size, 65_536);
     // The library panics when the write limit is not above the flush size.
     assert!(config.write_buffer_size < config.max_write_buffer_size);
-    // The Hub's own largest frame, a subscribe frame at the token limit, fits in
-    // one flush and far inside the write limit.
-    let largest = subscribe_frame("9".repeat(20).as_str(), &"a".repeat(8_192)).expect("frame");
-    assert!(
-        largest.len() < config.write_buffer_size,
-        "{}",
-        largest.len()
-    );
+    // Even the largest accepted token with every byte escaped fits, including
+    // the WebSocket frame header and mask.
+    let tag = "9".repeat(20);
+    let token = "\\".repeat(MAX_TOKEN_PLAINTEXT_BYTES);
+    let largest = subscribe_frame(&tag, &token).expect("frame");
+    assert!(largest.len() + 14 < config.max_write_buffer_size);
 }
 
 fn legacy_supervisor(

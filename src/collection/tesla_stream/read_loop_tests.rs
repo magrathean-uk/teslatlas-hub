@@ -852,6 +852,21 @@ async fn sc61_a_parked_frame_confirms_only_with_power_of_at_least_1_kw() {
 // ----------------------------------------------------------------- SC62, SC63
 
 #[tokio::test(start_paused = true)]
+async fn stream_subscribes_with_the_largest_stored_access_token() {
+    let access = "a".repeat(crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES);
+    let peer = streaming_peer(vec![u(T0, V1)]).await;
+    let mut run = Rig::for_peer(&peer, Creds::offline(&access)).start();
+
+    assert_eq!(
+        run.event_within(secs(1)).await,
+        Some(StreamEvent::Healthy),
+        "an admitted access token must reach the subscription"
+    );
+    expect_telemetry(&mut run, v1_update(T0)).await;
+    run.shut_down().await.expect("shutdown");
+}
+
+#[tokio::test(start_paused = true)]
 async fn sc62_a_full_queue_ends_the_run_after_10_seconds() {
     let peer = streaming_peer(vec![u(T0, V1), u(T0 + 1000, V1)]).await;
     let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
