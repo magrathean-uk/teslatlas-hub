@@ -1010,8 +1010,11 @@ impl HubStore {
         verify_file_digests: bool,
         require_public_first: bool,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
-        let connection = self.open_read_only_connection()?;
-        let row = connection
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(StoreError::Begin)?;
+        let row = transaction
             .query_row(
                 "SELECT admission.snapshot_id, admission.installation_id,
                         admission.account_id, admission.selected_car_id,
@@ -1102,7 +1105,7 @@ impl HubStore {
         if let Some(publish) = ROTATE_DURING_PHYSICAL_ADMISSION_READ.with(|hook| hook.take()) {
             publish();
         }
-        let pack_rows = connection
+        let pack_rows = transaction
             .prepare(
                 "SELECT ordinal, sha256, relative_path,
                         compressed_bytes, uncompressed_bytes
