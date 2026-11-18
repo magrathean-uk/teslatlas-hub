@@ -975,6 +975,106 @@ fn seam_physical_route_import_after_windows_second_import_is_a_normal_successor(
     assert_eq!(existing.mirror, fresh.mirror);
 }
 
+#[test]
+fn astra_p14_handover_accepts_motion_after_admitted_history_despite_discarded_drive() {
+    use crate::lifecycle::{LifecycleSample, OpenSessionState, apply_sample};
+    use serde_json::json;
+
+    let (fixture, _) = window_only_fixture();
+    let root = crate::private_tempdir().unwrap();
+    let mut history = base_history();
+    let discarded = 900;
+    history
+        .drives
+        .push(source_drive(discarded, T + 50 * MINUTE, T + HOUR));
+    first_import_after_windows(&fixture, root.path(), &history, T + 2 * HOUR, false, false).unwrap();
+    assert!(!client(&fixture).drives.contains_key(&discarded));
+
+    // The source extends its previous loser while the seam retains the Hub winner.
+    let handover = T + 3 * HOUR;
+    history.drives[1].end_date_ms = Some(handover - 500);
+    let admitted_end = T - HOUR;
+    history.drives.push(source_drive(14, T - 2 * HOUR, admitted_end));
+    history.drives.sort_by_key(|drive| drive.id);
+    let projected = project_vehicle(&history, CAR).unwrap();
+    let mut planned = plan(&fixture, &projected);
+    let run_id = begin_run(&fixture, handover);
+    let mut session = SourceDbOpenSession {
+        car_id: CAR,
+        ..Default::default()
+    };
+    session.watermarks.drives.max_id = history.drives.iter().map(|drive| drive.id).max();
+    session.watermarks.drives.max_timestamp_ms =
+        history.drives.iter().filter_map(|drive| drive.end_date_ms).max();
+    fixture
+        .store
+        .stage_import_generation_session(run_id, &session)
+        .unwrap();
+    let capture = capture_everything(&fixture, run_id, &projected);
+    publish_captured(&fixture, &projected, run_id, capture, &mut planned).unwrap();
+    let lineage = client(&fixture);
+    assert!(lineage.drives.contains_key(&14));
+    assert!(!lineage.drives.contains_key(&discarded));
+
+    let record = fixture
+        .store
+        .load_lifecycle_state(fixture.binding.vehicle_id)
+        .unwrap()
+        .unwrap();
+    let state = OpenSessionState::decode(&record.open_session_json).unwrap();
+    let observed = LifecycleSample {
+        observation_id: record.last_observation_id + 1,
+        observed_at_ms: handover + 5_000,
+        vehicle_state: "online".into(),
+        payload: json!({
+            "record_type": "owner_api_vehicle_data_v1",
+            "source_vehicle_id": "9",
+            "source_vehicle_state": "online",
+            "provider_raw_json": {"response": {"drive_state": {
+                "timestamp": handover - 1_000,
+                "shift_state": "D",
+                "speed": 25,
+                "latitude": 1.0,
+                "longitude": 2.0
+            }}}
+        }),
+    };
+    let mut admitted_only = state.clone();
+    admitted_only.imported_drive_watermark_ms = Some(admitted_end);
+    assert_eq!(
+        apply_sample(admitted_only, CAR, &observed)
+            .unwrap()
+            .delta
+            .open_drive_positions
+            .len(),
+        1,
+    );
+    assert_eq!(
+        apply_sample(state, CAR, &observed)
+            .unwrap()
+            .delta
+            .open_drive_positions
+            .len(),
+        1,
+        "the seam-discarded drive must not suppress motion at handover",
+    );
+    let stored: (Option<i64>, Option<i64>) = fixture
+        .store
+        .open()
+        .unwrap()
+        .query_row(
+            "SELECT max_source_row_id, max_timestamp_ms FROM lifecycle_source_watermarks
+              WHERE vehicle_id = ?1 AND source_id = ?2 AND domain = 'drives'",
+            params![
+                fixture.binding.vehicle_id.to_string(),
+                fixture.binding.account_id.to_string(),
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored, (Some(14), Some(admitted_end)));
+}
+
 /// Only the collector's base on a Hub that never imported is rebound: a
 /// direct-import base without projection state that the bridge cannot prove
 /// unchanged keeps `rebase_required`, an import base with projection state
