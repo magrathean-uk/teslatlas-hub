@@ -441,6 +441,22 @@ fn provider_payload_scrubber_removes_credential_key_variants_without_losing_tele
 }
 
 #[test]
+fn astra_p06_polling_rejects_a_different_vehicle_id() {
+    let matching = serde_json::json!({
+        "response": {"id": "7", "vehicle_id": 8, "charge_state": {"battery_level": 54}}
+    });
+    assert!(parse_vehicle_data(VehicleId(7), matching, &ProviderSecrets::none()).is_ok());
+
+    let mismatched = serde_json::json!({
+        "response": {"id": 8, "vehicle_id": 9, "charge_state": {"battery_level": 82}}
+    });
+    assert!(matches!(
+        parse_vehicle_data(VehicleId(7), mismatched, &ProviderSecrets::none()),
+        Err(OwnerApiError::InvalidVehicleDataEnvelope)
+    ));
+}
+
+#[test]
 fn vehicle_data_retains_only_allowlisted_provider_json_v1_telemetry() {
     let data = parse_vehicle_data(
         VehicleId(7),
