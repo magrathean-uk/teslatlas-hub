@@ -30,6 +30,186 @@
     "verb": "setup-fleet public-key"
   },
   {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "config_unreadable",
+    "stderr": "config_unreadable: the configuration file cannot be read safely\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "config_invalid",
+    "stderr": "config_invalid: the configuration is not a valid Hub configuration\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "config_rename_failed",
+    "stderr": "config_rename_failed: the configuration could not be prepared for the Hub's current folder name; it was left unchanged\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "control_channel_unsafe",
+    "stderr": "control_channel_unsafe: the control channel directory is not private to this user\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "control_channel_failed",
+    "stderr": "control_channel_failed: the control channel could not be reached\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
     "code": "service_unauthenticated",
     "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
     "verb": "setup-fleet begin"
@@ -137,6 +317,26 @@
   {
     "code": "fleet_public_key_unwritable",
     "stderr": "fleet_public_key_unwritable: the public key file cannot be written at that path\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_partner_key_busy",
+    "stderr": "fleet_partner_key_busy: another request is using the Hub's Fleet key; try again\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_partner_key_unsafe",
+    "stderr": "fleet_partner_key_unsafe: the Hub's Fleet key file is not a private file of this user; it was left unchanged\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_partner_key_invalid",
+    "stderr": "fleet_partner_key_invalid: the Hub's Fleet key file is not a P-256 key; it was left unchanged\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_partner_key_storage",
+    "stderr": "fleet_partner_key_storage: the Hub's Fleet key cannot be created or read in its secrets folder\n",
     "verb": "setup-fleet public-key"
   },
   {

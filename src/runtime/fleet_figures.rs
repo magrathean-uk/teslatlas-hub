@@ -84,17 +84,37 @@ impl FleetFigures {
 pub const CONFIG_UNREADABLE: &str = "config_unreadable";
 pub const CONFIG_INVALID: &str = "config_invalid";
 pub const FLEET_PROVIDER_NOT_SELECTED: &str = "fleet_provider_not_selected";
+/// A `setup-fleet` verb whose configuration the rename hand-over could not
+/// prepare (DEC-160): an I/O failure while pointing it at the renamed folder.
+pub const CONFIG_RENAME_FAILED: &str = "config_rename_failed";
+
+/// The refusal of a `setup-fleet` verb when the rename hand-over of its
+/// configuration failed; the configuration was left unchanged.
+pub fn config_rename_refusal() -> OperatorRefusal {
+    OperatorRefusal::new(
+        CONFIG_RENAME_FAILED,
+        "the configuration could not be prepared for the Hub's current folder name; it was left unchanged",
+    )
+}
 
 /// Reads the configuration at `config_path` with the service's loader and
 /// states its Fleet figures. The loader's diagnostics (a deprecated spelling's
 /// warning) are collected and dropped: a program reads this answer, and an
 /// accepted spelling is the same setting (R3).
 pub fn load_fleet_figures(config_path: &Path) -> Result<FleetFigures, OperatorRefusal> {
+    fleet_figures(&load_fleet_config(config_path)?)
+}
+
+/// The configuration at `config_path` as every `setup-fleet` verb reads it
+/// (M09-T24): the service's loader, its diagnostics collected and dropped (a
+/// program reads the verb's streams), and a configuration that cannot be read
+/// or is invalid refused as `config_unreadable` or `config_invalid`.
+pub fn load_fleet_config(config_path: &Path) -> Result<HubConfig, OperatorRefusal> {
     let mut diagnostics = Vec::new();
     let config = HubConfig::load_collecting_diagnostics(config_path, &mut diagnostics)
         .map_err(|error| config_refusal(&error))?;
     drop(diagnostics);
-    fleet_figures(&config)
+    Ok(config)
 }
 
 /// The whole command: the figures as one JSON line on `stdout` and exit 0, or

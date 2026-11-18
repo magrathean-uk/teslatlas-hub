@@ -449,6 +449,16 @@ fn encoded(bytes: &[u8]) -> String {
 /// same authenticated connection. It never takes the data-directory
 /// lifetime lock.
 fn run_forwarded(config_path: &Path, command: &Command) -> Result<(), Box<dyn std::error::Error>> {
+    // A `setup-fleet` verb reads the configuration as `figures` does: no
+    // loader diagnostic on its streams, and a configuration fault is its
+    // contract line (M09-T24).
+    #[cfg(unix)]
+    let config = if matches!(command, Command::SetupFleet { .. }) {
+        tesatlas_hub::runtime::fleet_figures::load_fleet_config(config_path)?
+    } else {
+        HubConfig::load(config_path)?
+    };
+    #[cfg(not(unix))]
     let config = HubConfig::load(config_path)?;
     let data = config.data_dir.as_path();
     let stream = operator::channel::connect(data)?;
@@ -1347,8 +1357,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
     // `setup-fleet figures` never reaches here: `main` answers it before the
     // development journal and logging (M09-T21).
+    // Rename hand-over backstop (DEC-160). A `setup-fleet` verb refuses its
+    // failure with the contract's one line (M09-T24); every other command
+    // reports it as before.
     #[cfg(unix)]
-    tesatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
+    if let Err(error) = tesatlas_hub::platform::name_migration::prepare_config_path(&config_path) {
+        if matches!(cli.command, Command::SetupFleet { .. }) {
+            return Err(tesatlas_hub::runtime::fleet_figures::config_rename_refusal().into());
+        }
+        return Err(error.into());
+    }
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
     // it reads a secret path, standard input or the network.
     let route = operator::admission::route(&cli.command);

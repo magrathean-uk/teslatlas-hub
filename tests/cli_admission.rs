@@ -121,10 +121,14 @@ impl Hub {
     }
 
     fn run_with(&self, arguments: &[&str], stdin: &[u8], envs: &[(&str, &Path)]) -> Output {
-        let config = self.path("config.toml");
+        self.run_at(&self.path("config.toml"), arguments, stdin, envs)
+    }
+
+    /// [`Self::run_with`] with the configuration at `config`.
+    fn run_at(&self, config: &Path, arguments: &[&str], stdin: &[u8], envs: &[(&str, &Path)]) -> Output {
         let mut child = Command::new(BIN)
             .arg("--config")
-            .arg(&config)
+            .arg(config)
             .args(arguments)
             .env_clear()
             .envs(envs.iter().copied())
@@ -1217,6 +1221,19 @@ mod fleet_refusal_lines {
     pub const PATH_PROTECTED: &str = "fleet_public_key_path_protected: the public key cannot be saved inside the \
         Hub's own data, secrets, configuration or log folders; choose another folder";
     pub const UNWRITABLE: &str = "fleet_public_key_unwritable: the public key file cannot be written at that path";
+    pub const CONFIG_UNREADABLE: &str = "config_unreadable: the configuration file cannot be read safely";
+    pub const CONFIG_INVALID: &str = "config_invalid: the configuration is not a valid Hub configuration";
+    pub const CONFIG_RENAME_FAILED: &str = "config_rename_failed: the configuration could not be prepared for the \
+        Hub's current folder name; it was left unchanged";
+    pub const CHANNEL_UNSAFE: &str = "control_channel_unsafe: the control channel directory is not private to this user";
+    pub const CHANNEL_FAILED: &str = "control_channel_failed: the control channel could not be reached";
+    pub const KEY_BUSY: &str = "fleet_partner_key_busy: another request is using the Hub's Fleet key; try again";
+    pub const KEY_STORAGE: &str =
+        "fleet_partner_key_storage: the Hub's Fleet key cannot be created or read in its secrets folder";
+    pub const KEY_UNSAFE: &str = "fleet_partner_key_unsafe: the Hub's Fleet key file is not a private file of this \
+        user; it was left unchanged";
+    pub const KEY_INVALID: &str =
+        "fleet_partner_key_invalid: the Hub's Fleet key file is not a P-256 key; it was left unchanged";
 }
 
 /// One `setup-fleet` refusal: the verb, its arguments, its input and the
@@ -1233,9 +1250,22 @@ struct FleetRefusal {
 /// with the line it must print.
 #[cfg(target_os = "macos")]
 fn fleet_refusal(hub: &Hub, verb: &'static str, extra: &[&str], input: &[u8], line: impl Into<String>) -> FleetRefusal {
+    fleet_refusal_at(hub, &hub.path("config.toml"), verb, extra, input, line)
+}
+
+/// [`fleet_refusal`] with the configuration at `config`.
+#[cfg(target_os = "macos")]
+fn fleet_refusal_at(
+    hub: &Hub,
+    config: &Path,
+    verb: &'static str,
+    extra: &[&str],
+    input: &[u8],
+    line: impl Into<String>,
+) -> FleetRefusal {
     let mut arguments: Vec<String> = verb.split(' ').map(str::to_owned).collect();
     arguments.extend(extra.iter().map(|argument| (*argument).to_owned()));
-    let output = hub.run(&arguments.iter().map(String::as_str).collect::<Vec<_>>(), input);
+    let output = hub.run_at(config, &arguments.iter().map(String::as_str).collect::<Vec<_>>(), input, &[]);
     FleetRefusal { verb, arguments, line: line.into(), output }
 }
 
@@ -1329,16 +1359,19 @@ const FLEET_REFUSAL_FIXTURE: &str = "macos/TesatlasHubApp/TesatlasHubAppTests/Fi
 /// `<code>: <text>` line (interface sections 1 and 11), the form `setup-fleet
 /// figures` writes and the Mac app's `HubFleetRefusal.parse` reads: exit 1,
 /// nothing on standard output, and standard error exactly that one line. Each
-/// code is reached as the real service and command give it: with no service,
-/// with another program on the socket, and with the real `serve` idle (no
-/// Open window) for a Legacy and a Fleet Hub. Codes that need Tesla or an
-/// Open window are not reached here; they leave through the same report.
+/// code is reached as the real service and command give it: a configuration
+/// that cannot be read, is invalid or cannot be prepared by the rename
+/// hand-over; an unsafe or unreachable channel; no service; another program on
+/// the socket; and the real `serve` idle (no Open window) for a Legacy Hub
+/// (its configuration with the accepted deprecated table name, whose warning
+/// must not appear) and a Fleet Hub, with the Fleet key file busy, unsafe,
+/// invalid or without its folder. Codes that need Tesla, an Open window or a
+/// stored login are not reached here; `fleet_cli_tests` proves the one report
+/// writes each of them in the same form.
 ///
 /// What the binary printed is written to the app's fixture with each case's
-/// contract code; the app's Fleet refusal test parses every entry and must get
-/// that code back. A changed line rewrites the
-/// fixture and fails this test, so the change is seen and committed with the
-/// app test that reads it.
+/// contract code, only after every line has passed; the app's Fleet refusal
+/// test parses every entry and must get that code back.
 #[cfg(target_os = "macos")]
 #[test]
 fn setup_fleet_refusals_are_the_contract_lines() {
@@ -1355,6 +1388,56 @@ fn setup_fleet_refusals_are_the_contract_lines() {
         printed.push(fleet_refusal(&hub, verb, extra, TOKENS, NOT_RUNNING));
     }
 
+    // The configuration as `figures` reads it: one that cannot be read, one
+    // that is invalid, and one the rename hand-over cannot prepare (a folder of
+    // the current spelling whose earlier folder has moved away, and a file it
+    // cannot read). An accepted deprecated table name adds no line to the
+    // refusal.
+    let warning = tesatlas_hub::config::deprecated_table_warning();
+    let deprecated_name = warning.split('[').nth(1).and_then(|rest| rest.split(']').next()).expect("table name");
+    assert_ne!(deprecated_name, "import_source");
+    let deprecated = format!("[{deprecated_name}]\n");
+    {
+        let config_hub = Hub::new();
+        let absent = config_hub.path("absent.toml");
+        let invalid = config_hub.path("invalid.toml");
+        fs::write(&invalid, "data_dir = \n").expect("config");
+        let folder = config_hub.path("tesatlas-hub");
+        fs::create_dir(&folder).expect("folder");
+        let renamed = folder.join("config.toml");
+        fs::write(&renamed, "data_dir = \"/nowhere\"\n").expect("config");
+        fs::set_permissions(&renamed, fs::Permissions::from_mode(0o000)).expect("config mode");
+        let with_alias = config_hub.path("alias.toml");
+        let alias_config = fs::read_to_string(config_hub.path("config.toml")).expect("config") + &deprecated;
+        fs::write(&with_alias, alias_config).expect("config");
+        for verb in FLEET_VERBS {
+            let extra: &[&str] = if verb.ends_with("public-key") { &["--output", key] } else { &[] };
+            printed.push(fleet_refusal_at(&config_hub, &absent, verb, extra, TOKENS, CONFIG_UNREADABLE));
+            printed.push(fleet_refusal_at(&config_hub, &invalid, verb, extra, TOKENS, CONFIG_INVALID));
+            printed.push(fleet_refusal_at(&config_hub, &renamed, verb, extra, TOKENS, CONFIG_RENAME_FAILED));
+            printed.push(fleet_refusal_at(&config_hub, &with_alias, verb, extra, TOKENS, NOT_RUNNING));
+        }
+        fs::set_permissions(&renamed, fs::Permissions::from_mode(0o600)).expect("config mode");
+    }
+
+    // A channel folder open to others, and a socket this user cannot connect to.
+    {
+        let unsafe_hub = Hub::new();
+        fs::create_dir_all(unsafe_hub.data().join("operator")).expect("channel dir");
+        fs::set_permissions(unsafe_hub.data(), fs::Permissions::from_mode(0o700)).expect("data mode");
+        fs::set_permissions(unsafe_hub.data().join("operator"), fs::Permissions::from_mode(0o755)).expect("mode");
+        let closed_hub = Hub::new();
+        let closed = Impostor::bind(&closed_hub.data());
+        let socket = closed_hub.data().join("operator").join("control.sock");
+        fs::set_permissions(&socket, fs::Permissions::from_mode(0o000)).expect("socket mode");
+        for verb in FLEET_VERBS {
+            let extra: &[&str] = if verb.ends_with("public-key") { &["--output", key] } else { &[] };
+            printed.push(fleet_refusal(&unsafe_hub, verb, extra, TOKENS, CHANNEL_UNSAFE));
+            printed.push(fleet_refusal(&closed_hub, verb, extra, TOKENS, CHANNEL_FAILED));
+        }
+        assert_eq!(closed.bytes_received(), 0, "the closed socket received nothing");
+    }
+
     // Another program of the same user on the socket is not the service.
     {
         let impostor_hub = Hub::new();
@@ -1366,8 +1449,9 @@ fn setup_fleet_refusals_are_the_contract_lines() {
         assert_eq!(impostor.bytes_received(), 0, "the impostor received nothing");
     }
 
-    // The real service, idle: a Legacy Hub.
-    write_serving_config(&hub, "");
+    // The real service, idle: a Legacy Hub, its configuration with the
+    // accepted deprecated table name (no line of its own on any stream).
+    write_serving_config(&hub, &deprecated);
     let oversized = vec![b' '; 5000];
     let token: &[u8] = br#"{"accessToken":"access-0001"}"#;
     let begin: &[u8] = br#"{"clientId":"fleet-client-0001","region":"eu","redirectUri":"https://owner.example/fleet/callback"}"#;
@@ -1404,6 +1488,34 @@ fn setup_fleet_refusals_are_the_contract_lines() {
         printed.push(fleet_refusal(&hub, "setup-fleet register", &[], register, WINDOW_CLOSED));
         printed.push(fleet_refusal(&hub, "setup-fleet public-key", &["--output", protected], b"", PATH_PROTECTED));
         printed.push(fleet_refusal(&hub, "setup-fleet public-key", &["--output", unwritable], b"", UNWRITABLE));
+        // A success writes nothing to standard error.
+        let saved = hub.run(&["setup-fleet", "public-key", "--output", key], b"");
+        assert_eq!(saved.status.code(), Some(0), "{}", stderr(&saved));
+        assert_eq!(stderr(&saved), "", "a success writes nothing to standard error");
+        assert!(stdout(&saved).contains("\"status\":\"public_key_saved\""), "{}", stdout(&saved));
+        // The Hub's Fleet key file, as the export finds it in the secrets folder.
+        let secrets = hub.data().join("secrets");
+        let key_file = secrets.join("fleet-command-key.pem");
+        let held = hub.path("fleet-command-key.held");
+        let export = |line: &str| fleet_refusal(&hub, "setup-fleet public-key", &["--output", key], b"", line);
+        let lock = fs::File::open(secrets.join("fleet-command-key.lock")).expect("key lock");
+        lock.try_lock().expect("the test holds the key lock");
+        printed.push(export(KEY_BUSY));
+        lock.unlock().expect("unlock");
+        fs::set_permissions(&key_file, fs::Permissions::from_mode(0o644)).expect("key mode");
+        printed.push(export(KEY_UNSAFE));
+        fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600)).expect("key mode");
+        fs::rename(&key_file, &held).expect("key aside");
+        fs::write(&key_file, "not a key\n").expect("key");
+        fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600)).expect("key mode");
+        printed.push(export(KEY_INVALID));
+        fs::rename(&held, &key_file).expect("key back");
+        let secrets_held = hub.path("secrets.held");
+        fs::rename(&secrets, &secrets_held).expect("secrets aside");
+        fs::write(&secrets, b"").expect("a file where the folder was");
+        printed.push(export(KEY_STORAGE));
+        fs::remove_file(&secrets).expect("file");
+        fs::rename(&secrets_held, &secrets).expect("secrets back");
     });
 
     // The real service, idle: a Fleet Hub that is not signed in yet.
@@ -1411,26 +1523,6 @@ fn setup_fleet_refusals_are_the_contract_lines() {
     while_serving(&hub, "fleet", || {
         printed.push(fleet_refusal(&hub, "setup-fleet activate", &[], b"", SIGN_IN_REQUIRED));
     });
-
-    // The fixture holds what the binary printed, before any line is judged.
-    let document = serde_json::to_string_pretty(
-        &printed
-            .iter()
-            .map(|refusal| {
-                serde_json::json!({
-                    "verb": refusal.verb,
-                    "code": refusal.line.split(": ").next().expect("code"),
-                    "stderr": stderr(&refusal.output),
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .expect("fixture") + "\n";
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(FLEET_REFUSAL_FIXTURE);
-    let unchanged = fs::read_to_string(&fixture).is_ok_and(|held| held == document);
-    if !unchanged {
-        fs::write(&fixture, &document).expect("write the fixture");
-    }
 
     let mut wrong = Vec::new();
     for FleetRefusal { arguments, line, output, .. } in &printed {
@@ -1447,7 +1539,28 @@ fn setup_fleet_refusals_are_the_contract_lines() {
     assert!(wrong.is_empty(), "refusals not in the contracted form:\n{}", wrong.join("\n"));
     let codes: std::collections::BTreeSet<&str> =
         printed.iter().map(|refusal| refusal.line.split(": ").next().expect("code")).collect();
-    assert_eq!(codes.len(), 11, "every code reached: {codes:?}");
+    assert_eq!(codes.len(), 20, "every code reached: {codes:?}");
     assert_eq!(hub.endpoint.connections(), 0, "nothing was sent");
-    assert!(unchanged, "{FLEET_REFUSAL_FIXTURE} did not hold the lines the binary prints; it now does: commit it");
+
+    // Only now, with every line proven, is the fixture brought up to date: a
+    // failing run leaves the tracked file as it was. A passing run that
+    // changes it leaves the change in the working tree to commit with the
+    // case that made it.
+    let document = serde_json::to_string_pretty(
+        &printed
+            .iter()
+            .map(|refusal| {
+                serde_json::json!({
+                    "verb": refusal.verb,
+                    "code": refusal.line.split(": ").next().expect("code"),
+                    "stderr": stderr(&refusal.output),
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("fixture") + "\n";
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(FLEET_REFUSAL_FIXTURE);
+    if fs::read_to_string(&fixture).ok().as_deref() != Some(document.as_str()) {
+        fs::write(&fixture, &document).expect("write the fixture");
+    }
 }
