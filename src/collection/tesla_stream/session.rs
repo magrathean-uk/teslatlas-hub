@@ -393,6 +393,7 @@ struct RunState {
 /// Counts of one session's inbound messages, logged once when it ends (R52).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FrameCounts {
+    /// Non-duplicate telemetry frames delivered to the collector.
     pub(crate) accepted: u32,
     pub(crate) duplicates: u32,
     pub(crate) rejected: u32,
@@ -1628,7 +1629,7 @@ impl TeslaStreamSupervisor {
             Instant::now().saturating_duration_since(first) > Duration::from_secs(60)
         });
         run.unknown_error_type = state.unknown_error_type.clone();
-        self.log_summary(&state, end.class == Some(FailureClass::Protocol));
+        self.log_summary(&state, &end);
         self.finish_subscribed(socket, end, shutdown, audit, session, &state)
             .await
     }
@@ -1759,7 +1760,7 @@ impl TeslaStreamSupervisor {
 
     /// One summary line per session (R52): counts only, never a frame value, a
     /// sample time, the tag or the endpoint's path.
-    fn log_summary(&self, state: &SessionState, protocol: bool) {
+    fn log_summary(&self, state: &SessionState, end: &SessionEnd) {
         let counts = &state.counts;
         #[cfg(test)]
         if let Some(summaries) = &self.seams.summaries {
@@ -1771,6 +1772,7 @@ impl TeslaStreamSupervisor {
         macro_rules! emit_summary { ($level:ident) => { tracing::$level!(
             host = %self.endpoint_host,
             region = ?self.region,
+            end_cause = ?end.cause,
             accepted = counts.accepted,
             duplicates = counts.duplicates,
             rejected = counts.rejected,
@@ -1781,7 +1783,7 @@ impl TeslaStreamSupervisor {
             ignored_errors = counts.ignored_errors,
             "stream session summary"
         ); }; }
-        if protocol {
+        if end.class == Some(FailureClass::Protocol) || end.cause == EndCause::QueueFull {
             emit_summary!(info);
         } else {
             emit_summary!(debug);
@@ -2090,8 +2092,6 @@ impl TeslaStreamSupervisor {
         }
         if duplicate {
             state.counts.duplicates += 1;
-        } else {
-            state.counts.accepted += 1;
         }
         if !state.accepted_seen {
             state.accepted_seen = true;
@@ -2118,6 +2118,7 @@ impl TeslaStreamSupervisor {
             if let Some(end) = self.deliver(telemetry, shutdown).await {
                 return Step::End(end);
             }
+            state.counts.accepted += 1;
             run.last_delivered = Some(update);
         }
         Step::Continue
