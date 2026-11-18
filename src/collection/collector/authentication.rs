@@ -138,12 +138,6 @@ const fn provider_discovery_record_type(provider: CollectorProvider) -> &'static
         CollectorProvider::Fleet => "fleet_api_discovery_v1",
     }
 }
-/// How far a deadline is pushed when `Instant + Duration` would overflow (C3
-/// R45): 100 years, far beyond any process lifetime and any deadline the spec
-/// allows (the longest is `K_RETRY_AFTER_MAX`, one hour), so an overflowing
-/// deadline means "never in this run" and never "retry now", which would be a
-/// busy retry.
-const RETRY_OVERFLOW_FALLBACK: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
 /// How long a stopping stream task may take to end after its shutdown signal
 /// before it is aborted (C3 section 8 item 13: `disconnect_vehicle_stream`
 /// waits up to 5 s for `run`, then aborts). The spec fixes the value; it

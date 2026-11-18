@@ -128,12 +128,28 @@ const fn collection_sleep_cap(has_active_streams: bool) -> Duration {
     }
 }
 
+/// The scheduler's horizon: 100 years, far beyond any process lifetime and any
+/// deadline the spec allows (the longest is `K_RETRY_AFTER_MAX`, one hour).
+///
+/// It has two uses, and they are one constant on purpose. [`deadline_after`]
+/// pushes a deadline whose `Instant + Duration` would overflow to `now` plus
+/// this horizon, so an overflowing deadline means "never in this run" and never
+/// "retry now", which would be a busy retry (C3 R45); the scheduler therefore
+/// relies on `now + SCHEDULE_HORIZON` being representable. The cadence
+/// validation (`FleetPollingConfig::cadence`) refuses every Fleet polling
+/// interval above it (M09-T21), so for every interval the service accepts and
+/// `setup-fleet figures` states, `now + interval` is constructed exactly and the
+/// fallback is never taken: on every supported platform (macOS and Linux)
+/// `Instant` holds its seconds since boot in an `i64`, and the boot-relative
+/// `now` plus 100 years is far inside that range.
+pub(crate) const SCHEDULE_HORIZON: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
+
 /// `now + delay`, or a deadline so far away that it means "never" when the sum
 /// overflows. An overflowing deadline must never mean "retry now" (C3 R45: a
 /// wrong header must not cause a busy retry).
 fn deadline_after(now: Instant, delay: Duration) -> Instant {
     now.checked_add(delay)
-        .or_else(|| now.checked_add(RETRY_OVERFLOW_FALLBACK))
+        .or_else(|| now.checked_add(SCHEDULE_HORIZON))
         .unwrap_or(now)
 }
 
@@ -2580,6 +2596,125 @@ impl VehicleScheduler {
             wait.max(K_LOOP_FLOOR)
         } else {
             wait
+        }
+    }
+}
+
+/// M09-T21 repair (R1): for the largest value the configuration accepts for
+/// each Fleet polling interval, the deadline this scheduler really builds is the
+/// figure `setup-fleet figures` states; one second more is refused.
+#[cfg(test)]
+mod fleet_figures_scheduler {
+    use super::*;
+
+    const HORIZON: u64 = SCHEDULE_HORIZON.as_secs();
+
+    /// A Fleet configuration with every polling interval at the largest value
+    /// accepted: the horizon, except charging, which stays below the energy
+    /// fold's integration bound (600 s) whatever the horizon is.
+    fn largest(override_line: &str) -> String {
+        format!(
+            "data_dir = '/var/lib/tesatlas-hub'\nbind = '127.0.0.1:8080'\n\
+             [collector]\nprovider = 'fleet'\ninterval_seconds = 300\n\
+             offline_drive_timeout_seconds = {timeout}\n\
+             [collector.fleet_polling]\ndriving_poll_seconds = {HORIZON}\n\
+             charging_poll_seconds = 599\nupdating_poll_seconds = {HORIZON}\n\
+             online_poll_seconds = {HORIZON}\nstate_poll_seconds = {HORIZON}\n\
+             inventory_poll_seconds = {HORIZON}\n{override_line}",
+            timeout = HORIZON + 1,
+        )
+    }
+
+    fn load(text: &str) -> crate::config::HubConfig {
+        crate::config::HubConfig::from_exact_bytes(text.as_bytes())
+            .expect("the configuration loads")
+            .0
+    }
+
+    fn scheduler(config: &crate::config::HubConfig, t0: Instant) -> VehicleScheduler {
+        let cadence = config.collector.cadence().expect("accepted cadence");
+        let policy = cadence.fleet_policy();
+        VehicleScheduler::new_with(
+            cadence,
+            crate::config::CollectorMode::FleetPolling,
+            policy,
+            t0,
+            ManualClock::new(t0, 1_760_000_000_000),
+            FixedJitter::constant(0.0),
+        )
+    }
+
+    #[test]
+    fn the_scheduler_deadline_equals_each_largest_stated_fleet_interval() {
+        let config = load(&largest(""));
+        let figures = crate::runtime::fleet_figures::fleet_figures(&config).expect("figures");
+        let stated = figures.polling_seconds;
+        assert_eq!(
+            [stated.driving, stated.updating, stated.online, stated.state_check, stated.inventory],
+            [HORIZON; 5]
+        );
+        assert_eq!(stated.charging, 599);
+        let t0 = Instant::now();
+        let id = VehicleId::from_test(1);
+        // The vehicle data reads: the next read after a success in each phase.
+        for (phase, figure) in [
+            (PollPhase::Driving, stated.driving),
+            (PollPhase::Charging, stated.charging),
+            (PollPhase::Updating, stated.updating),
+            (PollPhase::Online, stated.online),
+        ] {
+            let mut scheduler = scheduler(&config, t0);
+            scheduler.accept_discovery(vec![Vehicle::for_test(1, "VIN00000000000001", "online")], t0);
+            scheduler.due_vehicles(t0);
+            scheduler.vehicle_succeeded(id, phase, true, t0);
+            let due = scheduler.vehicles[&id].next_read_due.expect("next read");
+            assert_eq!(due.duration_since(t0), Duration::from_secs(figure), "{phase:?}");
+        }
+        // The state check: the next list after an asleep car is listed.
+        let mut asleep = scheduler(&config, t0);
+        asleep.accept_discovery(vec![Vehicle::for_test(1, "VIN00000000000001", "asleep")], t0);
+        let due = asleep.list_due_at().expect("next list");
+        assert_eq!(due.duration_since(t0), Duration::from_secs(stated.state_check));
+        // The inventory: the next list when no car needs a state check.
+        let mut online = scheduler(&config, t0);
+        online.accept_discovery(vec![Vehicle::for_test(1, "VIN00000000000001", "online")], t0);
+        online.due_vehicles(t0);
+        online.vehicle_succeeded(id, PollPhase::Online, true, t0);
+        let due = online.list_due_at().expect("next list");
+        assert_eq!(due.duration_since(t0), Duration::from_secs(stated.inventory));
+    }
+
+    /// The reviewer's example: a value the scheduler would replace with its
+    /// fallback (100 years) is refused by the shared cadence validation, so the
+    /// service waits on its cadence refusal and the verb states no figure.
+    #[test]
+    fn a_fleet_interval_beyond_the_scheduler_horizon_is_refused() {
+        let beyond = Duration::from_secs(i64::MAX.unsigned_abs());
+        let t0 = Instant::now();
+        assert_eq!(deadline_after(t0, beyond), t0 + SCHEDULE_HORIZON, "the fallback, not the interval");
+        for key in [
+            "driving_poll_seconds",
+            "charging_poll_seconds",
+            "updating_poll_seconds",
+            "online_poll_seconds",
+            "state_poll_seconds",
+            "inventory_poll_seconds",
+        ] {
+            for value in [HORIZON + 1, i64::MAX.unsigned_abs()] {
+                let text = largest("").replace(&format!("\n{key} = "), &format!("\n{key} = {value}\n# "));
+                let config = load(&text);
+                let violation = config.collector.cadence_violation().expect("refused at start");
+                assert_eq!(violation.key, format!("collector.fleet_polling.{key}"), "{key}");
+                assert_eq!(violation.value, value, "{key}");
+                assert!(config.collector.cadence().is_err(), "{key}");
+                assert_eq!(
+                    crate::runtime::fleet_figures::fleet_figures(&config)
+                        .expect_err("no figure")
+                        .code,
+                    crate::config::CadenceViolation::CODE,
+                    "{key}"
+                );
+            }
         }
     }
 }

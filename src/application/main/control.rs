@@ -9,6 +9,21 @@ async fn main() -> ExitCode {
     #[cfg(unix)]
     if let Some(code) = tesatlas_hub::platform::name_migration::run_if_requested() { return code; }
     let cli = Cli::parse();
+    // The Fleet figures in effect (M09-T21, DEC-225) are answered first, before
+    // the development journal is initialised, a command event is recorded or
+    // logging is set up: the verb writes nothing, answers even when the journal
+    // folder is unusable, and its streams carry only the contract's lines (a
+    // program reads them). Not forwarded: no store, channel, input or rename
+    // hand-over.
+    #[cfg(unix)]
+    if let Command::SetupFleet { step: Some(operator::cli::FleetSetupStep::Figures), .. } = &cli.command {
+        let config_path = cli.config.clone().unwrap_or_else(default_config_path);
+        return ExitCode::from(tesatlas_hub::runtime::fleet_figures::answer_fleet_figures(
+            &config_path,
+            &mut std::io::stdout().lock(),
+            &mut std::io::stderr().lock(),
+        ));
+    }
     use tesatlas_hub::runtime::development_event_log as dev;
     if dev::initialize().is_err() {
         eprintln!("tesatlas-hub: development journal unavailable");

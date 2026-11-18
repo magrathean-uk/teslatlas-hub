@@ -885,9 +885,14 @@ impl Default for FleetPollingConfig {
 impl FleetPollingConfig {
     /// Validate the table (C3 R21): every interval is greater than zero. The
     /// Fleet Driving interval is whole seconds, so it is at least one second
-    /// (Tesla's realtime limit of 60 requests a minute). Checks run in the order
-    /// of B2 clarification 3: driving, charging, updating, online, then a present
-    /// state or inventory key.
+    /// (Tesla's realtime limit of 60 requests a minute). Every interval is also
+    /// at most the collector scheduler's horizon (`SCHEDULE_HORIZON`, 100
+    /// years; M09-T21), the one constant both sides use: the deadline the
+    /// scheduler builds from an accepted interval is that interval, never its
+    /// overflow fallback, so the service never runs with an interval it would
+    /// not act on and `setup-fleet figures` never states one. Checks run in the order of B2 clarification
+    /// 3: driving, charging, updating, online, then a present state or
+    /// inventory key.
     fn cadence(&self) -> Result<FleetCadence, CadenceViolation> {
         let positive = |key: &'static str, value: u64| -> Result<Duration, CadenceViolation> {
             if value == 0 {
@@ -895,6 +900,15 @@ impl FleetPollingConfig {
                     key,
                     value,
                     rule: CadenceRule::GreaterThanZero,
+                })
+            } else if Duration::from_secs(value) > crate::collector::SCHEDULE_HORIZON {
+                Err(CadenceViolation {
+                    key,
+                    value,
+                    rule: CadenceRule::SecondsRange {
+                        minimum: 1,
+                        maximum: crate::collector::SCHEDULE_HORIZON.as_secs(),
+                    },
                 })
             } else {
                 Ok(Duration::from_secs(value))
@@ -2085,22 +2099,21 @@ impl ImportSourceConfig {
 }
 
 /// Import source keys are opaque non-secret labels, never URLs or credentials.
-/// Rewrites the earlier table name to `[import_source]` and warns once per
-/// process on stderr, which never mixes with command output. Returns the
-/// rewritten text, or `None` when the earlier name is absent. Both names in
-/// one file are refused rather than merged. The digest of the loaded bytes is
-/// unaffected: it is taken from the file as written.
-fn renamed_deprecated_tables(source: &str) -> Result<Option<String>, ConfigError> {
+/// Rewrites the earlier table name to `[import_source]` and adds its warning to
+/// `diagnostics`. Returns the rewritten text, or `None` when the earlier name is
+/// absent. Both names in one file are refused rather than merged. The digest of
+/// the loaded bytes is unaffected: it is taken from the file as written.
+fn renamed_deprecated_tables(
+    source: &str,
+    diagnostics: &mut Vec<String>,
+) -> Result<Option<String>, ConfigError> {
     let Ok(mut root) = source.parse::<toml::Table>() else {
         return Ok(None);
     };
     if !rename_deprecated_tables(&mut root)? {
         return Ok(None);
     }
-    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        eprintln!("{}", deprecated_table_warning());
-    }
+    diagnostics.push(deprecated_table_warning());
     toml::to_string(&root)
         .map(Some)
         .map_err(|_| ConfigError::Invalid("configuration could not be rewritten"))
@@ -2213,11 +2226,41 @@ impl HubConfig {
         Self::from_exact_bytes(&source)
     }
 
+    /// [`Self::load`] for a command whose output a program reads (M09-T21,
+    /// `setup-fleet figures`): the same read, parse and validation, but the
+    /// loader's diagnostics (a deprecated spelling's warning) are added to
+    /// `diagnostics` instead of being written to standard error.
+    pub fn load_collecting_diagnostics(
+        path: impl AsRef<Path>,
+        diagnostics: &mut Vec<String>,
+    ) -> Result<Self, ConfigError> {
+        let source = read_config_file(path.as_ref())?;
+        Self::parse_exact_bytes(&source, diagnostics).map(|(config, _digest)| config)
+    }
+
     /// Parses and validates the one exact configuration byte sequence supplied
     /// by the caller.  This is deliberately shared with `load_with_digest` so
     /// callers that hold an already-admitted descriptor do not need to reopen
-    /// a pathname merely to preserve ordinary configuration semantics.
+    /// a pathname merely to preserve ordinary configuration semantics. The
+    /// loader's diagnostics go to standard error, each once per process, which
+    /// never mixes with command output.
     pub fn from_exact_bytes(source: &[u8]) -> Result<(Self, Sha256Digest), ConfigError> {
+        let mut diagnostics = Vec::new();
+        let result = Self::parse_exact_bytes(source, &mut diagnostics);
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !diagnostics.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            for diagnostic in diagnostics {
+                eprintln!("{diagnostic}");
+            }
+        }
+        result
+    }
+
+    /// [`Self::from_exact_bytes`] with its diagnostics added to `diagnostics`.
+    fn parse_exact_bytes(
+        source: &[u8],
+        diagnostics: &mut Vec<String>,
+    ) -> Result<(Self, Sha256Digest), ConfigError> {
         let source = std::str::from_utf8(source)
             .map_err(|_| ConfigError::Invalid("configuration must be UTF-8"))?;
         let digest = Sha256Digest::of_bytes(source.as_bytes());
@@ -2233,7 +2276,7 @@ impl HubConfig {
             return Err(ConfigError::EdgeDeliveryRetired);
         }
         // An earlier table name is read as `[import_source]` (M05-T05).
-        let renamed = renamed_deprecated_tables(source)?;
+        let renamed = renamed_deprecated_tables(source, diagnostics)?;
         let source = renamed.as_deref().unwrap_or(source);
         let unknown_top_level = source.parse::<toml::Table>().ok().is_some_and(|root| {
             root.keys().any(|key| {

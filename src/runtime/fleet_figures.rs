@@ -8,7 +8,16 @@
 //! figures come from the policy the collector's scheduler and the monthly cap
 //! are built from (`CollectorConfig::cadence` then `fleet_policy`). Nothing is
 //! opened, sent or written; the data folder need not exist.
+//!
+//! The binary answers this verb through [`answer_fleet_figures`] before the
+//! development journal is initialised, a command event is recorded or logging
+//! is set up (M09-T21 repair, R2), so its two streams carry exactly the
+//! contract's lines: on success one JSON line on standard output and nothing on
+//! standard error; on a refusal only the bare `<code>: <text>` line on standard
+//! error, which is the form the contract (interface section 12) and the Mac
+//! app's refusal reader use.
 
+use std::io::Write;
 use std::path::Path;
 
 use serde::Serialize;
@@ -77,10 +86,41 @@ pub const CONFIG_INVALID: &str = "config_invalid";
 pub const FLEET_PROVIDER_NOT_SELECTED: &str = "fleet_provider_not_selected";
 
 /// Reads the configuration at `config_path` with the service's loader and
-/// states its Fleet figures.
+/// states its Fleet figures. The loader's diagnostics (a deprecated spelling's
+/// warning) are collected and dropped: a program reads this answer, and an
+/// accepted spelling is the same setting (R3).
 pub fn load_fleet_figures(config_path: &Path) -> Result<FleetFigures, OperatorRefusal> {
-    let config = HubConfig::load(config_path).map_err(|error| config_refusal(&error))?;
+    let mut diagnostics = Vec::new();
+    let config = HubConfig::load_collecting_diagnostics(config_path, &mut diagnostics)
+        .map_err(|error| config_refusal(&error))?;
+    drop(diagnostics);
     fleet_figures(&config)
+}
+
+/// The whole command: the figures as one JSON line on `stdout` and exit 0, or
+/// the refusal as one bare `<code>: <text>` line on `stderr` and exit 1.
+/// Nothing else is written to either stream.
+pub fn answer_fleet_figures(
+    config_path: &Path,
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+) -> u8 {
+    match load_fleet_figures(config_path) {
+        Ok(figures) => {
+            // Strings and integers only: serialising cannot fail.
+            let line = serde_json::to_string(&figures).expect("the figures serialise");
+            if writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_ok() {
+                0
+            } else {
+                1
+            }
+        }
+        Err(refusal) => {
+            let _ = writeln!(stderr, "{refusal}");
+            let _ = stderr.flush();
+            1
+        }
+    }
 }
 
 /// The Fleet figures of a loaded configuration.
@@ -267,6 +307,38 @@ mod tests {
             )),
             CadenceViolation::CODE
         );
+    }
+
+    /// R1 of the M09-T21 review: the largest interval the shared cadence
+    /// validation accepts (the scheduler's horizon) is stated as written; one
+    /// second more, and the reviewer's `i64::MAX`, are refused, as the service
+    /// refuses them at start. The scheduler side is
+    /// `collector::fleet_figures_scheduler`.
+    #[test]
+    fn fleet_figures_state_the_largest_interval_and_refuse_one_more() {
+        let folder = Folder::new();
+        let horizon = crate::collector::SCHEDULE_HORIZON.as_secs();
+        let collector = |key: &str, value: u64| {
+            format!("[collector]\nprovider = 'fleet'\ninterval_seconds = 300\n[collector.fleet_polling]\n{key} = {value}\n")
+        };
+        for key in ["updating_poll_seconds", "state_poll_seconds", "inventory_poll_seconds"] {
+            let figures = folder
+                .figures(&format!("{key}-largest.toml"), &collector(key, horizon))
+                .expect("figures");
+            let stated = match key {
+                "updating_poll_seconds" => figures.polling_seconds.updating,
+                "state_poll_seconds" => figures.polling_seconds.state_check,
+                _ => figures.polling_seconds.inventory,
+            };
+            assert_eq!(stated, horizon, "{key}");
+            for value in [horizon + 1, i64::MAX.unsigned_abs()] {
+                let path = folder.config(&format!("{key}-{value}.toml"), &collector(key, value));
+                assert_eq!(code(load_fleet_figures(&path)), CadenceViolation::CODE, "{key} {value}");
+                let config = HubConfig::load(&path).expect("the file itself is valid");
+                let violation = config.collector.cadence_violation().expect("refused at start");
+                assert_eq!(violation.key, format!("collector.fleet_polling.{key}"));
+            }
+        }
     }
 
     #[test]

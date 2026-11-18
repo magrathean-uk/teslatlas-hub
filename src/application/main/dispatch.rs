@@ -1345,15 +1345,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "credential-relocation-fixture")]
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
-    // The Fleet figures in effect (M09-T21, DEC-225) are read through the
-    // service's own loader and answered here, not forwarded: no store, no
-    // channel, no input, nothing written (not even the rename hand-over).
-    #[cfg(unix)]
-    if let Command::SetupFleet { step: Some(operator::cli::FleetSetupStep::Figures), .. } = &cli.command {
-        let figures = tesatlas_hub::runtime::fleet_figures::load_fleet_figures(&config_path)?;
-        println!("{}", serde_json::to_string(&figures)?);
-        return Ok(());
-    }
+    // `setup-fleet figures` never reaches here: `main` answers it before the
+    // development journal and logging (M09-T21).
     #[cfg(unix)]
     tesatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
