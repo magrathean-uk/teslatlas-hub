@@ -172,7 +172,7 @@ private enum AllowListedDiscoveryHarness {
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
             "SCENARIO": scene.path, "CALLS": calls.path, "TMPDIR": temporary.path,
             "TESATLAS_USE_SUDO": useSudo ? "1" : "0"
-        ])
+        ], scriptFile: root.appendingPathComponent("script.sh"))
         let status: Int32, output: String
         switch result {
         case let .success(text): status = 0; output = text

@@ -5,17 +5,31 @@ import Foundation
 @testable import Tesatlas_Hub
 #endif
 
+/// The local shell that runs a production script as `sh -s`. The script is first read in full
+/// into `scriptFile`, then the shell reads it from that file. Piped straight into `sh -s`, a
+/// script that exits early (20, 27) leaves its rest unread in the pipe, and when the Mac holds
+/// much pipe memory a new pipe has only 512 bytes: the executor's stdin write then ends in
+/// EPIPE instead of the script's exit status (M09-T23).
+enum SourceScriptShell {
+    static let executable = URL(fileURLWithPath: "/bin/sh")
+
+    static func arguments(scriptFile: URL) -> [String] {
+        ["-c", #"/bin/cat > "$1" && exec /bin/sh -s < "$1""#, "sh", scriptFile.path]
+    }
+}
+
 /// Runs the production discovery script through the production bounded executor.
 /// Call from a worker thread; the process completion runs on the executor queue.
 enum SourceDiscoveryHarness {
-    static func execute(environment: [String: String]) -> Result<String, Error> {
+    static func execute(environment: [String: String], scriptFile: URL) -> Result<String, Error> {
         let done = DispatchSemaphore(value: 0)
         let lock = NSLock()
         var outcome: Result<String, Error>?
         let completionQuiescence = HubChildQuiescence()
         completionQuiescence.childMayRun()
-        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-s"], stdin: SourceServerImporter.discoveryScriptForTests,
+        HubProcessExecutor.run(executable: SourceScriptShell.executable,
+            arguments: SourceScriptShell.arguments(scriptFile: scriptFile),
+            stdin: SourceServerImporter.discoveryScriptForTests,
             environment: environment, maximumOutputBytes: 64 * 1024, timeout: 30) { result in
                 if case let .failure(HubActionError.commandNotQuiescent(_, pending)) = result, !pending.isQuiescent {
                     pending.whenQuiescent { completionQuiescence.childReaped() }
@@ -63,7 +77,7 @@ enum SourceDiscoveryHarness {
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
             "SCENARIO": scene.path, "CALLS": calls.path, "TMPDIR": temporary.path,
             "TESATLAS_USE_SUDO": useSudo ? "1" : "0"
-        ])
+        ], scriptFile: root.appendingPathComponent("script.sh"))
         let status: Int32, output: String
         switch result {
         case let .success(text): status = 0; output = text

@@ -1153,7 +1153,8 @@ private enum StopCheckScriptHarness {
         }
         let done = DispatchSemaphore(value: 0)
         var outcome: Result<String, Error>?
-        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-s"],
+        HubProcessExecutor.run(executable: SourceScriptShell.executable,
+                               arguments: SourceScriptShell.arguments(scriptFile: root.appendingPathComponent("script.sh")),
                                stdin: discovery ? SourceDiscovery.script : SourceStopCheck.script,
                                environment: [
                                    "PATH": bin.path + ":/usr/bin:/bin",
