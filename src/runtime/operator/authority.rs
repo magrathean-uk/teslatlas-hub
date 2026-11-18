@@ -29,7 +29,7 @@ use super::{
 use crate::collection::collector::IntakeRecorder;
 use crate::collection::window::{
     AnchorStore, CloseReason, CollectorSlot, EgressGate, GRANT_MAX_BYTES, Handback, HandbackSource,
-    HighWater, HostClaim, KeychainAnchor, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
+    HighWater, HostClaim, KeychainAnchor, NewestHubRow, OffsetProbe, Phase, ResumeOutcome, SntpProbe,
     Supervisor, SystemClock, WindowConfig, WindowController, WindowDeps,
     WindowStatus,
 };
@@ -140,9 +140,61 @@ impl StoreHighWater {
     }
 }
 
+impl StoreHighWater {
+    /// The newest instant among the Hub's own positions and charge samples,
+    /// stored or still in an open session, in `[from_ms, until_ms)`; these are
+    /// the rows an import seam keeps or tombstones by instant. `None` when the
+    /// store cannot be read.
+    fn newest_row_ms(&self, from_ms: i64, until_ms: i64) -> Option<Option<i64>> {
+        let connection = rusqlite::Connection::open_with_flags(
+            &self.database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .ok()?;
+        // Hub-range ids per vehicle are a seek on each table's key.
+        connection
+            .query_row(
+                "SELECT MAX(at_ms) FROM (
+                     SELECT CAST(json_extract(position_json, '$.date_ms') AS INTEGER) AS at_ms
+                       FROM materialised_positions
+                      WHERE vehicle_id IN (SELECT vehicle_id FROM vehicles)
+                        AND position_id BETWEEN ?1 AND ?2
+                     UNION ALL
+                     SELECT CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER)
+                       FROM materialised_charge_samples
+                      WHERE vehicle_id IN (SELECT vehicle_id FROM vehicles)
+                        AND sample_id BETWEEN ?1 AND ?2
+                     UNION ALL
+                     SELECT CAST(json_extract(row_json,
+                                CASE domain WHEN 'position' THEN '$.date_ms'
+                                            ELSE '$.timestamp_ms' END) AS INTEGER)
+                       FROM lifecycle_open_rows
+                      WHERE domain IN ('position', 'charge_sample')
+                        AND source_row_id BETWEEN ?1 AND ?2)
+                  WHERE at_ms >= ?3 AND at_ms < ?4",
+                rusqlite::params![
+                    crate::db::hub_ids::HUB_ID_BASE,
+                    crate::db::hub_ids::HUB_ID_MAX,
+                    from_ms,
+                    until_ms,
+                ],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .ok()
+    }
+}
+
 impl HandbackSource for StoreHighWater {
     fn high_water(&self) -> HighWater {
         self.read().unwrap_or_default()
+    }
+
+    fn newest_row(&self, from_ms: i64, until_ms: i64) -> NewestHubRow {
+        match self.newest_row_ms(from_ms, until_ms) {
+            None => NewestHubRow::Unknown,
+            Some(None) => NewestHubRow::Absent,
+            Some(Some(at_ms)) => NewestHubRow::At(at_ms),
+        }
     }
 }
 

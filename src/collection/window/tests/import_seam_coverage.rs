@@ -323,3 +323,46 @@ fn import_seam_coverage_subtracts_that_vehicles_gaps() {
         "the second vehicle loses only the gap of the whole window"
     );
 }
+
+/// Review finding #39: a Hub position collected between the last persisted
+/// tick and a stop is inside coverage after the restart, so the next import's
+/// seam keeps it (the store reader finds it; the gap starts after it).
+#[test]
+fn m08_t39_hub_row_after_the_last_tick_survives_the_next_import() {
+    use crate::collection::window::ResumeOutcome;
+    use crate::import::source_db::seam::{ChildRow, HubRows, SeamLinks, SourceRows, plan_seam};
+    use crate::runtime::operator::authority::StoreHighWater;
+
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    let (store, vehicle, _) = store_with_vehicles(&rig);
+    let connection = store.open().unwrap();
+    assert_eq!(hub.open(&rig.grant(0, 3600)).unwrap().phase, Phase::Open);
+    rig.clock.advance(100);
+    assert_eq!(hub.tick().unwrap(), Phase::Open);
+    // Collected 3.4 s after the tick, then the service stops.
+    let row_ms = (T0 + 103) * SECOND + 400;
+    add_hub_position(&connection, &vehicle, 1, row_ms);
+    drop(hub);
+    rig.clock.advance(600);
+    let (hub, outcome) =
+        rig.start_hub_with(std::sync::Arc::new(StoreHighWater::new(&data_dir(&rig))));
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    hub.finish_close().unwrap().unwrap();
+
+    assert_eq!(
+        coverage_of(&connection, &vehicle),
+        vec![(T0 * SECOND, (T0 + 104) * SECOND), ((T0 + 700) * SECOND, (T0 + 800) * SECOND)],
+        "the stop is a gap, from just after the Hub's newest row"
+    );
+    let coverage = HubCoverage::for_store(&connection, &vehicle).unwrap();
+    let hub_rows = HubRows {
+        positions: vec![ChildRow { id: HUB_ID_BASE + 1, at_ms: row_ms, parent: None }],
+        ..HubRows::default()
+    };
+    let plan = plan_seam(&coverage, &hub_rows, &SourceRows::default(), &SeamLinks::default());
+    assert!(plan.positions.hub_removed.is_empty(), "the Hub row is not tombstoned");
+    assert_eq!(plan.positions.hub_kept_count, 1);
+}

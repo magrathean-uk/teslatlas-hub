@@ -44,6 +44,26 @@ use super::{
 /// say returns `HighWater::default()`.
 pub trait HandbackSource: Send + Sync {
     fn high_water(&self) -> HighWater;
+
+    /// The newest row the Hub collected itself with an instant in
+    /// `[from_ms, until_ms)`. A restart gap starts after it, so the next
+    /// import never tombstones a Hub row collected between the last persisted
+    /// tick and the stop (review finding #39). A source that cannot read the
+    /// store says `Unknown`.
+    fn newest_row(&self, _from_ms: i64, _until_ms: i64) -> NewestHubRow {
+        NewestHubRow::Unknown
+    }
+}
+
+/// What the store says about the Hub's own rows in an interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewestHubRow {
+    /// The store cannot be read; the interval's rows are not known.
+    Unknown,
+    /// The Hub holds no row of its own in the interval.
+    Absent,
+    /// The instant, in milliseconds, of the newest such row.
+    At(i64),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -52,6 +72,11 @@ pub struct NoHighWater;
 impl HandbackSource for NoHighWater {
     fn high_water(&self) -> HighWater {
         HighWater::default()
+    }
+
+    /// No store, so no Hub row.
+    fn newest_row(&self, _from_ms: i64, _until_ms: i64) -> NewestHubRow {
+        NewestHubRow::Absent
     }
 }
 
@@ -1059,6 +1084,9 @@ impl WindowController {
                 if self.verify_persisted(inner, &loaded).is_err() {
                     return self.fault_locked(inner);
                 }
+                if inner.state.phase == Phase::Open {
+                    self.record_restart_gap(inner, wall);
+                }
                 match self.verify_anchor(inner) {
                     Ok(()) => self.resume_active(inner, wall, mono),
                     // The authority cannot be checked now: close, keep the
@@ -1070,6 +1098,42 @@ impl WindowController {
                     Err(_) => self.fault_locked(inner),
                 }
             }
+        }
+    }
+
+    /// Records the interval a stopped process did not observe as a gap, even
+    /// when this start must close for expiry, reboot or a bad clock. It runs
+    /// from the newest row the Hub holds (never before the last persisted
+    /// tick: the 5 s watermark lags the stop, and a gap from it would let the
+    /// next import tombstone the rows collected after it) to this start,
+    /// within the grant. When the store cannot say which rows it holds, no
+    /// gap is recorded: coverage is then claimed for the stop rather than a
+    /// Hub row being dropped on a guess (review finding #39).
+    fn record_restart_gap(&self, inner: &mut Inner, wall: i64) {
+        let (Some(opened_at), Some(expires_at)) = (
+            inner.state.opened_at,
+            inner.state.grant.as_ref().map(|grant| grant.body.expires_at),
+        ) else {
+            return;
+        };
+        let ticked = inner.state.watermark.max(opened_at);
+        let end = wall.min(expires_at);
+        let (Some(from_ms), Some(until_ms)) = (ticked.checked_mul(1000), end.checked_mul(1000))
+        else {
+            return;
+        };
+        if end <= ticked {
+            return;
+        }
+        let start = match self.handback.newest_row(from_ms, until_ms) {
+            NewestHubRow::Unknown => return,
+            NewestHubRow::Absent => ticked,
+            // Coverage is half-open in milliseconds: the gap starts on the
+            // first whole second after the row, so the row stays covered.
+            NewestHubRow::At(at_ms) => ticked.max(at_ms.div_euclid(1000).saturating_add(1)),
+        };
+        if end > start {
+            inner.state.gaps.push(Gap { start, end });
         }
     }
 

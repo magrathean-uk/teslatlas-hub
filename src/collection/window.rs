@@ -37,8 +37,8 @@ pub use clock::{
 };
 pub use custody::{CredentialCustody, CustodyGuard};
 pub use controller::{
-    HandbackSource, ImportGuard, NoHighWater, ResumeOutcome, WindowConfig, WindowController,
-    WindowDeps, WindowStatus,
+    HandbackSource, ImportGuard, NewestHubRow, NoHighWater, ResumeOutcome, WindowConfig,
+    WindowController, WindowDeps, WindowStatus,
 };
 pub use gate::{EgressGate, GateRefusal, Permit, PermitKind, Provider, write_under_authority, writes_in_progress};
 pub use grant::{GrantBody, SignedGrant, TrustDocument};
