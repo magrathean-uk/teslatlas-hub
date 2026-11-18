@@ -448,6 +448,7 @@ fn open_drive_from_source(row: &SourceDbDrive, positions: &[SourceDbPosition]) -
         last_rated_range_km: None,
         last_odometer: None,
         first_odometer: None,
+        odometer_history: None,
         power_max: row.power_max,
         power_min: row.power_min,
         inside_temp_sum: 0.0,
@@ -712,6 +713,29 @@ fn walk_inherited_is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Bounded evidence for the owner's next-reading rule on one class of
+/// odometer reading. A fall is judged only against the previous reading of
+/// the same class (`odometer_coarse` equal), so the known precision
+/// difference between a full poll and a coarse stream frame is not a fall.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OdometerClassHistory {
+    pub(crate) previous: Option<f64>,
+    pub(crate) maximum_before_previous: Option<f64>,
+    pub(crate) pending_fall: Option<f64>,
+}
+
+/// Odometer evidence of an open drive, one history per reading class. An
+/// unresolved or persistent same-class fall makes distance unknown; it is
+/// never silently clamped away.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OdometerHistory {
+    pub(crate) fine: OdometerClassHistory,
+    pub(crate) coarse: OdometerClassHistory,
+    pub(crate) invalid: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenDrive {
     pub id: i64,
@@ -742,6 +766,8 @@ pub struct OpenDrive {
     pub last_odometer: Option<f64>,
     #[serde(default)]
     pub first_odometer: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub odometer_history: Option<OdometerHistory>,
     #[serde(default)]
     pub power_max: Option<f64>,
     #[serde(default)]
