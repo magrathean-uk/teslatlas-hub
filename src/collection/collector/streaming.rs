@@ -520,9 +520,9 @@ async fn stop_vehicle_streams(
             tokio::pin!(joined);
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(drain_at) => Step::Drain,
-                () = &mut joined => Step::Joined,
                 () = tokio::time::sleep_until(deadline), if !overdue_handled => Step::Overdue,
+                () = &mut joined => Step::Joined,
+                () = tokio::time::sleep_until(drain_at) => Step::Drain,
             }
         };
         match step {
@@ -740,7 +740,7 @@ struct StreamPump<'a> {
 /// stream stop or the ordinary sleep. Every path records the instant just before it
 /// drains, and the next drain is due at that instant plus the cap, so one wait
 /// starting late in the interval cannot push the next drain a whole cap further out.
-/// An expired deadline is serviced at once, before any ready future is handled.
+/// An expired deadline is serviced at once when a wait begins.
 ///
 /// It reads the async runtime's monotonic timer, which paused test time moves, and
 /// not the scheduler's clock: a narrow exception, because only the runtime's timer
@@ -885,13 +885,11 @@ impl StreamPump<'_> {
         Ok(())
     }
 
-    /// Waits for `work` and drains the queues at the shared deadline meanwhile, so
-    /// the interval between two drains is at most `K_STREAM_DRAIN_CAP` however long
-    /// the work lasts and however early in the interval it began. An expired
-    /// deadline is serviced before `work`, even when `work` is ready. `work` must not
-    /// use the scheduler. A store fault of a drain ends the wait with that error and
-    /// drops `work`; the credential unit finishes what it started in its own tasks
-    /// (C5 R15a).
+    /// Waits for `work` while draining the queues at their shared deadline.
+    /// An expired deadline takes priority when the wait begins. If a drain leaves a
+    /// backlog, poll `work` before the next batch.
+    /// `work` must not use the scheduler. A store fault ends the wait and drops
+    /// `work`. The credential unit finishes its own tasks (C5 R15a).
     async fn while_waiting<T>(
         &mut self,
         scheduler: &mut VehicleScheduler,
@@ -905,15 +903,18 @@ impl StreamPump<'_> {
         // reaches its work before its drain has not serviced the deadline first.
         #[cfg(test)]
         let mut work = PendingLogged::new(work);
+        let mut drained_backlog = false;
         loop {
             let drain_at = self.deadline();
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(drain_at) => {}
+                () = tokio::time::sleep_until(drain_at), if !drained_backlog => {}
                 output = &mut work => return Ok(output),
+                () = tokio::time::sleep_until(drain_at), if drained_backlog => {}
             }
             self.drain(scheduler).await?;
-            if self.backlog() {
+            drained_backlog = self.backlog();
+            if drained_backlog {
                 tokio::task::yield_now().await;
             }
         }
