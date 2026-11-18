@@ -18,8 +18,9 @@ use super::physical_delta_compare::{PhysicalCompareError, PhysicalDeltaCompariso
 use crate::{
     db::PendingPhysicalV3Admission,
     hub_pack::{
-        PHYSICAL_TABLES_2_2, PackCheck, ProjectionBinding, ProjectionPackError, available_bytes,
-        ensure_private_staging_directory, open_verified_physical_pack_2_2,
+        PHYSICAL_DELTA_TEMP_RANDOM_BYTES, PHYSICAL_TABLES_2_2, PackCheck, ProjectionBinding,
+        ProjectionPackError, available_bytes, ensure_private_staging_directory,
+        open_verified_physical_pack_2_2,
     },
     manifest_signing::ManifestSigning,
     protocol::{CursorKey, Sha256Digest},
@@ -119,6 +120,7 @@ impl DeltaOutput {
         let sqlite = tempfile::Builder::new()
             .prefix("physical-delta-")
             .suffix(".sqlite")
+            .rand_bytes(PHYSICAL_DELTA_TEMP_RANDOM_BYTES)
             .tempfile_in(staging)?;
         let connection = Connection::open(sqlite.path())?;
         connection.execute_batch(
@@ -622,6 +624,7 @@ fn publish_pack(
     let mut compressed = tempfile::Builder::new()
         .prefix("physical-delta-")
         .suffix(".zst")
+        .rand_bytes(PHYSICAL_DELTA_TEMP_RANDOM_BYTES)
         .tempfile_in(&staging)?;
     {
         let source_file = fs::File::open(source)?;
@@ -760,6 +763,33 @@ fn verify_pack_digest(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restart_cleans_abandoned_physical_delta_staging_files() {
+        let temporary = crate::private_tempdir().expect("temp dir");
+        let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
+        let staging = store.packs_dir().join(".staging");
+        ensure_private_staging_directory(&staging).expect("staging directory");
+        let DeltaOutput { sqlite, connection, .. } =
+            DeltaOutput::new(&staging, &[]).expect("start physical delta");
+        drop(connection);
+        let (_, sqlite_path) = sqlite.keep().expect("leave interrupted SQLite output");
+        let (_, compressed_path) = tempfile::Builder::new()
+            .prefix("physical-delta-")
+            .suffix(".zst")
+            .tempfile_in(&staging)
+            .expect("start compressed output")
+            .keep()
+            .expect("leave interrupted compressed output");
+        let unrelated = staging.join("physical-delta-not-owned.sqlite");
+        fs::write(&unrelated, b"unrelated file").expect("preserve an unrelated file");
+        drop(store);
+
+        crate::db::HubStore::initialize(temporary.path()).expect("restart store");
+        assert!(!sqlite_path.exists(), "restart removes the abandoned SQLite file");
+        assert!(!compressed_path.exists(), "restart removes the abandoned compressed file");
+        assert!(unrelated.is_file(), "restart preserves unrelated files");
+    }
 
     #[test]
     fn collision_admission_reuses_exact_bytes_and_rejects_sparse_oversize() {
