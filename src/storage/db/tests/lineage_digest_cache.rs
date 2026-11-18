@@ -55,6 +55,59 @@ fn lineage_digest_test_key(inode: u64) -> LineageDigestKey {
 }
 
 #[test]
+fn lineage_read_pins_the_deltas_and_head_to_one_publication() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _) = imported_v2_base(&store);
+    let (first_claim, first_delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+    let cursor_key = import_delta_test_cursor_key();
+    store
+        .commit_v2_delta_claim(
+            &first_claim,
+            &first_delta,
+            &cursor_key,
+            &import_delta_test_cursor(&binding, first_delta.to_sequence),
+        )
+        .expect("publish first delta");
+    let before = lineage_digest_read(&store, vehicle.vehicle_id);
+
+    let disabled = ProjectionCarSettings {
+        enabled: false,
+        ..ProjectionCarSettings::default()
+    };
+    store
+        .upsert_car_settings(vehicle.vehicle_id, binding.selected_car_id, &disabled)
+        .expect("queue another delta");
+    let (next_claim, next_delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+    let next_cursor = import_delta_test_cursor(&binding, next_delta.to_sequence);
+    let after_sequence = next_delta.to_sequence;
+    let next_writer = store.clone();
+
+    let path = lineage_digest_pack_path(&store, &first_delta.pack);
+    File::options()
+        .write(true)
+        .open(&path)
+        .expect("open first pack")
+        .set_modified(std::time::SystemTime::UNIX_EPOCH)
+        .expect("make the next read hash the first delta");
+    AFTER_LINEAGE_HASH.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move |hashed| {
+            assert_eq!(hashed, path, "publication interleaves after the first delta read");
+            next_writer
+                .commit_v2_delta_claim(&next_claim, &next_delta, &cursor_key, &next_cursor)
+                .expect("publish successor during the read");
+        }));
+    });
+
+    assert_eq!(lineage_digest_read(&store, vehicle.vehicle_id), before);
+    assert_eq!(
+        lineage_digest_read(&store, vehicle.vehicle_id).head_sequence,
+        after_sequence,
+        "a new read sees the committed successor"
+    );
+}
+
+#[test]
 fn stable_lineage_packs_are_hashed_once_per_process() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
