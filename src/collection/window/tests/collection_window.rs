@@ -747,9 +747,11 @@ fn collection_window_supervisor_keeps_api_up_and_restarts_with_backoff() {
     slot.log.lock().unwrap().fail_starts = 2;
     rig.clock.advance(1);
     assert!(!supervisor.step().collector_running);
-    rig.clock.advance(10);
+    rig.clock.advance(4);
     assert!(!supervisor.step().collector_running);
-    rig.clock.advance(30);
+    rig.clock.advance(8);
+    assert!(!supervisor.step().collector_running);
+    rig.clock.advance(16);
     assert!(supervisor.step().collector_running);
     assert_eq!(
         hub.status().phase,
@@ -766,6 +768,36 @@ fn collection_window_supervisor_keeps_api_up_and_restarts_with_backoff() {
         (handback.closed_at - handback.opened_at.unwrap())
             - handback.gaps.iter().map(|g| g.end - g.start).sum::<i64>()
     );
+}
+
+#[test]
+fn collection_window_backs_off_after_an_asynchronous_collector_exit() {
+    let rig = Rig::new();
+    let hub = Arc::new(rig.trusted_hub());
+    hub.open(&rig.grant(0, 3600)).expect("window opens");
+    let slot = FakeSlot::default();
+    let mut supervisor = Supervisor::new(hub, slot.clone());
+    assert!(supervisor.step().collector_running);
+
+    for (attempt, delay) in [4, 8, 16, 32, 60, 60].into_iter().enumerate() {
+        rig.clock.advance(1);
+        assert!(supervisor.step().collector_running, "task is observed running");
+        slot.log.lock().unwrap().running = false;
+        rig.clock.advance(1);
+        assert!(!supervisor.step().collector_running, "exit starts backoff");
+        rig.clock.advance(delay - 1);
+        assert!(!supervisor.step().collector_running, "retry is still held");
+        assert_eq!(slot.log.lock().unwrap().starts, attempt as u32 + 1);
+        rig.clock.advance(1);
+        assert!(supervisor.step().collector_running, "retry starts at the deadline");
+    }
+
+    rig.clock.advance(60);
+    assert!(supervisor.step().collector_running, "a sustained run resets backoff");
+    slot.log.lock().unwrap().running = false;
+    assert!(!supervisor.step().collector_running);
+    rig.clock.advance(4);
+    assert!(supervisor.step().collector_running, "the next exit uses the first delay");
 }
 
 #[test]
