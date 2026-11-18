@@ -199,7 +199,7 @@ final class HubRenameMigrationTests: XCTestCase {
     }
 
     func testAStepPastTheLimitIsLeftAloneAndATryAgainStartsNoSecondMove() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = HubTestScratch.fixtureRoot("rename-step-limit")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let marks = folder.appendingPathComponent("marks").path
