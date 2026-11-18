@@ -97,6 +97,18 @@ fn catalogue_path_admission_readers_preserve_supported_live_file_modes() {
 }
 
 #[test]
+fn catalogue_path_admission_leaves_an_absent_root_to_each_openers_own_error() {
+    let temporary = crate::private_tempdir().expect("temporary parent");
+    let data_dir = temporary.path().join("missing-hub");
+    assert!(matches!(
+        HubStore::open_immutable_read_only(&data_dir),
+        Err(StoreError::InspectCatalogue(error)) if error.kind() == std::io::ErrorKind::NotFound
+    ));
+    assert!(matches!(HubStore::open_existing(&data_dir), Err(StoreError::Open(_))));
+    assert!(!data_dir.exists(), "no opener creates an absent root");
+}
+
+#[test]
 fn writable_catalogue_admission_rejects_foreign_and_future_databases_without_mutation() {
     for (application_id, version) in [(0, 0), (123456, 0), (APPLICATION_ID, SCHEMA_VERSION + 1)] {
         let temporary = crate::private_tempdir().expect("temporary database");

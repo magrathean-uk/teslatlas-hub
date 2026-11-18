@@ -1693,32 +1693,40 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
 }
 
-#[test]
-fn immutable_diagnostic_waits_for_a_transient_wal() {
+/// A store with a pending WAL witness; `None` gives it the catalogue's mode, as SQLite does.
+fn store_with_pending_wal(mode: Option<u32>) -> (tempfile::TempDir, PathBuf) {
     let temporary = tempfile::tempdir().expect("temporary directory");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("protect temporary directory");
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700)).expect("protect temporary directory");
     HubStore::initialize(temporary.path()).expect("store initializes");
     let wal = temporary.path().join("hub.sqlite-wal");
     fs::write(&wal, b"pending").expect("create pending WAL witness");
+    let catalogue = || fs::metadata(temporary.path().join("hub.sqlite")).expect("catalogue").permissions();
+    fs::set_permissions(&wal, mode.map_or_else(catalogue, fs::Permissions::from_mode)).expect("WAL mode");
+    (temporary, wal)
+}
+
+#[test]
+fn immutable_diagnostic_waits_for_a_transient_wal() {
+    let (temporary, wal) = store_with_pending_wal(None);
     let mut waits = 0;
-
-    run_immutable_diagnostic_with(
-        temporary.path(),
-        |store| {
-            store.catalogue_check()?;
-            Ok(())
-        },
-        || {
-            waits += 1;
-            if wal.exists() {
-                fs::remove_file(&wal).expect("settle WAL");
-            }
-        },
-    )
+    run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || {
+        waits += 1;
+        if wal.exists() {
+            fs::remove_file(&wal).expect("settle WAL");
+        }
+    })
     .expect("diagnostic opens after WAL settles");
-
     assert_eq!(waits, 1);
+}
+
+#[test]
+fn immutable_diagnostic_refuses_a_wal_with_an_unsafe_mode() {
+    let (temporary, wal) = store_with_pending_wal(Some(0o644));
+    let mut waits = 0;
+    let error = run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || waits += 1)
+        .expect_err("an unsafe WAL is refused, not waited for");
+    assert!(matches!(error.downcast_ref::<tesatlas_hub::db::StoreError>(), Some(tesatlas_hub::db::StoreError::UnsafeSharedSqlite(path)) if path == &wal), "unexpected refusal: {error}");
+    assert_eq!((waits, fs::read(&wal).expect("WAL kept")), (0, b"pending".to_vec()));
 }
 
 #[test]
