@@ -42,7 +42,7 @@ the persisted Tesla account credentials. It stays stopped across logins until
 
 | Command | Purpose |
 |---|---|
-| `status` | Print redacted local state: service readiness (`ready`, `readinessReason`), the one `collectionAttention`, healthy `readinessDetail`, `collectorRunning`, the redacted lease timing and, only while a cadence rule is broken, `collectorCadenceError`. |
+| `status` | Print redacted local state: service readiness (`ready`, `readinessReason`), the one `collectionAttention`, healthy `readinessDetail`, `collectorRunning`, the redacted lease timing and, only while a cadence rule is broken, `collectorCadenceError`. Current location labels are omitted. |
 | `doctor` | Check database, credentials, TLS, and collector readiness. Collection attention alone does not fail it; an independent integrity, credential, unresolved Legacy refresh, TLS, stale-lease or stream-recovery fault does. |
 | `collector retry\|resume <UUID>\|gaps acknowledge` | Ask the running collector to retry after a refusal, clear one car's collector pause, or mark alert gaps as seen. They record a request the collector applies within seconds; they are not `control pause` and `control resume`. Output shapes: [Collector](configuration.md#when-collection-stops-or-a-car-is-held). |
 | `preflight` | Confirm one configured vehicle can be served. |

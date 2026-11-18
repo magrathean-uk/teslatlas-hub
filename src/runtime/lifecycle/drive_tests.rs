@@ -1886,3 +1886,23 @@ fn st72_plugged_evidence_that_wins_by_time_folds_the_drive_group_and_closes_it()
         vec![T0 + MIN]
     );
 }
+
+#[test]
+fn astra_p07_f03_battery_only_update_does_not_refresh_old_drive_start_values() {
+    let result = run(&[
+        parked(1, T0, 10.0, Some(1000.0)),
+        vd(
+            2,
+            T0 + 60 * MIN,
+            json!({
+                "charge_state": {"timestamp": T0 + 60 * MIN, "battery_level": 60}
+            }),
+        ),
+        driving(3, T0 + 61 * MIN, 11.0, Some(1100.0)),
+        parked(4, T0 + 62 * MIN, 11.001, Some(1100.5)),
+    ]);
+    let drive = &result.delta.drives[0];
+    assert!(close_to(drive.distance_km.unwrap(), 0.5 * K_MILE_KM));
+    assert_eq!(drive.start_latitude, Some(11.0));
+    assert_eq!(drive.start_soc, Some(60));
+}

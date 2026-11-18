@@ -155,12 +155,13 @@ fn c6_st_s32_status() {
             telemetry_status: "cached",
         }
     );
+    // Parked inside "Home": status never carries a location label, so the name is omitted.
     assert_eq!(
         status(parked, T0 + 1_000),
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(80),
-            location_name: Some("Home".into()),
+            location_name: None,
             telemetry_status: "cached",
         }
     );

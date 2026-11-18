@@ -788,7 +788,7 @@ fn finalize_charge(
     if end_date_ms < open.start_date_ms {
         return Err(LifecycleError::InvalidTimeline);
     }
-    let duration_min = ((end_date_ms - open.start_date_ms) / 60_000).max(0);
+    let duration_min = ((end_date_ms - open.start_date_ms) / 60_000).clamp(0, K_SMALLINT_MAX);
     let outside_temp_avg = if open.outside_temp_count > 0 {
         Some(open.outside_temp_sum / f64::from(open.outside_temp_count))
     } else {
@@ -2067,8 +2067,8 @@ fn close_open_charge(
 /// Motion evidence (after R22) with no open drive and the car not in service
 /// opens a drive at `t_drive`; motion is the only direct evidence that a trip
 /// began. The start is never earlier than the end of a session closed in step
-/// 4 of this observation (R9). When the parked snapshot is no older than
-/// `T_gap`, the drive takes its start values from it where it knows them: the
+/// 4 of this observation (R9). When a parked start-value family is no older
+/// than `T_gap`, the drive takes its start values from it where it knows them: the
 /// odometer reading taken at the origin counts the distance driven before the
 /// first Motion detection (up to one parked polling interval), and the start
 /// coordinates name where the car was parked. Within `T_gap` no other trip can
@@ -2099,22 +2099,91 @@ fn drive_open_step(
     if let Some(snapshot) = state.parked_snapshot.as_ref()
         && t_drive.saturating_sub(snapshot.seen_at_ms) <= observation.t_gap_ms
     {
-        if let Some(odometer) = snapshot.odometer_km {
+        // A fresh family must not make another family's old values recent.
+        // Old blobs without a family watermark retain the group/snapshot fallback.
+        let recent = |at_ms: Option<i64>| {
+            t_drive.saturating_sub(at_ms.unwrap_or(snapshot.seen_at_ms)) <= observation.t_gap_ms
+        };
+        if recent(state.last_odometer_fact_ms.or(state.last_vehicle_timestamp_ms))
+            && let Some(odometer) = snapshot.odometer_km
+        {
             open.first_odometer = Some(odometer);
             open.last_odometer = Some(odometer);
             open.odometer_coarse = snapshot.odometer_coarse;
         }
-        if let (Some(latitude), Some(longitude)) = (snapshot.latitude, snapshot.longitude) {
+        if recent(state.last_position_fact_ms.or(state.last_drive_timestamp_ms))
+            && let (Some(latitude), Some(longitude)) = (snapshot.latitude, snapshot.longitude)
+        {
             open.start_latitude = Some(latitude);
             open.start_longitude = Some(longitude);
         }
-        open.start_soc = snapshot.battery_level;
-        open.start_ideal_range_km = snapshot.ideal_range_km;
-        open.start_rated_range_km = snapshot.rated_range_km;
+        if recent(state.last_battery_fact_ms.or(state.last_charge_timestamp_ms)) {
+            open.start_soc = snapshot.battery_level;
+            open.start_ideal_range_km = snapshot.ideal_range_km;
+            open.start_rated_range_km = snapshot.rated_range_km;
+        }
     }
     state.parked_snapshot = None;
     state.open_drive = Some(open);
     Ok(())
+}
+
+/// Recover one already completed charge when the very next battery reading
+/// contradicts its rejected level. The later reading corroborates detection;
+/// it neither extends the old end nor supplies a battery level at that end.
+fn recover_completed_gap_charge(
+    state: &mut OpenSessionState,
+    observation: &Observation<'_>,
+    delta: &mut LifecycleDelta,
+) -> Result<(), LifecycleError> {
+    if state.open_drive.is_some()
+        || state.open_charge.is_some()
+        || state.service_mode == Some(true)
+        || observation.reach == Some(Reach::Asleep)
+        || observation.event() == Some(HubEventKind::Handback)
+        || !delta.drives.is_empty()
+        || !delta.charges.is_empty()
+    {
+        state.pending_gap_charge = None;
+        return Ok(());
+    }
+    let Some(level) = observation.parsed.battery_level.filter(|_| observation.fresh.battery) else {
+        return Ok(());
+    };
+    let Some(pending) = state.pending_gap_charge.take() else {
+        return Ok(());
+    };
+    if !pending.snapshot.battery_level.is_some_and(|before| level > before) {
+        return Ok(());
+    }
+    let end_ms = pending.sample.timestamp_ms;
+    let start_ms = pending.snapshot.at_ms.unwrap_or(end_ms).min(end_ms);
+    let id = allocate_charge_id(state)?;
+    let mut open = OpenCharge::empty(id, observation.car_id, start_ms);
+    open.start_battery_level = pending.snapshot.battery_level;
+    open.start_ideal_range_km = pending.snapshot.ideal_range_km;
+    open.start_rated_range_km = pending.snapshot.rated_range_km;
+    if let Some((latitude, longitude)) = pending.coordinates {
+        open.start_latitude = Some(latitude);
+        open.start_longitude = Some(longitude);
+    }
+    open.last_odometer_km = pending.odometer_km;
+    open.last_odometer_coarse = Some(pending.odometer_coarse);
+    open.first_energy_added = Some(charge_energy_baseline(
+        Some(&pending.snapshot),
+        pending.sample.charge_energy_added_kwh,
+        pending.odometer_km,
+    ));
+    let mut sample = pending.sample;
+    sample.id = allocate_charge_sample_id(state)?;
+    sample.charge_process_id = id;
+    let mut display = sample.clone();
+    display.battery_level = None;
+    observe_charge_aggregate(&mut open, &display);
+    observe_charge_sample(&mut open, &sample);
+    delta.open_charge_samples.push(sample);
+    state.open_charge = Some(open);
+    close_open_charge(state, delta, end_ms, pending.unplugged)
 }
 
 /// Step 6, charge open (C1 R61) and after-gap charge (R70, R9).
@@ -2145,6 +2214,7 @@ fn charge_open_step(
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
+    recover_completed_gap_charge(state, observation, delta)?;
     if state.open_charge.is_some()
         || state.open_drive.is_some()
         || state.service_mode == Some(true)
@@ -2183,6 +2253,26 @@ fn charge_open_step(
                 return Ok(());
             };
             let Some(after_gap) = after_gap_charge(snapshot, parsed, observation.charge) else {
+                // Retain one rejected completed sample. Only its very next
+                // fresh battery reading may contradict the fall; persistent
+                // changes are never removed from derived history.
+                if state.pending_gap_charge.is_none()
+                    && observation.charge.is_end()
+                    && unmoved
+                    && after_gap_counter_changed(snapshot, parsed)
+                    && matches!((parsed.battery_level, snapshot.battery_level),
+                        (Some(now), Some(before)) if now < before)
+                    && snapshot.at_ms.is_some()
+                {
+                    state.pending_gap_charge = Some(PendingGapCharge {
+                        snapshot: snapshot.clone(),
+                        sample: charge_sample_from(0, 0, parsed),
+                        coordinates,
+                        odometer_km: parsed.odometer,
+                        odometer_coarse: parsed.kind != SourceKind::Full,
+                        unplugged: observation.charge == ChargeEvidence::Disconnected,
+                    });
+                }
                 return Ok(());
             };
             // The snapshot's time can lead the charge group's time by the

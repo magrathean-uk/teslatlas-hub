@@ -22,11 +22,50 @@ fn unsupported_schema_message(version: i32) -> String {
     }
 }
 
+/// What path admission found before a catalogue open.
+enum CatalogueAdmission {
+    Admitted,
+    /// The data directory or the catalogue does not exist. An absent path is
+    /// not an unsafe one: each opener answers it with the error it gave before
+    /// admission ran first, and none of them creates anything for it.
+    Absent(std::io::Error),
+}
+
+/// Admit paths before SQLite can open the catalogue or its coordination files.
+/// Readers never repair modes, and retained handles must recheck the root.
+fn admit_catalogue_paths(database_path: &Path) -> Result<CatalogueAdmission, StoreError> {
+    let data_dir = database_path
+        .parent()
+        .ok_or_else(|| StoreError::UnsafeSharedSqlite(database_path.to_path_buf()))?;
+    if let Err(error) = fs::symlink_metadata(data_dir)
+        && error.kind() == std::io::ErrorKind::NotFound
+    {
+        return Ok(CatalogueAdmission::Absent(error));
+    }
+    validate_private_store_directory(data_dir)
+        .map_err(|()| StoreError::UnsafeDataDir(data_dir.to_path_buf()))?;
+    let metadata = match fs::symlink_metadata(database_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CatalogueAdmission::Absent(error));
+        }
+        Err(error) => return Err(StoreError::InspectSharedSqlite(error)),
+    };
+    admit_shared_sqlite_file(
+        database_path,
+        &metadata,
+        shared_sqlite_group_id(database_path)?,
+        false,
+    )?;
+    admit_shared_sqlite_sidecars(database_path, false)?;
+    Ok(CatalogueAdmission::Admitted)
+}
+
 impl HubStore {
     pub fn initialize(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
         let data_dir = data_dir.as_ref();
         let data_dir_was_absent = !data_dir.exists();
-        fs::create_dir_all(data_dir).map_err(StoreError::CreateDataDir)?;
+        crate::platform::private_directory::create_directory_all_durably(data_dir).map_err(StoreError::CreateDataDir)?;
         // New roots receive the private one-user mode; existing roots must
         // already satisfy the same owner/mode contract or startup fails closed.
         if data_dir_was_absent {
@@ -75,7 +114,7 @@ impl HubStore {
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
         let packs_dir_was_absent = !packs_dir.exists();
-        fs::create_dir_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
+        crate::platform::private_directory::create_directory_all_durably(&packs_dir).map_err(StoreError::CreatePacksDir)?;
         if packs_dir_was_absent {
             fs::set_permissions(
                 &packs_dir,
@@ -129,15 +168,9 @@ impl HubStore {
     pub fn open(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.writable_opens);
-        let metadata =
-            fs::symlink_metadata(&self.database_path).map_err(StoreError::InspectSharedSqlite)?;
-        admit_shared_sqlite_file(
-            &self.database_path,
-            &metadata,
-            shared_sqlite_group_id(&self.database_path)?,
-            false,
-        )?;
-        admit_shared_sqlite_sidecars(&self.database_path, false)?;
+        if let CatalogueAdmission::Absent(error) = admit_catalogue_paths(&self.database_path)? {
+            return Err(StoreError::InspectSharedSqlite(error));
+        }
         let connection = Connection::open_with_flags(
             &self.database_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -151,7 +184,9 @@ impl HubStore {
         configure(&connection)?;
         admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
         #[cfg(test)]
-        self.watch_sink(&connection)?;
+        let mut connection = connection;
+        #[cfg(test)]
+        self.watch_sink(&mut connection)?;
         Ok(connection)
     }
 
@@ -166,7 +201,7 @@ impl HubStore {
     /// heartbeat is left out: the renewal and release semantics are fixed by the specs
     /// (C3 R8, R47; C5 R33a) and the renewal writes until it meets the fence.
     #[cfg(test)]
-    fn watch_sink(&self, connection: &Connection) -> Result<(), StoreError> {
+    fn watch_sink(&self, connection: &mut Connection) -> Result<(), StoreError> {
         use rusqlite::hooks::{AuthAction, Authorization};
         use std::sync::atomic::Ordering;
         const LEASE: &str = "supervised_collector_lease";
@@ -412,6 +447,9 @@ impl HubStore {
         standalone_migration_candidate: bool,
     ) -> Result<Self, StoreError> {
         let database_path = data_dir.join("hub.sqlite");
+        // An absent path falls through: the immutable fingerprint and the
+        // read-only open below refuse it with their own errors, creating nothing.
+        let _ = admit_catalogue_paths(&database_path)?;
         let immutable_snapshot = if immutable {
             Some(immutable_catalogue_fingerprint(&database_path)?)
         } else {
@@ -474,6 +512,9 @@ impl HubStore {
     fn open_read_only_connection(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.read_only_opens);
+        // An absent path falls through to SQLite's read-only open, which refuses
+        // it without creating the catalogue or a coordination file.
+        let _ = admit_catalogue_paths(&self.database_path)?;
         let connection = if self.immutable_snapshot.is_some() {
             let canonical = self
                 .database_path
@@ -492,7 +533,8 @@ impl HubStore {
         } else {
             Connection::open_with_flags(
                 &self.database_path,
-                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .map_err(StoreError::Open)?
         };

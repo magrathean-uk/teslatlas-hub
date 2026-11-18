@@ -212,11 +212,7 @@ fn unrelated_rows(
     let mut statement = connection
         .prepare(&format!("SELECT * FROM {table} ORDER BY 1, 2"))
         .unwrap();
-    let columns: Vec<_> = statement
-        .column_names()
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
+    let columns: Vec<_> = statement.column_names().map(str::to_owned).collect();
     statement
         .query_map([], |row| {
             columns

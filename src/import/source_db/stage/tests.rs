@@ -732,7 +732,7 @@ fn rejects_stage_replacement_between_secure_and_sqlite_open() {
         fs::rename(&path, &original).expect("retain original inode");
         fs::copy(&original, &path).expect("replacement copy");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("private replacement");
-    })
+    }, true)
     .expect_err("identity mismatch");
     assert!(matches!(
         error,
@@ -809,7 +809,7 @@ fn rejects_stage_directory_replacement_between_secure_and_sqlite_open() {
         fs::copy(displaced.join(&file_name), &replacement).expect("replacement stage");
         fs::set_permissions(replacement, fs::Permissions::from_mode(0o600))
             .expect("private replacement stage");
-    })
+    }, true)
     .expect_err("directory identity mismatch");
     assert!(matches!(
         error,

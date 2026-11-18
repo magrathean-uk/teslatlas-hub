@@ -1893,6 +1893,7 @@ fn try_compare_physical_fixtures(
         &packs,
         scratch_limit,
         0,
+        crate::sync::hub_pack::PackCheck::Full,
     )
 }
 
@@ -2054,6 +2055,7 @@ fn physical_compare_rejects_corrupt_pack_and_wrong_car_identity_with_scratch_cle
             &packs,
             64 * 1024 * 1024,
             0,
+            crate::sync::hub_pack::PackCheck::Full,
         );
         assert!(matches!(
             failed,
@@ -2279,6 +2281,7 @@ fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() 
             &packs,
             0,
             4096,
+            crate::sync::hub_pack::PackCheck::Full,
         )
         .expect("bounded multi-pack changed set");
     assert!(delta.packs.len() > 1);

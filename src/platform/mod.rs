@@ -17,6 +17,8 @@ pub mod r78_lifecycle;
 pub mod r78_service;
 #[cfg(unix)]
 pub mod r78_recording;
+#[cfg(unix)]
+pub mod start_preflight;
 #[cfg(all(feature = "credential-relocation-fixture", not(debug_assertions)))]
 compile_error!("credential-relocation-fixture is available only in debug builds");
 #[cfg(unix)]

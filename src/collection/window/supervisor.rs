@@ -171,7 +171,7 @@ impl<S: CollectorSlot> Supervisor<S> {
                 let exchanging = wall < lapse_at && gate.exchange_in_flight();
                 if (!exchanging && !writing) || wall >= handback_by {
                     if let Some(start) = self.gap_start.take() {
-                        let _ = self.controller.record_gap(start, closing_at.max(start));
+                        let _ = self.controller.record_closing_gap(start);
                     }
                     // The lease is released before the handback is written
                     // and the host claim let go; only then is the window Closed.

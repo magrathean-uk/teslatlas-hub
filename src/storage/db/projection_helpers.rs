@@ -1178,6 +1178,8 @@ fn is_sha256_hex(value: &str) -> bool {
 }
 
 fn sha256_file_hex(path: &Path) -> Result<String, StoreError> {
+    #[cfg(test)]
+    read_probe::pack_opened();
     let mut file = fs::File::open(path).map_err(StoreError::OpenBackupPack)?;
     sha256_open_file_hex(&mut file)
 }
@@ -1198,6 +1200,8 @@ fn sha256_open_file_hex(file: &mut fs::File) -> Result<String, StoreError> {
 fn immutable_catalogue_fingerprint(
     database_path: &Path,
 ) -> Result<ImmutableCatalogueFingerprint, StoreError> {
+    #[cfg(test)]
+    read_probe::whole_store_read();
     let metadata = fs::symlink_metadata(database_path).map_err(StoreError::InspectCatalogue)?;
     if !metadata.file_type().is_file() {
         return Err(StoreError::InvalidCataloguePath);
@@ -1243,4 +1247,32 @@ fn persistent_journal_mode(database_path: &Path) -> Result<String, StoreError> {
         _ => "invalid",
     }
     .to_owned())
+}
+
+/// Test-only counts, per thread, of the reads whose cost grows with the store:
+/// every attempt to open a pack file and every whole-catalogue read (the
+/// immutable snapshot's hash of the whole file and `PRAGMA quick_check`). Each
+/// is counted before the open, so a failure that a caller swallows still
+/// counts (M08-T25). Nothing of it is compiled outside tests.
+#[cfg(test)]
+pub(crate) mod read_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static PACK_OPENS: Cell<usize> = const { Cell::new(0) };
+        static WHOLE_STORE_READS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn pack_opened() {
+        PACK_OPENS.with(|count| count.set(count.get() + 1));
+    }
+
+    pub(crate) fn whole_store_read() {
+        WHOLE_STORE_READS.with(|count| count.set(count.get() + 1));
+    }
+
+    /// `(pack opens, whole-store reads)` on this thread since the last call.
+    pub(crate) fn take() -> (usize, usize) {
+        (PACK_OPENS.with(|count| count.replace(0)), WHOLE_STORE_READS.with(|count| count.replace(0)))
+    }
 }

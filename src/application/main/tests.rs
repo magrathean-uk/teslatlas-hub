@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 use std::{
     fs,
@@ -69,6 +68,8 @@ mod b3_c8_k;
 mod charge_cost_cli_tests;
 #[path = "collector_cli_tests.rs"]
 mod collector_cli_tests;
+#[path = "fleet_cli_tests.rs"]
+mod fleet_cli_tests;
 #[path = "pairing_scope_tests.rs"]
 mod pairing_scope_tests;
 #[path = "readiness_cli_tests.rs"]
@@ -159,7 +160,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(81),
-            location_name: Some("Home".into()),
+            location_name: None,
             telemetry_status: "cached",
         }
     );
@@ -1697,32 +1698,40 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
 }
 
-#[test]
-fn immutable_diagnostic_waits_for_a_transient_wal() {
+/// A store with a pending WAL witness; `None` gives it the catalogue's mode, as SQLite does.
+fn store_with_pending_wal(mode: Option<u32>) -> (tempfile::TempDir, PathBuf) {
     let temporary = tempfile::tempdir().expect("temporary directory");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("protect temporary directory");
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700)).expect("protect temporary directory");
     HubStore::initialize(temporary.path()).expect("store initializes");
     let wal = temporary.path().join("hub.sqlite-wal");
     fs::write(&wal, b"pending").expect("create pending WAL witness");
+    let catalogue = || fs::metadata(temporary.path().join("hub.sqlite")).expect("catalogue").permissions();
+    fs::set_permissions(&wal, mode.map_or_else(catalogue, fs::Permissions::from_mode)).expect("WAL mode");
+    (temporary, wal)
+}
+
+#[test]
+fn immutable_diagnostic_waits_for_a_transient_wal() {
+    let (temporary, wal) = store_with_pending_wal(None);
     let mut waits = 0;
-
-    run_immutable_diagnostic_with(
-        temporary.path(),
-        |store| {
-            store.catalogue_check()?;
-            Ok(())
-        },
-        || {
-            waits += 1;
-            if wal.exists() {
-                fs::remove_file(&wal).expect("settle WAL");
-            }
-        },
-    )
+    run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || {
+        waits += 1;
+        if wal.exists() {
+            fs::remove_file(&wal).expect("settle WAL");
+        }
+    })
     .expect("diagnostic opens after WAL settles");
-
     assert_eq!(waits, 1);
+}
+
+#[test]
+fn immutable_diagnostic_refuses_a_wal_with_an_unsafe_mode() {
+    let (temporary, wal) = store_with_pending_wal(Some(0o644));
+    let mut waits = 0;
+    let error = run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || waits += 1)
+        .expect_err("an unsafe WAL is refused, not waited for");
+    assert!(matches!(error.downcast_ref::<tesatlas_hub::db::StoreError>(), Some(tesatlas_hub::db::StoreError::UnsafeSharedSqlite(path)) if path == &wal), "unexpected refusal: {error}");
+    assert_eq!((waits, fs::read(&wal).expect("WAL kept")), (0, b"pending".to_vec()));
 }
 
 #[test]
@@ -1885,36 +1894,6 @@ fn setup_command_takes_only_a_positive_optional_vehicle() {
         args.extend(removed);
         assert!(Cli::try_parse_from(args).is_err(), "{removed:?}");
     }
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn fleet_sign_in_setup_fleet_grammar_routes_to_the_service() {
-    use tesatlas_hub::runtime::operator::{admission::{Route, requires_user_hub_admission as command_requires_user_hub_admission, route}, cli::FleetSetupStep};
-    let parse = |args: &[&str]| Cli::try_parse_from([&["tesatlas-hub"][..], args].concat()).map(|cli| cli.command);
-    assert!(matches!(parse(&["setup-fleet"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: false }));
-    assert!(matches!(parse(&["setup-fleet", "--vehicle-id", "70"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: Some(70), all_vehicles: false }));
-    assert!(matches!(parse(&["setup-fleet", "--all-vehicles"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: true }));
-    assert!(matches!(parse(&["setup-fleet", "begin"]).expect("begin"), Command::SetupFleet { step: Some(FleetSetupStep::Begin), .. }));
-    for args in [&["setup-fleet", "--sign-in"][..], &["setup-fleet", "--vehicle-id", "70", "--all-vehicles"], &["setup-fleet", "begin", "--all-vehicles"],
-        &["setup-fleet", "--vehicle-id", "70", "begin"], &["setup-fleet", "--client-secret", "x"], &["setup-fleet", "--access-token-file", "x"]] {
-        assert!(parse(args).is_err(), "{args:?}");
-    }
-    for command in [parse(&["setup-fleet"]).expect("redeem"), parse(&["setup-fleet", "begin"]).expect("begin")] {
-        assert_eq!(route(&command), Route::Service);
-        assert!(!command_requires_user_hub_admission(&command), "forwarded, never the lifetime lock");
-    }
-    assert_eq!(route(&Command::ConfigureFleetTelemetry), Route::Refused("provider_parked"));
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn fleet_rejects_enabling_legacy_streaming() {
-    use tesatlas_hub::config::CollectorProvider;
-
-    assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(true)).is_err());
-    assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(false)).is_ok());
-    assert!(validate_streaming_setting(CollectorProvider::Legacy, Some(true)).is_ok());
 }
 
 #[cfg(target_os = "macos")]

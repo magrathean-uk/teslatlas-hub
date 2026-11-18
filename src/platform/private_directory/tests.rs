@@ -111,6 +111,40 @@ fn a_root_user_may_use_its_own_writable_ancestors() {
 // ---- opening and creating ------------------------------------------------
 
 #[test]
+fn directory_parent_persistence_private_walk() {
+    let base = tempdir().unwrap();
+    let wanted = base.path().join("first/second/leaf");
+    let parents = [
+        base.path().to_path_buf(),
+        base.path().join("first"),
+        base.path().join("first/second"),
+    ];
+    let before = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+
+    open_for_test(&wanted, true).unwrap();
+
+    for (parent, before) in parents.iter().zip(before) {
+        assert_eq!(
+            crate::platform::file_attempts::directory_syncs_at(parent),
+            before + 1,
+            "a newly created child needs its containing directory synced"
+        );
+    }
+    let synced = parents
+        .each_ref()
+        .map(|path| crate::platform::file_attempts::directory_syncs_at(path));
+    open_for_test(&wanted, false).unwrap();
+    assert_eq!(
+        parents
+            .each_ref()
+            .map(|path| crate::platform::file_attempts::directory_syncs_at(path)),
+        synced
+    );
+}
+
+#[test]
 fn a_missing_path_is_created_one_private_directory_at_a_time() {
     let base = tempdir().unwrap();
     let wanted = base.path().join("a/b/leaf");
@@ -662,7 +696,7 @@ fn p3bf5_a_directory_sync_that_changes_nothing_moves_the_file_counter() {
 #[test]
 fn p3bf5_creating_and_tightening_a_directory_move_the_file_counter() {
     // Two missing components, each created (mkdirat) and then protected (ACL clear and
-    // fchmod): four attempts, recorded under the paths they were aimed at.
+    // fchmod), with a sync of each containing directory: six attempts.
     let base = tempdir().unwrap();
     let missing = base.path().join("missing").join("cache");
     let before = crate::platform::file_attempts::count_under(base.path());
@@ -670,7 +704,7 @@ fn p3bf5_creating_and_tightening_a_directory_move_the_file_counter() {
     let created = crate::platform::file_attempts::count_under(base.path()) - before;
     assert_eq!(
         created,
-        4,
+        6,
         "{:#?}",
         crate::platform::file_attempts::entries_under(base.path())
     );

@@ -52,11 +52,12 @@ flate2 = "1"
 futures-util = "0.3"
 hex = "0.4"
 http = "1"
+hyper-util = { version = "=0.1.21", default-features = false, features = ["http1", "http2", "server-auto", "service", "tokio"] }
 rcgen = { version = "0.14.9", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["http2", "json", "query", "rustls-no-provider", "stream"] }
 rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }
 rustix = { version = "1.1.4", features = ["fs", "process", "time"] }
-rusqlite = { version = "0.40.2", features = ["backup", "bundled", "serialize"] }
+rusqlite = { version = "0.41.0", features = ["backup", "bundled", "serialize"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip` makes parsing exact, so the f64 accumulators of the open
@@ -102,7 +103,7 @@ http-body-util = "0.1"
 # The authorizer and update hooks of SQLite (no commit hook), installed by the store in tests only:
 # the zero-write proofs of the collector count the mutations a connection attempts,
 # independently of any guard (B2 fix round, P3b fix 3, R-P3bF3-4). No new package.
-rusqlite = { version = "0.40.2", features = ["hooks"] }
+rusqlite = { version = "0.41.0", features = ["hooks"] }
 tempfile = "3"
 # The `log` bridge of `tracing-subscriber`, installed by the stream's logging test
 # so that library records reach the captured log as they do in the binary.

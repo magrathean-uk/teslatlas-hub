@@ -356,21 +356,15 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     let credential_projection = crate::auth::credential_sign_in::credential_status(store, &config.data_dir, now_ms)?;
     let legacy_tokens = &credential_projection.legacy_credentials;
     let fleet_tokens = &credential_projection.fleet_credentials;
-    // The loaded configuration, not the account row, decides whether the
-    // credential unit's status applies (B2 clarification 3): Legacy and Provider
-    // read it, effective at this moment; Fleet polling ignores a retained one and
-    // never reads Legacy credential material for it.
+    let SelectedCredentialDecision {
+        auth_status,
+        unresolved_legacy_refresh,
+        legacy_key_valid,
+        selected_admitted: selected_credentials_admitted,
+        fleet_admitted,
+        fleet_inspection,
+    } = selected_credential_decision(store, config, &credential_projection, now_ms)?;
     let loaded_mode = collector_mode(&config.collector);
-    let auth_status = if loaded_mode == CollectorMode::FleetPolling {
-        None
-    } else {
-        match store.effective_collector_auth(loaded_mode, now_ms) {
-            Ok(effective) => effective.map(|effective| effective.row),
-            // A key, cipher or store fault: show what is stored; the credential
-            // validation below reports the fault itself.
-            Err(_) => store.load_collector_auth_row()?,
-        }
-    };
     // C5 section 3.5: a stop, a refusal or a configuration fault means the
     // stored pair cannot collect, however well it decrypts.
     let auth_blocks_collection = auth_status.as_ref().is_some_and(|row| {
@@ -379,28 +373,9 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             "signed_out" | "configuration_error" | "api_refused"
         )
     });
-    let owner_summary = if loaded_mode == CollectorMode::FleetPolling { None }
-        else { Some(crate::auth::legacy_auth::effective::owner_diagnostic_summary(store, now_ms)?) };
-    let unresolved_legacy_refresh = owner_summary.as_ref().is_some_and(|summary| summary.unresolved_refresh)
-        || auth_status.as_ref().is_some_and(|row| row.reason.as_deref() == Some("refresh_outcome_unknown"));
-    // A Fleet configuration never touches the Legacy key material: the retained
-    // pair is reported as present and not valid for collection, without a key
-    // read or a decryption (C3 R1, B2 clarification 3).
-    let legacy_key_valid = loaded_mode != CollectorMode::FleetPolling
-        && legacy_tokens.present && legacy_tokens.store_state == "ok"
-        && credential_projection.credential_store.keyring == "ok";
     // Operational validity: whether collection could use the pair now.
     let legacy_valid_for_collection =
         !unresolved_legacy_refresh && !auth_blocks_collection && legacy_key_valid;
-    // Diagnostic admission: the pair is present and header-readable, no Legacy refresh is
-    // unresolved and the applicable status is not signed out. A refusal or a
-    // credential-unit configuration fault alone is attention, not a failure.
-    let legacy_admitted = legacy_tokens.present
-        && legacy_key_valid
-        && !unresolved_legacy_refresh
-        && !auth_status
-            .as_ref()
-            .is_some_and(|row| row.state == "signed_out");
     let legacy = CredentialPresence {
         present: legacy_tokens.present,
         expires_at: legacy_tokens.expires_at,
@@ -415,19 +390,8 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         refresh_owner: legacy_tokens.refresh_owner,
         store_state: legacy_tokens.store_state,
     };
-    // R68 diagnostic admission uses clear presence, headers, keyring checks
-    // and recorded refresh outcomes; an identified unresolved refresh is
-    // attention, not a failed admission.
-    let fleet_inspection = fleet_tokens
-        .present
-        .then(|| crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir).ok())
-        .flatten();
-    let fleet_admitted = fleet_tokens.present
-        && fleet_tokens.store_state == "ok"
-        && credential_projection.credential_store.keyring == "ok"
-        && fleet_inspection.is_some()
-        && !auth_status.as_ref().is_some_and(|row| row.state == "signed_out");
-    // The recorded Fleet scope witness (G-DIAGNOSTIC-FLEET-WITNESS, M09-T11),
+    // The Fleet admission and inspection are the shared decision's
+    // (`selected_credential_decision`). The recorded Fleet scope witness (G-DIAGNOSTIC-FLEET-WITNESS, M09-T11),
     // read without a key or a decryption: the stored pair's clear origin
     // header. Only the Hub's own Fleet grant (`fleet_oauth`, refreshed by the
     // Hub, past the un-park barrier) is admitted. The witness is true by
@@ -471,14 +435,9 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         refresh_owner: fleet_tokens.refresh_owner,
         store_state: fleet_tokens.store_state,
     };
-
     let selected_credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present && legacy.valid_for_collection,
         CollectorProvider::Fleet => fleet.present && fleet.valid_for_collection,
-    };
-    let selected_credentials_admitted = match config.collector.provider {
-        CollectorProvider::Legacy => legacy_admitted,
-        CollectorProvider::Fleet => fleet.present && fleet_admitted,
     };
     let configured = store.configured_tesla_vehicles()?;
     let init_only = configured.is_empty()
@@ -827,6 +786,97 @@ fn tls_diagnostics(config: &HubConfig) -> TlsDiagnostics {
 
 fn regular_file(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+}
+
+/// The doctor's decision on the selected provider's stored pair: the
+/// `selectedProviderCredentials` admission and the credential reads it rests on.
+/// `inspect_hub` and the command-line `preflight` the Mac app's Start runs both
+/// decide by it, so the two cannot drift (M08-T25). It reads the credential rows
+/// only: the effective collector status (Legacy and Provider modes), the Owner
+/// refresh summary and, for a present Fleet pair, its stored inspection.
+pub(crate) struct SelectedCredentialDecision {
+    /// The applicable collector status row; `None` in Fleet polling mode.
+    pub(crate) auth_status: Option<crate::db::CollectorAuthRow>,
+    pub(crate) unresolved_legacy_refresh: bool,
+    /// The Legacy pair is present, header-readable and its key store usable.
+    pub(crate) legacy_key_valid: bool,
+    /// The admission of the provider the configuration selects.
+    pub(crate) selected_admitted: bool,
+    /// The Fleet pair's diagnostic admission (M09-T19a): present, readable,
+    /// its key store usable and not signed out; an identified unresolved
+    /// refresh is attention, not a failed admission.
+    pub(crate) fleet_admitted: bool,
+    /// The stored Fleet pair's inspection, when a pair is present and its
+    /// inspection succeeds.
+    pub(crate) fleet_inspection: Option<crate::fleet_credentials::FleetCredentialInspection>,
+}
+
+pub(crate) fn selected_credential_decision(
+    store: &HubStore,
+    config: &HubConfig,
+    credential_projection: &crate::auth::credential_sign_in::CredentialStatus,
+    now_ms: i64,
+) -> Result<SelectedCredentialDecision, StoreError> {
+    let legacy_tokens = &credential_projection.legacy_credentials;
+    let fleet_tokens = &credential_projection.fleet_credentials;
+    // The loaded configuration, not the account row, decides whether the
+    // credential unit's status applies (B2 clarification 3): Legacy and Provider
+    // read it, effective at this moment; Fleet polling ignores a retained one and
+    // never reads Legacy credential material for it.
+    let loaded_mode = collector_mode(&config.collector);
+    let auth_status = if loaded_mode == CollectorMode::FleetPolling {
+        None
+    } else {
+        match store.effective_collector_auth(loaded_mode, now_ms) {
+            Ok(effective) => effective.map(|effective| effective.row),
+            // A key, cipher or store fault: show what is stored; the credential
+            // validation below reports the fault itself.
+            Err(_) => store.load_collector_auth_row()?,
+        }
+    };
+    let owner_summary = if loaded_mode == CollectorMode::FleetPolling { None }
+        else { Some(crate::auth::legacy_auth::effective::owner_diagnostic_summary(store, now_ms)?) };
+    let unresolved_legacy_refresh = owner_summary.as_ref().is_some_and(|summary| summary.unresolved_refresh)
+        || auth_status.as_ref().is_some_and(|row| row.reason.as_deref() == Some("refresh_outcome_unknown"));
+    // A Fleet configuration never touches the Legacy key material: the retained
+    // pair is reported as present and not valid for collection, without a key
+    // read or a decryption (C3 R1, B2 clarification 3).
+    let legacy_key_valid = loaded_mode != CollectorMode::FleetPolling
+        && legacy_tokens.present && legacy_tokens.store_state == "ok"
+        && credential_projection.credential_store.keyring == "ok";
+    // Diagnostic admission: the pair is present and header-readable, no Legacy refresh is
+    // unresolved and the applicable status is not signed out. A refusal or a
+    // credential-unit configuration fault alone is attention, not a failure.
+    let legacy_admitted = legacy_tokens.present
+        && legacy_key_valid
+        && !unresolved_legacy_refresh
+        && !auth_status
+            .as_ref()
+            .is_some_and(|row| row.state == "signed_out");
+    // R68 diagnostic admission uses clear presence, headers, keyring checks
+    // and recorded refresh outcomes; an identified unresolved refresh is
+    // attention, not a failed admission. Scope evidence is a separate check.
+    let fleet_inspection = fleet_tokens
+        .present
+        .then(|| crate::fleet_credentials::inspect_stored_fleet_credentials(store, &config.data_dir).ok())
+        .flatten();
+    let fleet_admitted = fleet_tokens.present
+        && fleet_tokens.store_state == "ok"
+        && credential_projection.credential_store.keyring == "ok"
+        && fleet_inspection.is_some()
+        && !auth_status.as_ref().is_some_and(|row| row.state == "signed_out");
+    let selected_admitted = match config.collector.provider {
+        CollectorProvider::Legacy => legacy_admitted,
+        CollectorProvider::Fleet => fleet_tokens.present && fleet_admitted,
+    };
+    Ok(SelectedCredentialDecision {
+        auth_status,
+        unresolved_legacy_refresh,
+        legacy_key_valid,
+        selected_admitted,
+        fleet_admitted,
+        fleet_inspection,
+    })
 }
 
 fn diagnostic_epoch_ms() -> i64 {

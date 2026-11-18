@@ -225,7 +225,7 @@ fn collection_window_valid_grant_opens_and_gates() {
             .read(&format!("window-consumption-{HOST}"))
             .unwrap()
             .unwrap(),
-        "1:1"
+        "1:1:open"
     );
     let permit = hub
         .gate()
@@ -1107,4 +1107,13 @@ fn collection_window_observed_expiry_latches_closed_against_rollback() {
             .permit(Provider::Legacy, PermitKind::Request)
             .is_err()
     );
+}
+
+
+#[test]
+fn astra_p03_extreme_grant_interval_is_refused_without_overflow() {
+    let mut body = sample_body();
+    body.starts_at = -8_000_000_000_000_000_000;
+    body.expires_at = 8_000_000_000_000_000_000;
+    assert_eq!(body.check_shape(), Err(Refusal::LengthExceedsCeiling));
 }

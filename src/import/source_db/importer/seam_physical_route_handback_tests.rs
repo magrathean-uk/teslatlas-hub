@@ -1629,3 +1629,995 @@ fn seam_physical_route_import_after_windows_killed_rebind_recovers_on_reopening(
         assert_eq!(fresh.mirror.positions, lineage.positions, "{step:?}");
     }
 }
+
+/// A closed window `[start, start + 1 h)` handed back, with one Hub
+/// drive and two positions when `drive`, published as live sync.
+fn close_window(fixture: &Fixture, seq: i64, start: i64, drive: bool) {
+    let vehicle = fixture.binding.vehicle_id.to_string();
+    let mut connection = fixture.store.open().expect("catalogue");
+    let transaction = connection.transaction().expect("transaction");
+    transaction
+        .execute(
+            "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+             VALUES (?1, ?2, ?3, ?4, '[]', 'handback')",
+            params![seq, format!("grant-{seq}"), start, start + HOUR],
+        )
+        .expect("coverage");
+    if drive {
+        let projected = project_vehicle(&successor_history(), CAR).expect("projection");
+        let mut hub_drive = projected.snapshot.drives[0].clone();
+        hub_drive.id = HUB_ID_BASE + 100 + seq;
+        hub_drive.start_date_ms = start + 10 * MINUTE;
+        hub_drive.end_date_ms = start + 20 * MINUTE;
+        let journal = |entity: &str, id: i64, json: &str| {
+            let revision: i64 = transaction
+                .query_row(
+                    "INSERT INTO sync_mutation_sequences(vehicle_id, next_revision) VALUES (?1, 2)
+                     ON CONFLICT(vehicle_id) DO UPDATE SET next_revision = next_revision + 1
+                     RETURNING next_revision - 1",
+                    params![vehicle.as_str()],
+                    |row| row.get(0),
+                )
+                .expect("revision");
+            transaction
+                .execute(
+                    "INSERT INTO sync_mutations(vehicle_id, revision, entity, entity_id, car_id,
+                        operation, payload_json, published, claimed_until_ms)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'upsert', ?6, 0, 0)",
+                    params![vehicle.as_str(), revision, entity, id, CAR, json],
+                )
+                .expect("mutation");
+        };
+        let json = serde_json::to_string(&hub_drive).expect("drive json");
+        transaction
+            .execute(
+                "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![vehicle.as_str(), hub_drive.id, CAR, json],
+            )
+            .expect("Hub drive");
+        journal("drive", hub_drive.id, &json);
+        for (n, at) in [(1, 12 * MINUTE), (2, 18 * MINUTE)] {
+            let id = HUB_ID_BASE + 1_000 + seq * 10 + n;
+            let mut position = crate::lifecycle::imported_position(&source_position(
+                id,
+                Some(hub_drive.id),
+                start + at,
+            ));
+            position.drive_id = Some(hub_drive.id);
+            let json = serde_json::to_string(&position).expect("position json");
+            transaction
+                .execute(
+                    "INSERT INTO materialised_positions(vehicle_id, position_id, drive_id, car_id, position_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![vehicle.as_str(), position.id, position.drive_id, CAR, json],
+                )
+                .expect("Hub position");
+            journal("position", position.id, &json);
+        }
+    }
+    transaction.commit().expect("commit");
+    if drive {
+        publish_sync_mutations_ahead_of_packs(
+            &fixture.store,
+            &fixture.gate,
+            &fixture.cursor_key,
+            fixture.binding.vehicle_id,
+        )
+        .expect("live sync of the window");
+    }
+}
+
+fn pack_count(store: &HubStore) -> usize {
+    std::fs::read_dir(store.packs_dir().join("sha256")).map_or(0, |entries| entries.count())
+}
+
+/// M08-T19: a store whose head was planned once by a handback, a closed
+/// window that refuses it, and the counters of full stage and decoded-pack
+/// integrity checks reset.
+fn planned_then_refused(drive: bool) -> (Fixture, tempfile::TempDir, Paired) {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_kept(&fixture, root.path(), "base", &base_with_positions(), None);
+    let env = paired(&fixture);
+    collect(&fixture);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    close_window(&fixture, 2, T + 2 * HOUR, drive);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the window's close refuses the head"
+    );
+    reset_check_counters();
+    (fixture, root, env)
+}
+
+/// The base drive with two source positions inside it and one, without a
+/// drive, three hours before it.
+fn base_with_positions() -> SourceDbHistory {
+    let mut history = base_history();
+    history.positions = vec![
+        source_position(1001, Some(10), T - 5 * HOUR + 2 * MINUTE),
+        source_position(1002, Some(10), T - 5 * HOUR + 8 * MINUTE),
+        source_position(1003, None, T - 8 * HOUR),
+    ];
+    history
+}
+
+/// M08-T19: a window whose coverage meets the instants of the kept stage's
+/// source positions changes what the plan does with them, so its handback
+/// plans in full and publishes the head without the covered position.
+#[test]
+fn handback_coverage_over_source_positions_plans_in_full() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 0);
+    let head = current_snapshot(&fixture);
+    {
+        let connection = fixture.store.open().expect("catalogue");
+        connection
+            .execute(
+                "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+                 VALUES (3, 'grant-3', ?1, ?2, '[]', 'handback')",
+                params![T - 8 * HOUR - MINUTE, T - 8 * HOUR + MINUTE],
+            )
+            .expect("coverage over a source position");
+    }
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    assert_eq!(stage_checks(), 1, "planned in full");
+    assert_ne!(current_snapshot(&fixture), head);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served");
+    assert!(!fresh.mirror.positions.contains_key(&1003), "the covered position goes");
+    assert!(fresh.mirror.positions.contains_key(&1001), "the others stay");
+}
+
+fn reset_check_counters() {
+    crate::hub_pack::take_verifications();
+}
+
+/// Full integrity checks of stages since the last reset.
+fn stage_checks() -> usize {
+    crate::hub_pack::verifications()
+        .iter()
+        .filter(|verification| verification.place == "stage-integrity")
+        .count()
+}
+
+/// The content digests of a head's packs, in order.
+fn head_packs(store: &HubStore, snapshot: Uuid) -> Vec<String> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare("SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal")
+        .expect("packs");
+    statement
+        .query_map(params![snapshot.to_string()], |row| row.get(0))
+        .expect("packs")
+        .collect::<Result<_, _>>()
+        .expect("packs")
+}
+
+/// M08-T19 (S2): the run made exactly one stage integrity check, of the
+/// planned copy (not the kept stage), after that copy's last write, and a
+/// publication that wrote packs wrote them from that same copy after it.
+fn assert_one_check_of_the_planned_copy(fixture: &Fixture) {
+    let log = crate::hub_pack::verifications();
+    let kept = kept_stage_path(&fixture.store, fixture.binding.vehicle_id).display().to_string();
+    let checks: Vec<usize> = log
+        .iter()
+        .enumerate()
+        .filter(|(_, verification)| verification.place == "stage-integrity")
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(checks.len(), 1, "one stage check: {log:#?}");
+    let at = checks[0];
+    let copy = &log[at].object;
+    assert!(log[at].ok);
+    assert_ne!(copy, &kept, "the kept stage is not the checked one");
+    let last_write = log
+        .iter()
+        .rposition(|verification| verification.place == "stage-write" && &verification.object == copy)
+        .expect("the checked stage is the planned copy");
+    assert!(last_write < at, "checked after its last write: {log:#?}");
+    for (emitted, verification) in log.iter().enumerate() {
+        if verification.place == "stage-emit" {
+            assert_eq!(&verification.object, copy, "packs are written from the checked copy");
+            assert!(at < emitted);
+        }
+    }
+}
+
+/// Every place that authenticates a pack's bytes: the authenticated decode,
+/// the protocol's reader check and the file digests against the catalogue.
+const PACK_AUTHENTICATIONS: [&str; 5] = [
+    "pack-decode",
+    "pack-reader",
+    "admission-pack-digest",
+    "retained-pack-digest",
+    "delta-pack-digest",
+];
+
+/// M08-T19 (S2): the changed set's comparison authenticated every pack of
+/// both heads exactly once, in the read that decodes it, with no SQLite
+/// check of a decoded pack; its context copy authenticated each target pack
+/// it read once, in that read. Every authentication of either phase counts,
+/// so a second verification of a pack in the same phase fails.
+fn assert_each_compared_pack_authenticated_once(prior: &[String], target: &[String]) {
+    let log = crate::hub_pack::verifications();
+    let at = |place: &str| log.iter().position(|verification| verification.place == place);
+    let compare = at("compare").expect("a comparison ran");
+    let context = at("context-copy").unwrap_or(log.len());
+    let context_end = at("context-copy-end").unwrap_or(log.len());
+    assert!(compare < context && context <= context_end, "{log:#?}");
+    let authentications = |phase: &[crate::hub_pack::Verification]| -> Vec<crate::hub_pack::Verification> {
+        phase
+            .iter()
+            .filter(|verification| PACK_AUTHENTICATIONS.contains(&verification.place))
+            .cloned()
+            .collect()
+    };
+    let compared = authentications(&log[compare..context]);
+    assert!(
+        compared.iter().all(|verification| verification.ok && verification.place == "pack-decode"),
+        "the comparison authenticates only in its decodes: {log:#?}"
+    );
+    assert!(
+        !log.iter().any(|verification| verification.place == "pack-sqlite-integrity"
+            && verification.object == "scan"),
+        "no decoded pack is SQLite-checked again"
+    );
+    for pack in prior.iter().chain(target) {
+        assert_eq!(
+            compared.iter().filter(|verification| &verification.object == pack).count(),
+            1,
+            "pack {pack} is authenticated once by the comparison: {log:#?}"
+        );
+    }
+    assert_eq!(compared.len(), prior.len() + target.len(), "{log:#?}");
+    let mut copied = std::collections::BTreeSet::new();
+    for verification in authentications(&log[context..context_end]) {
+        assert!(verification.ok);
+        assert_eq!(verification.place, "pack-decode", "the context copy authenticates in its decodes: {log:#?}");
+        assert!(target.contains(&verification.object), "the context copy reads target packs");
+        assert!(copied.insert(verification.object.clone()), "each read once: {log:#?}");
+    }
+}
+
+fn current_snapshot(fixture: &Fixture) -> Uuid {
+    fixture
+        .store
+        .physical_v3_current_snapshot_id(fixture.binding.vehicle_id)
+        .expect("head")
+        .expect("a head")
+}
+
+/// M08-T19: a window that adds no row changes no input of the head's plan:
+/// the handback serves the same head under the new coverage without opening
+/// the kept stage, reading a pack or writing one, and a client reads it.
+#[test]
+fn handback_unchanged_plan_serves_the_head_again_without_planning() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    let head = current_snapshot(&fixture);
+    let packs = pack_count(&fixture.store);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(
+        crate::hub_pack::verifications(),
+        Vec::new(),
+        "no stage is checked or written and no pack is authenticated, decoded or written"
+    );
+    assert_eq!(pack_count(&fixture.store), packs, "no pack is written");
+    assert_eq!(current_snapshot(&fixture), head, "the same head");
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served under the new coverage");
+    assert!(fresh.mirror.drives.contains_key(&10));
+    assert_eq!(handback(&fixture), HandbackPhysicalOutcome::Current);
+}
+
+/// M08-T19: the store of an earlier build holds no recorded plan inputs,
+/// so its first handback plans in full (verifying the kept stage once) and
+/// records them; the handback after the next empty window is the early one.
+#[test]
+fn handback_without_recorded_inputs_plans_once_in_full_then_early() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    fixture
+        .store
+        .record_physical_v3_handback_plan(&fixture.gate, fixture.binding.vehicle_id, None)
+        .expect("forget the inputs, as a store the earlier build planned");
+    let head = current_snapshot(&fixture);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_one_check_of_the_planned_copy(&fixture);
+    assert_eq!(current_snapshot(&fixture), head);
+    assert!(
+        fixture
+            .store
+            .physical_v3_handback_plan(fixture.binding.vehicle_id)
+            .expect("record")
+            .is_some(),
+        "the full path records the inputs"
+    );
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+
+    close_window(&fixture, 3, T + 4 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(stage_checks(), 0, "the next handback is the early one");
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+}
+
+/// M08-T19 (S5): a full handback whose optional month preparation fails
+/// records its inputs as unprepared. With the prepared map then missing, the
+/// next empty window's early answer serves the head and runs the
+/// preparation alone (the kept stage copied, planned and checked once, no
+/// pack of the head hashed, nothing published), which records it prepared;
+/// the handback after that is early with no work at all.
+#[test]
+fn handback_early_answer_prepares_a_failed_month_alone() {
+    let (fixture, _root, env) = planned_then_refused(false);
+    let vehicle = fixture.binding.vehicle_id;
+    let head = current_snapshot(&fixture);
+    fixture
+        .store
+        .record_physical_v3_handback_plan(&fixture.gate, vehicle, None)
+        .expect("forget the inputs, so the next handback is a full one");
+    crate::physical_publication::FAIL_NEXT_PREPARATION.with(|fail| fail.set(true));
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    let recorded = fixture.store.physical_v3_handback_plan(vehicle).expect("record").expect("inputs");
+    assert!(!recorded.prepared, "the failed preparation is recorded as such");
+    let prepared_months = || -> i64 {
+        fixture
+            .store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT COUNT(*) FROM prepared_map_months WHERE vehicle_id = ?1",
+                [vehicle.to_string()],
+                |row| row.get(0),
+            )
+            .expect("prepared months")
+    };
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .execute("DELETE FROM prepared_map_months WHERE vehicle_id = ?1", [vehicle.to_string()])
+        .expect("the prepared map is missing");
+    assert_eq!(prepared_months(), 0);
+
+    close_window(&fixture, 3, T + 4 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(current_snapshot(&fixture), head);
+    assert_one_check_of_the_planned_copy(&fixture);
+    let log = crate::hub_pack::verifications();
+    assert!(
+        !log.iter().any(|verification| verification.place.ends_with("pack-digest")
+            || verification.place == "stage-emit"
+            || verification.place == "pack-decode"),
+        "the preparation alone hashes no pack of the head and publishes nothing: {log:#?}"
+    );
+    assert!(prepared_months() > 0, "the month is prepared");
+    assert!(
+        fixture.store.physical_v3_handback_plan(vehicle).expect("record").expect("inputs").prepared,
+        "and recorded so"
+    );
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+
+    close_window(&fixture, 4, T + 6 * HOUR, false);
+    reset_check_counters();
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Unchanged));
+    assert_eq!(crate::hub_pack::verifications(), Vec::new(), "early, with nothing to prepare");
+    PhysicalClient::bootstrap(&env, &fixture).expect("served");
+}
+
+/// M08-T19: a window with a drive changes the Hub rows the plan writes, so
+/// the handback plans in full: one integrity check, of the planned copy the
+/// packs are written from, after its last write; each pack the changed set
+/// reads is authenticated once, in the read that decodes it, and not
+/// SQLite-checked again. The client reads the drive.
+#[test]
+fn handback_with_a_new_drive_plans_in_full_verifying_once() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    let prior = head_packs(&fixture.store, head);
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    assert!(current_head_has_a_changed_set(&fixture), "a changed set is admitted");
+    assert_one_check_of_the_planned_copy(&fixture);
+    assert_ne!(current_snapshot(&fixture), head);
+    let target = head_packs(&fixture.store, current_snapshot(&fixture));
+    assert_each_compared_pack_authenticated_once(&prior, &target);
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the new head is served");
+    assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
+}
+
+/// M08-T19: a kept stage whose pages SQLite's integrity check refuses, its
+/// rows intact, is still refused by a handback that plans in full; without
+/// the one remaining check its rows would match the record and publish.
+#[test]
+fn handback_refuses_a_damaged_kept_stage() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
+    let connection = Connection::open(&path).expect("kept stage");
+    connection
+        .execute_batch(
+            "PRAGMA writable_schema = ON;
+             DELETE FROM sqlite_schema WHERE name = 'stage_charge_samples_by_process';
+             PRAGMA writable_schema = OFF;",
+        )
+        .expect("orphan an index's pages");
+    drop(connection);
+    let head = current_snapshot(&fixture);
+    match handback(&fixture) {
+        HandbackPhysicalOutcome::Withheld(reason) => {
+            assert!(reason.contains("the kept stage"), "{reason}");
+        }
+        other => panic!("a damaged kept stage was planned: {other:?}"),
+    }
+    assert_eq!(current_snapshot(&fixture), head);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
+/// M08-T19 (B1): the kept stage passes its recorded digest and is copied;
+/// then only the copy's charge-sample index disagrees with its table (source
+/// sample 2101 filed under process 99, its row unchanged). The emission reads
+/// samples through that index, so without a check of the copy the new head
+/// would leave the sample out. The run's one integrity check is of the
+/// planned copy, so the handback is refused and nothing is published.
+#[test]
+fn handback_refuses_a_working_copy_whose_index_disagrees_with_its_table() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_kept(&fixture, root.path(), "base", &base_history(), None);
+    let history = charge_history(
+        vec![source_process(21, T - 2 * HOUR, T - 2 * HOUR + 20 * MINUTE)],
+        vec![source_sample(2101, 21, T - 2 * HOUR + 5 * MINUTE)],
+    );
+    import_charges(&fixture, root.path(), "before-window", &history, T - HOUR);
+    let env = paired(&fixture);
+    let hub_charge = HUB_ID_BASE + 21;
+    hub_charges(
+        &fixture,
+        (1, T, T + HOUR),
+        &[(hub_charge, T, T + 50 * MINUTE)],
+        &[(HUB_ID_BASE + 21, hub_charge, T + 10 * MINUTE)],
+        &[(HUB_ID_BASE + 2100, T + MINUTE)],
+    );
+    let head = current_snapshot(&fixture);
+    let packs = pack_count(&fixture.store);
+    crate::source_db_stage::AFTER_SEALED_COPY
+        .with(|hook| *hook.borrow_mut() = Some(Box::new(misfile_sample_2101_in_the_index)));
+    match handback(&fixture) {
+        HandbackPhysicalOutcome::Withheld(reason) => {
+            assert!(reason.contains("the planned copy of the kept stage"), "{reason}");
+        }
+        other => panic!("a working copy with a disagreeing index was published: {other:?}"),
+    }
+    assert!(
+        crate::source_db_stage::AFTER_SEALED_COPY.with(|hook| hook.borrow().is_none()),
+        "the damage was made to the copy"
+    );
+    assert_eq!(current_snapshot(&fixture), head, "nothing is published");
+    assert_eq!(pack_count(&fixture.store), packs, "no pack is written");
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+    // The kept stage itself is sound: the next handback publishes the sample.
+    assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("served");
+    assert_eq!(fresh.mirror.samples.get(&2101), Some(&(21, T - 2 * HOUR + 5 * MINUTE)));
+}
+
+/// Gives source sample 2101 the index key of process 99 while its row keeps
+/// process 21: the row is changed with the index, then changed back with the
+/// index hidden from SQLite, so only the index holds the wrong key.
+fn misfile_sample_2101_in_the_index(path: &Path) {
+    const INDEX: &str = "stage_charge_samples_by_process";
+    let connection = Connection::open(path).expect("working copy");
+    let original: String = connection
+        .query_row(
+            "SELECT row_json FROM stage_rows WHERE table_name = 'charges' AND source_id = 2101",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sample 2101");
+    connection
+        .execute(
+            "UPDATE stage_rows SET row_json = json_set(?1, '$.charging_process_id', 99)
+              WHERE table_name = 'charges' AND source_id = 2101",
+            [&original],
+        )
+        .expect("file the sample under process 99");
+    let (root_page, sql): (i64, String) = connection
+        .query_row(
+            "SELECT rootpage, sql FROM sqlite_schema WHERE name = ?1",
+            [INDEX],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the index");
+    connection
+        .execute_batch(&format!(
+            "PRAGMA writable_schema = ON;
+             DELETE FROM sqlite_schema WHERE name = '{INDEX}';
+             PRAGMA writable_schema = OFF;"
+        ))
+        .expect("hide the index");
+    drop(connection);
+    let connection = Connection::open(path).expect("working copy without the index");
+    connection
+        .execute(
+            "UPDATE stage_rows SET row_json = ?1 WHERE table_name = 'charges' AND source_id = 2101",
+            [&original],
+        )
+        .expect("the row as it was");
+    connection.execute_batch("PRAGMA writable_schema = ON;").expect("writable schema");
+    connection
+        .execute(
+            "INSERT INTO sqlite_schema(type, name, tbl_name, rootpage, sql)
+             VALUES ('index', ?1, 'stage_rows', ?2, ?3)",
+            params![INDEX, root_page, sql],
+        )
+        .expect("the index back");
+    connection.execute_batch("PRAGMA writable_schema = OFF;").expect("schema");
+    drop(connection);
+    let connection = Connection::open(path).expect("working copy");
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .expect("integrity check");
+    assert_ne!(integrity, "ok", "the index disagrees with its table");
+    let row: String = connection
+        .query_row(
+            "SELECT row_json FROM stage_rows WHERE table_name = 'charges' AND source_id = 2101",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sample 2101");
+    assert_eq!(row, original, "the table row is unchanged");
+}
+
+/// M08-T19: a kept stage whose rows no longer have the recorded content
+/// digest (its SQLite intact, its accounting unchanged) is refused.
+#[test]
+fn handback_refuses_a_kept_stage_that_differs_from_its_record() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
+    let connection = Connection::open(&path).expect("kept stage");
+    let changed = connection
+        .execute(
+            "UPDATE stage_rows SET row_json = json_set(row_json, '$.speed_max', 51)
+              WHERE table_name = 'drives' AND source_id = 10",
+            [],
+        )
+        .expect("change a row");
+    assert_eq!(changed, 1);
+    drop(connection);
+    assert_eq!(
+        handback(&fixture),
+        HandbackPhysicalOutcome::Withheld("the kept stage differs from its record".into())
+    );
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
+/// M08-T19: a pack of the current head whose bytes changed (same length)
+/// fails the first state lookup's digest check of that head, before any
+/// emission or comparison and as the last thing the run does; nothing is
+/// published.
+#[test]
+fn handback_refuses_a_damaged_pack_of_the_current_head() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    let sha256: String = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal LIMIT 1",
+            params![head.to_string()],
+            |row| row.get(0),
+        )
+        .expect("a pack of the head");
+    let path = fixture
+        .store
+        .packs_dir()
+        .join("sha256")
+        .join(format!("{sha256}.sqlite.zst"));
+    let mut bytes = std::fs::read(&path).expect("pack");
+    let middle = bytes.len() / 2;
+    bytes[middle] ^= 0x55;
+    let permissions = std::fs::metadata(&path).expect("pack metadata").permissions();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("writable");
+    }
+    std::fs::write(&path, &bytes).expect("damage the pack");
+    std::fs::set_permissions(&path, permissions).expect("restore permissions");
+    let damaged = sha256.clone();
+    reset_check_counters();
+    let result =
+        publish_physical_after_handback(&fixture.store, &fixture.cursor_key, &fixture.gate);
+    assert!(
+        matches!(result, Err(SourceDbImportError::PhysicalPublication(
+            crate::physical_publication::SourceDbPhysicalPublicationError::Store(
+                crate::db::StoreError::PhysicalV3AdmissionConflict
+            )
+        ))),
+        "a damaged pack of the current head is refused: {result:?}"
+    );
+    // The check this test names refused it: the first state lookup, before
+    // any emission or comparison, hashed the damaged pack first and failed,
+    // and nothing ran after it. Whether the damaged bytes would decompress
+    // does not matter: no later reader runs.
+    let log = crate::hub_pack::verifications();
+    let failed: Vec<_> = log.iter().filter(|verification| !verification.ok).collect();
+    assert_eq!(failed.len(), 1, "{log:#?}");
+    assert_eq!(failed[0].place, "admission-pack-digest");
+    assert_eq!(failed[0].object, damaged);
+    let first_hash = log
+        .iter()
+        .position(|verification| verification.place == "admission-pack-digest" && verification.object == damaged);
+    assert_eq!(first_hash, Some(log.len() - 1), "the first hash of that pack refused it, last: {log:#?}");
+    assert!(
+        !log.iter().any(|verification| matches!(
+            verification.place,
+            "stage-emit" | "compare" | "context-copy" | "pack-decode" | "pack-reader"
+        )),
+        "no emission, comparison or pack read precedes the refusal: {log:#?}"
+    );
+    assert_eq!(current_snapshot(&fixture), head, "nothing is published");
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE)
+    );
+}
+
+/// Whether the vehicle's current head was admitted with a changed set from
+/// its prior head.
+fn current_head_has_a_changed_set(fixture: &Fixture) -> bool {
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM physical_v3_delta_transitions AS transition
+                   JOIN pending_physical_v3_admissions AS head
+                     ON head.receipt_id = transition.target_receipt_id
+                  WHERE head.vehicle_id = ?1)",
+            [fixture.binding.vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("changed sets")
+}
+
+/// The path and bytes of a pack of `snapshot` that holds a drive.
+fn pack_with_a_drive(fixture: &Fixture, snapshot: Uuid) -> (std::path::PathBuf, Vec<u8>) {
+    let digests: Vec<String> = {
+        let connection = fixture.store.open().expect("catalogue");
+        let mut statement = connection
+            .prepare("SELECT sha256 FROM pending_physical_v3_packs WHERE snapshot_id = ?1 ORDER BY ordinal")
+            .expect("packs");
+        statement
+            .query_map(params![snapshot.to_string()], |row| row.get(0))
+            .expect("packs")
+            .collect::<Result<_, _>>()
+            .expect("packs")
+    };
+    for sha256 in digests {
+        let path = fixture.store.packs_dir().join("sha256").join(format!("{sha256}.sqlite.zst"));
+        let bytes = std::fs::read(&path).expect("pack");
+        let decoded = zstd::stream::decode_all(&bytes[..]).expect("decoded pack");
+        let scratch = crate::private_tempdir().expect("scratch");
+        let file = scratch.path().join("pack.sqlite");
+        std::fs::write(&file, &decoded).expect("decoded pack");
+        let drives: i64 = Connection::open(&file)
+            .expect("pack")
+            .query_row("SELECT COUNT(*) FROM drives", [], |row| row.get(0))
+            .expect("drives");
+        if drives > 0 {
+            return (path, bytes);
+        }
+    }
+    panic!("no pack of the head holds a drive");
+}
+
+/// A valid pack of the same length as `original` whose drives have another
+/// `speed_max`: re-encoded, then padded with a zstd skippable frame.
+fn same_length_variant(original: &[u8]) -> Vec<u8> {
+    let decoded = zstd::stream::decode_all(original).expect("decoded pack");
+    let scratch = crate::private_tempdir().expect("scratch");
+    let file = scratch.path().join("variant.sqlite");
+    std::fs::write(&file, &decoded).expect("decoded pack");
+    let changed = Connection::open(&file)
+        .expect("pack")
+        .execute("UPDATE drives SET speed_max = COALESCE(speed_max, 0) + 7", [])
+        .expect("another speed");
+    assert!(changed > 0);
+    let changed = std::fs::read(&file).expect("changed pack");
+    assert_eq!(changed.len(), decoded.len(), "the decoded length is the manifest's");
+    assert_ne!(changed, decoded);
+    for level in [19, 22, 12, 6, 3, 1] {
+        let mut encoded = zstd::stream::encode_all(&changed[..], level).expect("encoded");
+        if encoded.len() == original.len() {
+            return encoded;
+        }
+        if encoded.len() + 8 <= original.len() {
+            let padding = u32::try_from(original.len() - encoded.len() - 8).expect("padding");
+            encoded.extend_from_slice(&0x184D_2A50_u32.to_le_bytes());
+            encoded.extend_from_slice(&padding.to_le_bytes());
+            encoded.resize(original.len(), 0);
+            assert_eq!(zstd::stream::decode_all(&encoded[..]).expect("valid zstd"), changed);
+            return encoded;
+        }
+    }
+    panic!("no same-length variant of the pack");
+}
+
+/// M08-T19 (B2): the state lookup hashes the prior head's packs from their
+/// files and they pass; then the comparison's read of one of them sees other
+/// bytes (same length, a valid pack whose drives have another speed). The
+/// pack is authenticated over the bytes decoded, so that read is refused: no
+/// changed set is admitted, the signed full replacement is published, and a
+/// fresh client reads the true rows. Without it the changed set would be
+/// built from bytes nobody authenticated.
+#[test]
+fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
+    let (fixture, _root, env) = planned_then_refused(true);
+    let head = current_snapshot(&fixture);
+    let (path, original) = pack_with_a_drive(&fixture, head);
+    let view = same_length_variant(&original);
+    assert_eq!(view.len(), original.len());
+    assert_ne!(view, original);
+    let watched = path.clone();
+    crate::hub_pack::PACK_DECODE_VIEW.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |at: &Path| (at == watched).then(|| view.clone())));
+    });
+    let sha256 = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".sqlite.zst"))
+        .expect("pack name")
+        .to_owned();
+    reset_check_counters();
+    let outcome = handback(&fixture);
+    crate::hub_pack::PACK_DECODE_VIEW.with(|hook| *hook.borrow_mut() = None);
+    assert_eq!(outcome, published(PhysicalV3PublicationKind::Rotation));
+    let log = crate::hub_pack::verifications();
+    let hashed = log
+        .iter()
+        .position(|verification| verification.place == "admission-pack-digest" && verification.object == sha256)
+        .expect("the state lookup hashed the path");
+    assert!(log[hashed].ok, "the path hashed correctly");
+    let refused = log
+        .iter()
+        .position(|verification| verification.place == "pack-decode" && verification.object == sha256)
+        .expect("the comparison decoded the pack");
+    assert!(hashed < refused && !log[refused].ok, "the decode refused the bytes it read: {log:#?}");
+    assert!(
+        !current_head_has_a_changed_set(&fixture),
+        "the changed set read from unauthenticated bytes is refused"
+    );
+    assert_eq!(std::fs::read(&path).expect("pack"), original, "the file itself is sound");
+    let fresh = PhysicalClient::bootstrap(&env, &fixture).expect("the full replacement is served");
+    assert!(fresh.mirror.drives.contains_key(&10));
+    assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
+}
+
+/// M08-T19 lab: the cost of one handback publication on a synthetic
+/// imported history, built from this module's fixtures ([`fixture`],
+/// [`publish_kept`], [`collect`], [`history_stage_unsealed`]). Two
+/// processes, so the handback's peak footprint is its own: `build` writes
+/// the store, `measure` (run under `/usr/bin/time -l`) opens it and runs
+/// one handback. Ignored by default: run `m08_t19_lab_build`, then
+/// `m08_t19_lab_measure` with `--ignored`, both given `LAB_DIR` (and the
+/// sizes `build` reads); `measure` prints one `M08T19` line with the outcome,
+/// CPU and wall seconds, packs written and whether the head was served.
+mod m08_t19_lab {
+    use super::*;
+    use crate::source_db_projection::SourceDbPositionPhysicalV2_2;
+
+    const CURSOR: [u8; 32] = [41; 32];
+
+    fn env_i64(name: &str) -> i64 {
+        std::env::var(name).expect(name).parse().expect(name)
+    }
+
+    fn lab_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(std::env::var("LAB_DIR").expect("LAB_DIR"))
+    }
+
+    /// The source history: `drives` drives of ten minutes, half an hour
+    /// apart, ending five hours before the first window, each with
+    /// `per_drive` positions; returned as the sealed stage and the history
+    /// of its drives (the projection's source sessions).
+    fn lab_stage(root: &Path, drives: i64, per_drive: i64) -> (OwnedSourceDbStage, SourceDbHistory) {
+        let first = T - 5 * HOUR - drives * 30 * MINUTE;
+        let rows: Vec<_> = (0..drives)
+            .map(|k| {
+                let start = first + k * 30 * MINUTE;
+                source_drive(10_000 + k, start, start + 10 * MINUTE)
+            })
+            .collect();
+        let history = history(rows, vec![]);
+        let mut stage = history_stage_unsealed(
+            root,
+            "lab",
+            &history,
+            crate::source_db_stage::SourceDbStageLimits {
+                max_rows: 5_000_000,
+                max_stage_bytes: 4 * 1024 * 1024 * 1024,
+                minimum_free_bytes: 0,
+            },
+        );
+        let step = (10 * MINUTE) / per_drive.max(1);
+        let mut page = Vec::with_capacity(10_000);
+        let mut flush = |page: &mut Vec<(i64, SourceDbPositionPhysicalV2_2)>| {
+            stage
+                .insert_page(SourceDbStageTable::Positions, page.drain(..))
+                .expect("positions");
+        };
+        for k in 0..drives {
+            let start = first + k * 30 * MINUTE;
+            for j in 0..per_drive {
+                let id = 1_000_000 + k * per_drive + j;
+                let row = SourceDbPositionPhysicalV2_2 {
+                    id: i32::try_from(id).expect("position id"),
+                    car_id: 1,
+                    drive_id: Some(i32::try_from(10_000 + k).expect("drive id")),
+                    date_pg_us: (start + j * step) * 1_000 - PG_EPOCH_US,
+                    latitude_e6: ProjectionFixedNumericV2_2::Finite(47_500_000 + j * 10),
+                    longitude_e6: ProjectionFixedNumericV2_2::Finite(19_000_000 + k * 10),
+                    elevation: Some(120),
+                    speed: Some(50),
+                    power: Some(12),
+                    odometer: None,
+                    ideal_battery_range_km_e2: None,
+                    est_battery_range_km_e2: None,
+                    rated_battery_range_km_e2: None,
+                    battery_level: Some(70),
+                    usable_battery_level: None,
+                    battery_heater: None,
+                    battery_heater_on: None,
+                    battery_heater_no_power: None,
+                    outside_temp_e1: None,
+                    inside_temp_e1: None,
+                    fan_status: None,
+                    driver_temp_setting_e1: None,
+                    passenger_temp_setting_e1: None,
+                    is_climate_on: None,
+                    is_rear_defroster_on: None,
+                    is_front_defroster_on: None,
+                    tpms_pressure_fl_e1: None,
+                    tpms_pressure_fr_e1: None,
+                    tpms_pressure_rl_e1: None,
+                    tpms_pressure_rr_e1: None,
+                };
+                page.push((id, row));
+                if page.len() == 10_000 {
+                    flush(&mut page);
+                }
+            }
+        }
+        flush(&mut page);
+        stage.seal().expect("seal");
+        (OwnedSourceDbStage::new(stage), history)
+    }
+
+
+    /// LAB_DIR, LAB_DRIVES, LAB_PER_DRIVE, LAB_SCENARIO (`unchanged` or
+    /// `drive`): an import of the history, a first window with drives and
+    /// its handback (the head is planned), then a second window whose close
+    /// refuses the head. The store is left for `measure`.
+    #[test]
+    #[ignore = "M08-T19 lab measurement, run by hand"]
+    fn m08_t19_lab_build() {
+        let out = lab_dir();
+        let drive = match std::env::var("LAB_SCENARIO").expect("LAB_SCENARIO").as_str() {
+            "unchanged" => false,
+            "drive" => true,
+            other => panic!("LAB_SCENARIO {other}"),
+        };
+        let fixture = fixture();
+        let root = crate::private_tempdir().expect("stage root");
+        let (stage, history) =
+            lab_stage(root.path(), env_i64("LAB_DRIVES"), env_i64("LAB_PER_DRIVE"));
+        let projected = project_vehicle(&history, CAR).expect("projection");
+        let first = publish_physical_route(
+            &fixture.store,
+            &fixture.cursor_key,
+            fixture.binding.clone(),
+            Some(stage),
+            &fixture.gate,
+            None,
+            Some((&projected.snapshot.drives, &projected.snapshot.charges)),
+        )
+        .expect("physical publication")
+        .expect("physical head");
+        assert_eq!(first.kind, PhysicalV3PublicationKind::FirstHead);
+        {
+            let vehicle = fixture.binding.vehicle_id.to_string();
+            let mut connection = fixture.store.open().expect("catalogue");
+            let transaction = connection.transaction().expect("transaction");
+            for drive in &projected.snapshot.drives {
+                transaction
+                    .execute(
+                        "INSERT OR REPLACE INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            vehicle.as_str(),
+                            drive.id,
+                            CAR,
+                            serde_json::to_string(drive).expect("drive json")
+                        ],
+                    )
+                    .expect("imported drive");
+            }
+            transaction.commit().expect("commit");
+        }
+        collect(&fixture);
+        assert_eq!(handback(&fixture), published(PhysicalV3PublicationKind::Rotation));
+        close_window(&fixture, 2, T + 2 * HOUR, drive);
+        assert_eq!(
+            fixture
+                .store
+                .physical_v3_current_head_served(fixture.binding.vehicle_id)
+                .expect("served"),
+            Some(false),
+            "the second window's close refuses the head"
+        );
+        std::fs::create_dir_all(&out).expect("lab dir");
+        std::fs::write(
+            out.join("store"),
+            fixture._temporary.path().to_str().expect("utf-8 path"),
+        )
+        .expect("store path");
+        std::fs::write(out.join("vehicle"), fixture.binding.vehicle_id.to_string()).expect("vehicle");
+        // The store outlives this process for `measure`.
+        std::mem::forget(fixture);
+    }
+
+    /// LAB_DIR from `build`: one handback on the thread the service names,
+    /// with its process CPU time, wall time and packs written.
+    #[test]
+    #[ignore = "M08-T19 lab measurement, run by hand"]
+    fn m08_t19_lab_measure() {
+        use rustix::time::{ClockId, clock_gettime};
+        let out = lab_dir();
+        let store_dir = std::fs::read_to_string(out.join("store")).expect("store path");
+        let store = HubStore::open_existing(Path::new(&store_dir)).expect("store");
+        let cpu = || {
+            let at = clock_gettime(ClockId::ProcessCPUTime);
+            at.tv_sec as f64 + at.tv_nsec as f64 / 1e9
+        };
+        let packs_before = pack_count(&store);
+        let (cpu_before, wall) = (cpu(), std::time::Instant::now());
+        let outcomes = std::thread::Builder::new()
+            .name("hub-handback-publication".to_owned())
+            .spawn(move || {
+                let gate = store.try_acquire_publication_gate().expect("gate");
+                let outcomes = publish_physical_after_handback(
+                    &store,
+                    &CursorKey::from_bytes(CURSOR),
+                    &gate,
+                )
+                .expect("handback publication");
+                (outcomes, store)
+            })
+            .expect("thread")
+            .join()
+            .expect("handback thread");
+        let (cpu_s, wall_s) = (cpu() - cpu_before, wall.elapsed().as_secs_f64());
+        let (outcomes, store) = outcomes;
+        let line = format!(
+            "M08T19 outcome={:?} cpu_s={cpu_s:.2} wall_s={wall_s:.2} packs_written={} served={:?}\n",
+            outcomes.iter().map(|(_, outcome)| outcome).collect::<Vec<_>>(),
+            pack_count(&store).saturating_sub(packs_before),
+            store.physical_v3_current_head_served(outcomes[0].0).expect("served"),
+        );
+        print!("{line}");
+        std::fs::write(out.join("result"), line).expect("result");
+    }
+}

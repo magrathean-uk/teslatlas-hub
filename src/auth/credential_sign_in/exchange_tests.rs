@@ -27,6 +27,31 @@ fn valid_answer() -> String {
     format!(r#"{{"access_token":"{ACCESS}","refresh_token":"{REFRESH}","id_token":"{ID_TOKEN}","expires_in":28800,"token_type":"Bearer"}}"#)
 }
 
+#[test]
+fn owner_code_request_body_preserves_maximum_material() {
+    let code: String = "synthetic-".chars().chain([char::from(92u8), char::from(34u8)])
+        .cycle().take(MAX_OWNER_CODE_BYTES).collect();
+    let verifier = "~".repeat(128);
+    check_material(&code, &verifier, OWNER_REDIRECT_URI).expect("admitted material");
+    let body = request_body(&code, &verifier).expect("bounded body");
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
+    assert_eq!(json, serde_json::json!({
+        "grant_type": "authorization_code", "client_id": OWNER_CLIENT_ID,
+        "code": code, "code_verifier": verifier, "redirect_uri": OWNER_REDIRECT_URI,
+    }));
+}
+
+#[test]
+fn owner_code_request_body_is_built_at_its_exact_length() {
+    // A body that outgrew its first buffer would have freed an unwiped earlier
+    // allocation holding part of the code or verifier.
+    let code: String = "synthetic-".chars().chain([char::from(92u8), char::from(34u8)])
+        .cycle().take(MAX_OWNER_CODE_BYTES).collect();
+    let verifier = "~".repeat(128);
+    let body = request_body(&code, &verifier).expect("bounded body");
+    assert_eq!(body.capacity(), body.len());
+}
+
 /// How the stub answers one request.
 #[derive(Clone)]
 enum Reply {

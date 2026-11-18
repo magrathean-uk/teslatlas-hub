@@ -1680,16 +1680,16 @@
       "sha256": "1548be789c00fc638deba7bce79ebe828dafe0bb7126c17de3d440eac092be02"
     },
     {
-      "path": "fixtures/delta-v2/v1/packs/sha256/46d12c7c7ddb1b097bb61a60c9c85686e5f9ebd238093b601c268a6edf3cdf92.sqlite.zst",
-      "sha256": "46d12c7c7ddb1b097bb61a60c9c85686e5f9ebd238093b601c268a6edf3cdf92"
+      "path": "fixtures/delta-v2/v1/packs/sha256/f98c469d2ca6e2b22b0e7a39552424f17b7f5821e35ed9004a6b83b546ca9129.sqlite.zst",
+      "sha256": "f98c469d2ca6e2b22b0e7a39552424f17b7f5821e35ed9004a6b83b546ca9129"
     },
     {
-      "path": "fixtures/delta-v2/v1/packs/sha256/f032e30058eb699837fed8d1caa96664fcf02a9a4ac5deb424afc89e84e8aa2b.sqlite.zst",
-      "sha256": "f032e30058eb699837fed8d1caa96664fcf02a9a4ac5deb424afc89e84e8aa2b"
+      "path": "fixtures/delta-v2/v1/packs/sha256/124e5374166bdddff6d7d63f50f01c02f90e70f2ea0190677b3e8dc2b0ffb18c.sqlite.zst",
+      "sha256": "124e5374166bdddff6d7d63f50f01c02f90e70f2ea0190677b3e8dc2b0ffb18c"
     },
     {
-      "path": "fixtures/delta-v2/v1/packs/sha256/f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6.sqlite.zst",
-      "sha256": "f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6"
+      "path": "fixtures/delta-v2/v1/packs/sha256/fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015.sqlite.zst",
+      "sha256": "fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015"
     },
     {
       "path": "fixtures/g2-4/m1/store-f-minus-one.sqlite.zst",
