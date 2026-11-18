@@ -36,7 +36,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     seam_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
-        backup_pack_pins_table(connection)
+        catalogue_v80_tables(connection)
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }
@@ -124,10 +124,11 @@ fn refuse_pre_seam_collected_rows(connection: &Connection) -> Result<(), StoreEr
 /// (`data_recovery::encrypted_backup`) are part of the schema, and so are the
 /// recorded runs of M06-T02's retention (`backup_runs`). Every current store
 /// gains the tables here, in place and once; a store whose first encrypted
-/// backup created them on first use keeps them unchanged. The tables hold
+/// backup created them on first use keeps them unchanged. The backup tables hold
 /// live-host state only: every sealed copy and restored catalogue keeps the
 /// tables and drops their rows.
-const BACKUP_PACK_PINS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS backup_pack_pins (
+/// Polling replay records travel with the current observations they protect.
+const CATALOGUE_V80_TABLES: &str = "CREATE TABLE IF NOT EXISTS backup_pack_pins (
     pin_id TEXT NOT NULL CHECK(length(pin_id) = 36),
     sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
     expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > 0),
@@ -139,14 +140,27 @@ CREATE TABLE IF NOT EXISTS backup_runs (
     file_device TEXT NOT NULL,
     file_inode TEXT NOT NULL,
     started_at_ms INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS poll_observation_replays (
+    vehicle_id TEXT NOT NULL,
+    record_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    observed_at_ms INTEGER NOT NULL,
+    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+    observation_id INTEGER NOT NULL,
+    received_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(vehicle_id, record_type, source_id, observed_at_ms, payload_sha256),
+    FOREIGN KEY(vehicle_id, record_type)
+        REFERENCES current_observations(vehicle_id, record_type) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;";
 
-fn backup_pack_pins_table(connection: &Connection) -> Result<(), StoreError> {
+fn catalogue_v80_tables(connection: &Connection) -> Result<(), StoreError> {
     let present = |connection: &Connection| -> Result<bool, StoreError> {
         connection
             .query_row(
                 "SELECT (SELECT COUNT(*) FROM sqlite_schema
-                 WHERE type = 'table' AND name IN ('backup_pack_pins', 'backup_runs')) = 2",
+                 WHERE type = 'table' AND name IN (
+                     'backup_pack_pins', 'backup_runs', 'poll_observation_replays')) = 3",
                 [],
                 |row| row.get(0),
             )
@@ -160,7 +174,7 @@ fn backup_pack_pins_table(connection: &Connection) -> Result<(), StoreError> {
     admit_writable_catalogue(&transaction)?;
     if schema_version(&transaction)? == SCHEMA_VERSION && !present(&transaction)? {
         transaction
-            .execute_batch(BACKUP_PACK_PINS_SCHEMA)
+            .execute_batch(CATALOGUE_V80_TABLES)
             .map_err(StoreError::Migrate)?;
     }
     transaction.commit().map_err(StoreError::Migrate)

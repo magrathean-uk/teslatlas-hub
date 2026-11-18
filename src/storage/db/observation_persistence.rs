@@ -133,15 +133,35 @@ fn append_observation_in_transaction(
                     | crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
             )
         });
-    if let Some(record_type) = record_type
-        && let Some(current) =
-            current_observation_for_type(transaction, input.vehicle_id, record_type)?
+    let current = match record_type {
+        Some(kind) => current_observation_for_type(transaction, input.vehicle_id, kind)?,
+        None => None,
+    };
+    if let Some(current) = &current
         && (current.observed_at_ms > input.observed_at_ms
             || (current.observed_at_ms == input.observed_at_ms
                 && current.payload_sha256 == payload_sha256))
     {
         return Ok(AppendObservation {
-            observation: current,
+            observation: current.clone(),
+            inserted: false,
+        });
+    }
+    let polling_kind = record_type.filter(|kind| {
+        matches!(*kind, "owner_api_vehicle_data_v1" | "fleet_api_vehicle_data_v1")
+    });
+    if let (Some(kind), Some(current)) = (polling_kind, &current)
+        && current.observed_at_ms == input.observed_at_ms
+        && let Some(observation) = find_poll_replay(
+            transaction,
+            kind,
+            input,
+            payload_sha256,
+            &payload_json,
+        )?
+    {
+        return Ok(AppendObservation {
+            observation,
             inserted: false,
         });
     }
@@ -178,7 +198,7 @@ fn append_observation_in_transaction(
     )?
     .ok_or(StoreError::ObservationMissingAfterInsert)?;
     if let Some(record_type) = record_type {
-        transaction
+        let current_changed = transaction
             .execute(
                 "INSERT INTO current_observations(
                     vehicle_id, record_type, observation_id, source_id,
@@ -208,12 +228,82 @@ fn append_observation_in_transaction(
                     payload_json,
                 ],
             )
-            .map_err(StoreError::AppendObservation)?;
+            .map_err(StoreError::AppendObservation)?
+            == 1;
+        if current_changed
+            && let (Some(kind), Some(current)) = (polling_kind, &current)
+        {
+            update_poll_replays(transaction, kind, current, observation.observed_at_ms)?;
+        }
     }
     Ok(AppendObservation {
         observation,
         inserted,
     })
+}
+
+fn find_poll_replay(
+    transaction: &Transaction<'_>,
+    kind: &str,
+    input: &ObservationInput,
+    digest: Sha256Digest,
+    payload_json: &str,
+) -> Result<Option<ObservationRecord>, StoreError> {
+    transaction
+        .query_row(
+            "SELECT observation_id, source_id, vehicle_id, observed_at_ms,
+                    received_at_ms, payload_sha256, ?6
+               FROM poll_observation_replays
+              WHERE vehicle_id = ?1 AND record_type = ?2 AND source_id = ?3
+                AND observed_at_ms = ?4 AND payload_sha256 = ?5",
+            params![
+                input.vehicle_id.to_string(),
+                kind,
+                input.source_id.to_string(),
+                input.observed_at_ms,
+                digest.as_bytes().as_slice(),
+                payload_json,
+            ],
+            observation_from_row,
+        )
+        .optional()
+        .map_err(StoreError::Query)
+}
+
+/// Keep replay evidence for the current poll time even after raw rows are pruned.
+/// After the watermark moves, the ordinary older-observation check suffices.
+fn update_poll_replays(
+    transaction: &Transaction<'_>,
+    kind: &str,
+    previous: &ObservationRecord,
+    observed_at_ms: i64,
+) -> Result<(), StoreError> {
+    let vehicle = previous.vehicle_id.to_string();
+    if previous.observed_at_ms == observed_at_ms {
+        transaction.execute(
+            "INSERT INTO poll_observation_replays(
+                 vehicle_id, record_type, source_id, observed_at_ms, payload_sha256,
+                 observation_id, received_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT DO NOTHING",
+            params![
+                vehicle,
+                kind,
+                previous.source_id.to_string(),
+                previous.observed_at_ms,
+                previous.payload_sha256.as_bytes().as_slice(),
+                previous.observation_id,
+                previous.received_at_ms,
+            ],
+        )
+    } else {
+        transaction.execute(
+            "DELETE FROM poll_observation_replays WHERE vehicle_id = ?1 AND record_type = ?2",
+            params![vehicle, kind],
+        )
+    }
+    .map_err(StoreError::AppendObservation)?;
+    Ok(())
 }
 
 fn current_observation_for_type(
