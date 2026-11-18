@@ -906,6 +906,19 @@ impl SeamPackPlan {
         self.charges.imported.keys().copied()
     }
 
+    /// The source sessions (drives and charges) packed, kept on the Hub's side
+    /// and withheld from the packs (skipped for another row, or held).
+    pub fn session_counts(&self) -> (u64, u64, u64) {
+        let count = |sessions: &BTreeMap<i64, _>| sessions.len() as u64;
+        let packed = count(&self.drives.imported).saturating_add(count(&self.charges.imported));
+        let kept = (self.drives.kept.len() as u64).saturating_add(self.charges.kept.len() as u64);
+        let withheld = [&self.drives, &self.charges]
+            .iter()
+            .map(|sessions| (sessions.skipped.len() + sessions.held.len()) as u64)
+            .sum();
+        (packed, kept, withheld)
+    }
+
     /// The coverage that decides source children by instant.
     pub fn coverage(&self) -> &HubCoverage {
         &self.coverage

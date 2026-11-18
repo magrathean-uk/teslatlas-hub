@@ -197,7 +197,7 @@ async fn run_macos_migration_prepared(
         store.check_import_source_key(import_source_key, new_import_source)?;
         let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
         let progress = migration_progress_reporter(true);
-        let report = import_direct_migration_snapshot(
+        let (report, summary) = import_direct_migration_snapshot(
             &store,
             &cursor_key,
             &source,
@@ -229,6 +229,8 @@ async fn run_macos_migration_prepared(
                 "snapshotId": report.snapshot_id,
                 "sequence": report.sequence,
                 "cutoverUnsettled": report.cutover_unsettled,
+            "importSummary": summary.to_json(),
+                "importSummary": summary.to_json(),
                 "retryRecommended": report.cutover_unsettled,
                 "sourceNeverMutated": true,
                 "credentialsInspected": false,
@@ -249,7 +251,7 @@ async fn run_macos_migration_prepared(
     if !online_snapshot {
         let initial_progress = migration_progress_reporter(online_snapshot);
         let initial_copy_started = Instant::now();
-        let initial_report = import_direct_migration_snapshot(
+        let (initial_report, _) = import_direct_migration_snapshot(
             &store,
             &cursor_key,
             &source,
@@ -301,7 +303,7 @@ async fn run_macos_migration_prepared(
     // Online mode captures while it remains live. Only history is captured.
     let progress = migration_progress_reporter(online_snapshot);
     let final_copy_started = Instant::now();
-    let report = import_direct_migration_snapshot(
+    let (report, summary) = import_direct_migration_snapshot(
         &store,
         &cursor_key,
         &source,
@@ -398,7 +400,7 @@ async fn import_direct_migration_snapshot(
     limits: tesatlas_hub::source_db_reader::SourceDbReadLimits,
     scope: MigrationCaptureScope,
     progress: SourceDbMigrationProgressReporter,
-) -> Result<SourceDbImportReport, Box<dyn std::error::Error>> {
+) -> Result<(SourceDbImportReport, SourceDbImportSummary), Box<dyn std::error::Error>> {
     tracing::info!(
         host = source.host(),
         port = source.port(),
@@ -439,7 +441,7 @@ async fn import_direct_migration_snapshot(
             .await?
         }
     };
-    Ok(selected.import)
+    Ok((selected.import, selected.summary))
 }
 
 #[cfg(unix)]
