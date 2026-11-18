@@ -1107,3 +1107,23 @@ fn ct59_the_classifiers_answer_the_same_on_the_allow_listed_snapshot() {
         );
     }
 }
+
+#[test]
+fn a_fresh_online_list_recovers_an_install_that_went_stale() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.t0);
+    assert_eq!(core.scheduler.due_vehicles(core.t0), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Updating, false, core.t0);
+
+    let stale_at = core.at(K_UPDATE_STALE.as_secs());
+    assert!(core.scheduler.due_vehicles(stale_at).is_empty());
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Offline);
+
+    let checked_at = stale_at + Duration::from_secs(30);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], checked_at);
+    assert_eq!(core.scheduler.due_vehicles(checked_at), vec![id]);
+}
