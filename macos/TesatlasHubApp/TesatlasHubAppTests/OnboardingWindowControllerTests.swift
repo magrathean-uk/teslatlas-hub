@@ -308,6 +308,69 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(onboarding.windowShouldClose(try XCTUnwrap(onboarding.window)))
     }
 
+    /// DEC-246: the finish step offers address lookup, off by default, names the
+    /// provider and says that positions are sent to it; the answer reaches the file.
+    func testFinishOffersAddressLookupOffByDefaultAndWritesTheAnswer() throws {
+        for ticked in [false, true] {
+            let home = HubTestScratch.directory
+                .appendingPathComponent("tesatlas-hub-address-lookup-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: home) }
+            let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
+            var completions: [HubOnboardingCompletion] = []
+            let onboarding = OnboardingWindowController(controller: controller, initialRoute: .finish,
+                                                        onComplete: { completions.append($0) })
+            let content = try XCTUnwrap(onboarding.window?.contentView)
+            XCTAssertEqual(onboarding.currentRoute, .finish)
+
+            let choice = try XCTUnwrap(view(in: content, identifier: "onboarding.finish.addressLookup") as? NSButton)
+            XCTAssertTrue(choice === onboarding.addressLookupChoiceForTests)
+            XCTAssertEqual(choice.state, .off, "address lookup is offered off")
+            XCTAssertTrue(choice.isEnabled)
+            let disclosure = try XCTUnwrap(view(in: content,
+                                                identifier: "onboarding.finish.addressLookupDisclosure") as? NSTextField)
+            XCTAssertTrue(disclosure.stringValue.contains("OpenStreetMap Nominatim"), disclosure.stringValue)
+            XCTAssertTrue(disclosure.stringValue.contains("latitude and longitude"), disclosure.stringValue)
+            XCTAssertTrue(disclosure.stringValue.contains("no position leaves this Mac"), disclosure.stringValue)
+            XCTAssertTrue(disclosure.stringValue.contains("Settings"), disclosure.stringValue)
+            XCTAssertTrue(labels(in: content).contains { $0.stringValue == "Look up addresses with OpenStreetMap Nominatim" })
+
+            if ticked { choice.performClick(nil) }
+            XCTAssertEqual(choice.state, ticked ? .on : .off)
+            onboarding.continueForTests()
+
+            XCTAssertEqual(completions, [.configured])
+            let config = home.appendingPathComponent("Library/Application Support/Tesatlas Hub/config.toml")
+            let written = try String(contentsOf: config, encoding: .utf8)
+            XCTAssertEqual(HubController.addressLookupEnabled(in: written), ticked, written)
+            XCTAssertEqual(written.contains("endpoint = \"https://nominatim.openstreetmap.org/\""), ticked, written)
+            XCTAssertEqual(controller.addressLookupEnabled, ticked)
+            let mode = try FileManager.default.attributesOfItem(atPath: config.path)[.posixPermissions] as? NSNumber
+            XCTAssertEqual(mode?.intValue, 0o600)
+            onboarding.close()
+        }
+    }
+
+    /// A second visit shows the answer already written, and unticking it turns lookup off.
+    func testFinishShowsTheWrittenAddressLookupAnswer() throws {
+        let home = HubTestScratch.directory
+            .appendingPathComponent("tesatlas-hub-address-lookup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
+        XCTAssertFalse(controller.addressLookupEnabled)
+        XCTAssertTrue(try controller.setAddressLookup(true))
+        var completions: [HubOnboardingCompletion] = []
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .finish,
+                                                    onComplete: { completions.append($0) })
+        let content = try XCTUnwrap(onboarding.window?.contentView)
+        let choice = try XCTUnwrap(view(in: content, identifier: "onboarding.finish.addressLookup") as? NSButton)
+        XCTAssertEqual(choice.state, .on)
+        choice.performClick(nil)
+        onboarding.continueForTests()
+        XCTAssertEqual(completions, [.configured])
+        XCTAssertFalse(controller.addressLookupEnabled)
+        onboarding.close()
+    }
+
     func testLaterOnboardingCanDismissOnlyWhileIdle() throws {
         let onboarding = OnboardingWindowController(
             controller: HubController(environment: ["TESATLAS_HUB_UI_PREVIEW": "1"]),

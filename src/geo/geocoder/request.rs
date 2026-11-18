@@ -23,6 +23,8 @@ const REVERSE_SEGMENT: &str = "reverse";
 const REVERSE_ALIAS_SEGMENT: &str = "reverse.php";
 /// C7 K-FORMAT, K-ZOOM and K-ACCEPT (C7 R8, C7 R10, C7 R13).
 const REVERSE_FORMAT: &str = "jsonv2";
+/// Zoom 18 is building level; the configuration guide and the privacy notice
+/// state this figure, so a change here changes both.
 const REVERSE_ZOOM: &str = "18";
 pub(super) const ACCEPT_JSON: &str = "application/json";
 

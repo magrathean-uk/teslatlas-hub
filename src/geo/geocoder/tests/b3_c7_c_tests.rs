@@ -876,7 +876,11 @@ fn c7_t71_gate() {
         endpoint: Some("https://geo.example.test/".to_owned()),
         ..GeocoderConfig::default()
     };
-    let c0 = GeocoderConfig::default();
+    // The public host, named explicitly: the default configuration has no provider.
+    let c0 = GeocoderConfig {
+        endpoint: Some("https://nominatim.openstreetmap.org/".to_owned()),
+        ..GeocoderConfig::default()
+    };
     let e1 = "https://geo.example.test:443/";
     let t = Instant::now();
     let fresh = || -> SharedLimiter { Arc::new(Mutex::new(None)) };

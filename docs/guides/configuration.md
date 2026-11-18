@@ -593,19 +593,24 @@ route (profile `receiver-v1`, `protocol/profiles/receiver-v1/1.0.0/`).
 
 ## Geocoding and terrain
 
-Address lookup (geocoding) is on by default in the TOML file: `enabled = true`
-and no `endpoint`, which means the public OpenStreetMap Nominatim service at
-`https://nominatim.openstreetmap.org/`. With no endpoint set, lookups go to that
-service, whose usage policy applies:
-<https://operations.osmfoundation.org/policies/nominatim/>. The Mac app, the Debian
-package and the Docker guide's example configuration write `enabled = false`, so
-lookups stay off there until the Mac app's setup step offers the choice or you set
-`enabled = true`.
+Address lookup (geocoding) is off by default in every build, source builds and the
+Mac app alike, and there is no default provider: with no `[geocoder]` table, or
+`enabled = false`, no position leaves the machine for address lookup. Turning it on
+needs both `enabled = true` and an `endpoint`; `enabled = true` without an endpoint
+is refused when the configuration loads.
+
+The Mac app's onboarding offers address lookup on its last step, off unless you
+tick it. It names the provider, OpenStreetMap Nominatim at
+`https://nominatim.openstreetmap.org/`, and says that positions are sent to it.
+Your answer is written to `[geocoder]` (with that endpoint when you turn it on),
+and Settings > Address lookup changes it later and restarts a running Hub. The
+public service's usage policy applies:
+<https://operations.osmfoundation.org/policies/nominatim/>.
 
 ```toml
 [geocoder]
 enabled = true
-# endpoint = "https://geocoder.example.net/"   # omit it for the public default
+endpoint = "https://nominatim.openstreetmap.org/"   # or your own Nominatim-compatible service
 language = "en"
 timeout_seconds = 30
 ```

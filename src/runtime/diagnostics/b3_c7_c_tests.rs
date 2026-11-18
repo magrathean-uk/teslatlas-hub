@@ -25,10 +25,20 @@ fn c7_t73_doctor() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let init_only = "interval_seconds = 0";
+    // DEC-246: the default configuration has address lookup off and no provider.
     let default_config = doctor_config(temporary.path(), init_only, "");
+    let member = geocoder_member(&inspect_hub(&store, &default_config).expect("doctor report"));
+    assert_eq!(member["enabled"], json!(false));
+    assert_eq!(member["state"], json!("off"));
+    assert_eq!(member["endpointHost"], Value::Null);
+    let public_config = doctor_config(
+        temporary.path(),
+        init_only,
+        "[geocoder]\nenabled = true\nendpoint = \"https://nominatim.openstreetmap.org/\"\n",
+    );
 
-    // (a) The default configuration and no record.
-    let plain = inspect_hub(&store, &default_config).expect("doctor report");
+    // (a) The public host, turned on by the owner, and no record.
+    let plain = inspect_hub(&store, &public_config).expect("doctor report");
     assert_eq!(
         geocoder_member(&plain),
         json!({
@@ -54,7 +64,7 @@ fn c7_t73_doctor() {
     store
         .set_geocoder_provider_state(Some(&written))
         .expect("record");
-    let refused = inspect_hub(&store, &default_config).expect("doctor report");
+    let refused = inspect_hub(&store, &public_config).expect("doctor report");
     assert_eq!(
         geocoder_member(&refused),
         json!({
@@ -85,7 +95,11 @@ fn c7_t73_doctor() {
     assert_eq!(stored(&store).as_deref(), Some(written.as_str()));
 
     // (c) The same record with lookups switched off.
-    let off = doctor_config(temporary.path(), init_only, "[geocoder]\nenabled = false\n");
+    let off = doctor_config(
+        temporary.path(),
+        init_only,
+        "[geocoder]\nenabled = false\nendpoint = \"https://nominatim.openstreetmap.org/\"\n",
+    );
     let report = inspect_hub(&store, &off).expect("doctor report");
     let member = geocoder_member(&report);
     assert_eq!(member["state"], json!("off"));
@@ -102,7 +116,7 @@ fn c7_t73_doctor() {
     let other = doctor_config(
         temporary.path(),
         init_only,
-        "[geocoder]\nendpoint = \"https://geo.example.test/\"\n",
+        "[geocoder]\nenabled = true\nendpoint = \"https://geo.example.test/\"\n",
     );
     let report = inspect_hub(&store, &other).expect("doctor report");
     assert_eq!(
@@ -136,7 +150,7 @@ fn c7_t73_doctor() {
         store
             .set_geocoder_provider_state(Some(&text))
             .expect("record");
-        let member = geocoder_diagnostics(&store, &default_config, at_ms);
+        let member = geocoder_diagnostics(&store, &public_config, at_ms);
         assert_eq!(member.state, state, "until {until_ms} at {at_ms}");
         assert_eq!(member.retry_at_ms, Some(until_ms));
         assert_eq!(stored(&store).as_deref(), Some(text.as_str()));
@@ -145,7 +159,7 @@ fn c7_t73_doctor() {
     store
         .set_geocoder_provider_state(Some("not json"))
         .expect("record");
-    let member = geocoder_diagnostics(&store, &default_config, fixed);
+    let member = geocoder_diagnostics(&store, &public_config, fixed);
     assert_eq!((member.state.as_str(), member.refusals), ("on", None));
     assert_eq!(stored(&store).as_deref(), Some("not json"));
 }

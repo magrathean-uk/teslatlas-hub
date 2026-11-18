@@ -975,6 +975,55 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
     }
 
+    /// DEC-246: the answer the onboarding and Settings write. Turning lookup on names
+    /// the provider's endpoint; turning it off keeps whatever endpoint is there.
+    func testAddressLookupAnswerEditsOnlyTheGeocoderTable() {
+        let appDefault = "data_dir = \"/d\"\nbind = \"127.0.0.1:8080\"\n\n[geocoder]\nenabled = false\n\n[terrain]\nenabled = false\n"
+        XCTAssertFalse(HubController.addressLookupEnabled(in: appDefault))
+        let on = HubController.settingAddressLookup(true, in: appDefault)
+        XCTAssertEqual(on, "data_dir = \"/d\"\nbind = \"127.0.0.1:8080\"\n\n[geocoder]\nenabled = true\nendpoint = \"https://nominatim.openstreetmap.org/\"\n\n[terrain]\nenabled = false\n")
+        XCTAssertTrue(HubController.addressLookupEnabled(in: on))
+        XCTAssertEqual(HubController.settingAddressLookup(true, in: on), on, "a repeated answer changes nothing")
+        let off = HubController.settingAddressLookup(false, in: on)
+        XCTAssertEqual(off, on.replacingOccurrences(of: "enabled = true", with: "enabled = false"))
+        XCTAssertFalse(HubController.addressLookupEnabled(in: off))
+
+        // An endpoint the owner set by hand is kept, and the terrain table is untouched.
+        let own = "[geocoder] # mine\n  endpoint = \"https://geo.example.test/\"\n\n[terrain]\nenabled = true\n"
+        let ownOn = HubController.settingAddressLookup(true, in: own)
+        XCTAssertEqual(ownOn, "[geocoder] # mine\nenabled = true\n  endpoint = \"https://geo.example.test/\"\n\n[terrain]\nenabled = true\n")
+        XCTAssertTrue(HubController.addressLookupEnabled(in: ownOn))
+        XCTAssertFalse(HubController.addressLookupEnabled(in: own), "a missing key reads as off, as the Hub reads it")
+
+        // No table: one is added.
+        let bare = "data_dir = \"/d\"\n"
+        XCTAssertEqual(HubController.settingAddressLookup(false, in: bare), "data_dir = \"/d\"\n\n[geocoder]\nenabled = false\n")
+        XCTAssertEqual(HubController.settingAddressLookup(true, in: bare),
+                       "data_dir = \"/d\"\n\n[geocoder]\nenabled = true\nendpoint = \"https://nominatim.openstreetmap.org/\"\n")
+        // Another table's `enabled` is not read as the answer.
+        XCTAssertFalse(HubController.addressLookupEnabled(in: "[terrain]\nenabled = true\n[geocoder]\n"))
+    }
+
+    func testAddressLookupAnswerIsWrittenToTheOwnerOnlyConfiguration() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OnboardingRunner()
+        let controller = HubController(commandRunner: runner, serviceRunner: OnboardingService(),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        let config = home.appendingPathComponent("Library/Application Support/Tesatlas Hub/config.toml")
+        XCTAssertFalse(controller.addressLookupEnabled, "no configuration reads as off")
+        XCTAssertFalse(try controller.setAddressLookup(false), "the app's own configuration starts off")
+        XCTAssertTrue(try String(contentsOf: config, encoding: .utf8).contains("[geocoder]\nenabled = false"))
+        XCTAssertTrue(try controller.setAddressLookup(true))
+        XCTAssertTrue(controller.addressLookupEnabled)
+        XCTAssertFalse(try controller.setAddressLookup(true))
+        let mode = try FileManager.default.attributesOfItem(atPath: config.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o600)
+        XCTAssertTrue(try controller.setAddressLookup(false))
+        XCTAssertFalse(controller.addressLookupEnabled)
+        XCTAssertTrue(runner.argumentCalls.isEmpty, "writing the answer runs no command")
+    }
+
     private func temporaryHome() throws -> URL {
         let home = HubTestScratch.directory
             .appendingPathComponent("tesatlas-hub-onboarding-tests-\(UUID().uuidString)", isDirectory: true)
