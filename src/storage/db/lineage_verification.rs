@@ -1276,7 +1276,8 @@ impl HubStore {
         vehicle_id: Uuid,
         verification: LineagePackVerification,
     ) -> Result<Option<LineageManifestV2>, StoreError> {
-        let connection = self.open_read_only_connection()?;
+        let catalogue = self.open_read_only_connection()?;
+        let connection = catalogue.unchecked_transaction().map_err(StoreError::Begin)?;
         let base_row: Option<(String, i64, String, Vec<u8>)> = connection
             .query_row(
                 "SELECT snapshot_id, base_sequence, base_digest, packs_json
@@ -1301,10 +1302,6 @@ impl HubStore {
         if base_packs.is_empty() {
             return Err(StoreError::LineageCatalogConflict);
         }
-        for pack in &base_packs {
-            self.verify_lineage_pack_for_mode(pack, verification)?;
-        }
-
         let mut deltas = Vec::new();
         let mut statement = connection
             .prepare(
@@ -1345,7 +1342,6 @@ impl HubStore {
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            self.verify_lineage_pack_for_mode(&delta.pack, verification)?;
             deltas.push(delta);
         }
         drop(statement);
@@ -1421,7 +1417,7 @@ impl HubStore {
                     )
                 }
             } else {
-                let binding = self.v2_projection_binding(vehicle_id)?;
+                let binding = Self::v2_projection_binding_in(&connection, vehicle_id)?;
                 (
                     binding.installation_id,
                     binding.account_id,
@@ -1451,6 +1447,16 @@ impl HubStore {
             terminal_cursor,
         };
         lineage.validate().map_err(StoreError::Manifest)?;
+        // Release the catalogue snapshot before potentially expensive file hashing.
+        drop(connection);
+        for pack in lineage
+            .base
+            .packs
+            .iter()
+            .chain(lineage.deltas.iter().map(|delta| &delta.pack))
+        {
+            self.verify_lineage_pack_for_mode(pack, verification)?;
+        }
         Ok(Some(lineage))
     }
 }
