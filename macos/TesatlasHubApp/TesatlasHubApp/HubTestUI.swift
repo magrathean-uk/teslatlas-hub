@@ -19,6 +19,19 @@ enum HubUIPresentation {
         return previous
     }
 
+    /// Times a refusal was signalled in a silent test host (nothing is played there).
+    private(set) static var refusalSoundCountForTesting = 0
+
+    /// The app's one refusal sound. The real app plays the system sound; a test host plays
+    /// nothing and counts the call. No other app source may call `NSSound.beep` or `NSBeep`.
+    static func playRefusalSound() {
+        if isSilentTestHost {
+            refusalSoundCountForTesting += 1
+            return
+        }
+        NSSound.beep()
+    }
+
     static var isSilentTestHost: Bool {
         let environment = ProcessInfo.processInfo.environment
         return environment["TESATLAS_HUB_TEST_MODE"] == "1"

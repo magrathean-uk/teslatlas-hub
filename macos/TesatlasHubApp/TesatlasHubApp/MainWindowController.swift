@@ -392,7 +392,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !operationPreventsQuit else { NSSound.beep(); return false }
+        guard !operationPreventsQuit else { HubUIPresentation.playRefusalSound(); return false }
         return true
     }
 
@@ -1159,7 +1159,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @discardableResult
     func showImportAfterWindows() -> ImportAfterWindowsSheetController? {
         guard importAfterWindowsSheet == nil, lifecycleIdle,
-              let window else { NSSound.beep(); return nil }
+              let window else { HubUIPresentation.playRefusalSound(); return nil }
         let sheet = ImportAfterWindowsSheetController(controller: controller) { [weak self] result in
             guard case .success = result else { return }
             let alert = NSAlert()
@@ -1187,7 +1187,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let admitted = controller.performPreferenceWrite {
             _ = appearancePreference.toggle(currentIsDark: isDark)
         }
-        guard admitted else { NSSound.beep(); return }
+        guard admitted else { HubUIPresentation.playRefusalSound(); return }
         if let window {
             if let content = window.contentView { HubMotion.transition(content) }
             appearancePreference.apply(to: window)
@@ -1199,14 +1199,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func showEmbeddedLogs() {
-        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        guard canPresentEmbeddedDetail else { HubUIPresentation.playRefusalSound(); return }
         let logs = LogsWindowController(controller: controller, embedded: true)
         let page = logs.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
         presentEmbeddedDetail(logs, page: page, from: .activity)
     }
 
     func showEmbeddedDiagnostics() {
-        guard !initialRefreshPending, canPresentEmbeddedDetail else { NSSound.beep(); return }
+        guard !initialRefreshPending, canPresentEmbeddedDetail else { HubUIPresentation.playRefusalSound(); return }
         let diagnostics = DiagnosticsWindowController(
             controller: controller,
             embedded: true,
@@ -1225,7 +1225,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func showEmbeddedServiceDetails() {
-        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        guard canPresentEmbeddedDetail else { HubUIPresentation.playRefusalSound(); return }
         let details = ServiceDetailsWindowController(
             snapshot: lastPresentedSnapshot,
             controller: controller,
@@ -1367,7 +1367,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func importHistoryPressed() { showOnboarding(route: .migration) }
 
     @objc private func disconnectTeslaPressed() {
-        guard actionsAvailable, !vehicleControlPending else { NSSound.beep(); return }
+        guard actionsAvailable, !vehicleControlPending else { HubUIPresentation.playRefusalSound(); return }
         let alert = Self.disconnectConfirmation()
         guard HubUIPresentation.response(to: alert) == .alertSecondButtonReturn else { return }
         controller.signOutTeslaAccount { [weak self] result in
@@ -1393,7 +1393,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let immediateSetup = dismissalPolicy == .firstRun && controller.shouldShowOnboardingBeforeInitialRefresh
         guard (!initialRefreshPending || immediateSetup), serviceTransition == nil, !vehicleControlPending,
               !serviceDetailsMutationPending else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return nil
         }
         if let onboarding = activeModalController as? OnboardingWindowController,
@@ -1658,7 +1658,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func stopHubAfterConfirmation() {
         // The confirmation may have been open while another owner took the lifecycle:
         // the capability is checked again now, and the controller admits atomically.
-        guard actionsAvailable else { NSSound.beep(); return }
+        guard actionsAvailable else { HubUIPresentation.playRefusalSound(); return }
         guard let token = beginServiceTransition(.stopping) else { return }
         controller.stopHub { [weak self] result in
             switch result {
@@ -1687,7 +1687,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Remove Background Service: the details window has asked first. Data and logs stay.
     private func removeBackgroundServiceNow() {
-        guard actionsAvailable, controller.allowsServiceRemoval else { NSSound.beep(); return }
+        guard actionsAvailable, controller.allowsServiceRemoval else { HubUIPresentation.playRefusalSound(); return }
         guard let token = beginServiceTransition(.removing) else { return }
         controller.removeBackgroundService { [weak self] result in
             guard let self else { return }
@@ -1706,13 +1706,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Cancel as the default, then the `.deleting` transition.
     private func deleteHubAndDataPressed() {
         guard actionsAvailable, !vehicleControlPending,
-              controller.allowsServiceRemoval else { NSSound.beep(); return }
+              controller.allowsServiceRemoval else { HubUIPresentation.playRefusalSound(); return }
         guard confirmationPresenter(ServiceDetailsWindowController.deleteHubAndDataExplanation(),
                                     .alertFirstButtonReturn) == .alertSecondButtonReturn else { return }
         guard confirmationPresenter(ServiceDetailsWindowController.deleteDataConfirmation(),
                                     .alertFirstButtonReturn) == .alertSecondButtonReturn else { return }
         // A conflicting owner may have appeared while the confirmations were open.
-        guard actionsAvailable, !vehicleControlPending else { NSSound.beep(); return }
+        guard actionsAvailable, !vehicleControlPending else { HubUIPresentation.playRefusalSound(); return }
         guard let token = beginServiceTransition(.deleting) else { return }
         // The controller installs and lifts the restoration barrier itself.
         controller.deleteHubAndData { [weak self] result in
@@ -1790,7 +1790,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @discardableResult
     func showServiceDetails() -> ServiceDetailsWindowController? {
         guard !initialRefreshPending, serviceTransition == nil, !vehicleControlPending, !diagnosticsOperationPending else {
-            NSSound.beep()
+            HubUIPresentation.playRefusalSound()
             return nil
         }
         if let detailsWindow = activeModalController as? ServiceDetailsWindowController,

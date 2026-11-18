@@ -369,7 +369,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !operationInProgress else { NSSound.beep(); return false }
+        guard !operationInProgress else { HubUIPresentation.playRefusalSound(); return false }
         return true
     }
 
