@@ -213,16 +213,20 @@ impl SealedStageEdit<'_> {
     /// The position whose instant is nearest `at_pg_us` (the earlier on a
     /// tie, then the lower id), if the stage holds any.
     pub(crate) fn nearest_position(&self, at_pg_us: i64) -> Result<Option<i64>, SourceDbStageError> {
-        Ok(self
-            .transaction
-            .query_row(
-                "SELECT source_id FROM stage_rows WHERE table_name = 'positions'
-                  ORDER BY abs(json_extract(row_json, '$.date_pg_us') - ?1),
-                           json_extract(row_json, '$.date_pg_us'), source_id
-                  LIMIT 1",
-                params![at_pg_us],
-                |row| row.get(0),
-            )
-            .optional()?)
+        let mut statement = self.transaction.prepare(
+            "SELECT source_id, json_extract(row_json, '$.date_pg_us')
+               FROM stage_rows WHERE table_name = 'positions'",
+        )?;
+        let mut rows = statement.query([])?;
+        let mut nearest = None;
+        while let Some(row) = rows.next()? {
+            let id = row.get::<_, i64>(0)?;
+            let instant = row.get::<_, i64>(1)?;
+            let candidate = (instant.abs_diff(at_pg_us), instant, id);
+            if nearest.is_none_or(|best| candidate < best) {
+                nearest = Some(candidate);
+            }
+        }
+        Ok(nearest.map(|(_, _, id)| id))
     }
 }
