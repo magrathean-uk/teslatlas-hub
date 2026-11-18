@@ -985,3 +985,53 @@ fn a_restored_access_refused_pause_has_no_probe_and_a_restart_rewrites_no_row_fo
         "the held car's row is already what the store holds"
     );
 }
+
+#[test]
+fn owner_resume_survives_first_inventory_after_restart() {
+    for inventory_in_same_tick in [true, false] {
+        let mut core = Core::owner();
+        let id = core_id(1);
+        let hub_id = Uuid::new_v4();
+        let configured = [(hub_id, 1, core_vehicle(1, "online").settings)];
+        let snapshot = CollectorStateSnapshot::from_rows(
+            crate::db::CollectorStateRows {
+                vehicles: vec![stored_vehicle_row(
+                    hub_id,
+                    "unknown",
+                    "paused",
+                    "paused_access_refused",
+                )],
+                ..Default::default()
+            },
+            NO_FINGERPRINT.to_owned(),
+            &configured,
+        );
+        let now = core.t0;
+        core.scheduler.load(&snapshot, now);
+        core.scheduler.apply_control_settings(&configured, now);
+        assert_eq!(
+            core.scheduler.vehicles[&id].hold,
+            VehicleHold::Paused(PauseReason::AccessRefused)
+        );
+
+        core.scheduler.begin_tick();
+        core.scheduler.apply_owner_actions(
+            &[OwnerActionRow {
+                id: 1,
+                kind: OwnerActionKind::ResumeVehicle,
+                vehicle: Some(hub_id),
+            }],
+            now,
+        );
+        if !inventory_in_same_tick {
+            let tick = k6_commit_in_memory(&mut core);
+            assert_eq!(tick.applied_actions, vec![1]);
+            assert_eq!(tick.vehicles[0].view.hold, VehicleHold::None);
+        }
+
+        core.scheduler
+            .accept_discovery(vec![core_vehicle(1, "online")], now);
+        assert_eq!(core.scheduler.vehicles[&id].hold, VehicleHold::None);
+        assert_eq!(core.scheduler.due_vehicles(now), vec![id]);
+    }
+}
