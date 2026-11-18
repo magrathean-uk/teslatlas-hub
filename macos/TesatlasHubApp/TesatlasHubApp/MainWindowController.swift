@@ -1164,7 +1164,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard case .success = result else { return }
             let alert = NSAlert()
             alert.messageText = HubL10n.text("hub.ImportSheetController.26.1691", fallback: "Import History")
-            alert.informativeText = ImportAfterWindowsSheetController.importedMessage
+            alert.informativeText = [ImportAfterWindowsSheetController.importedMessage,
+                                     self?.controller.lastImportSummary?.text()]
+                .compactMap { $0 }.joined(separator: "\n\n")
             HubUIPresentation.presentInformation(alert)
             self?.update()
         }
