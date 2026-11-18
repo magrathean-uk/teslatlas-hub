@@ -384,6 +384,7 @@ pub struct SourceDbCarPhysicalV2_2 {
     pub vin: Option<String>,
     pub name: Option<String>,
     pub model: Option<String>,
+    #[serde(default, with = "physical_efficiency")]
     pub efficiency: Option<f64>,
     pub trim_badging: Option<String>,
     pub marketing_name: Option<String>,
@@ -416,6 +417,47 @@ impl From<SourceDbCarPhysicalV2_2> for ProjectionCarV2_2 {
             updated_at_pg_us: value.updated_at_pg_us,
             settings_id: value.settings_id,
         }
+    }
+}
+
+mod physical_efficiency {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::ProjectionFloat64BitsV2_2;
+
+    // Keep the existing JSON form for finite values and NULL. JSON numbers
+    // cannot represent the special values, so store their exact bits.
+    #[derive(Serialize, Deserialize)]
+    #[serde(untagged)]
+    enum Value {
+        Number(f64),
+        Bits { bits: ProjectionFloat64BitsV2_2 },
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        value: &Option<f64>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value
+            .map(|value| {
+                if value.is_finite() {
+                    Value::Number(value)
+                } else {
+                    Value::Bits {
+                        bits: ProjectionFloat64BitsV2_2::from_f64(value),
+                    }
+                }
+            })
+            .serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<f64>, D::Error> {
+        Ok(Option::<Value>::deserialize(deserializer)?.map(|value| match value {
+            Value::Number(value) => value,
+            Value::Bits { bits } => f64::from_bits(bits.0),
+        }))
     }
 }
 
