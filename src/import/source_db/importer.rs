@@ -838,6 +838,8 @@ struct CapturedSourceDbImport {
     /// The import's source sessions, kept with the raw physical stage for a
     /// later handback (M03-T22).
     physical_source: Option<(Vec<ProjectionDrive>, Vec<ProjectionCharge>)>,
+    /// The source sessions the import read, for its final report.
+    source_basis: SourceDbImportBasis,
     publication_gate: PublicationGate,
 }
 
@@ -846,6 +848,113 @@ pub struct SourceDbSelectedImportReport {
     pub import: SourceDbImportReport,
     pub updates_schema_22: ProductionUpdatesPublication,
     pub physical_v3: Option<crate::physical_publication::PhysicalV3Publication>,
+    /// The checked source range and per-route counts for the final report.
+    pub summary: SourceDbImportSummary,
+}
+
+/// What an import read from the source: the sessions, and the instants they
+/// span in Unix milliseconds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct SourceDbImportBasis {
+    sessions: u64,
+    range_ms: Option<(i64, i64)>,
+}
+
+impl SourceDbImportBasis {
+    fn of(drives: &[ProjectionDrive], charges: &[ProjectionCharge]) -> Self {
+        let spans = drives
+            .iter()
+            .map(|drive| (drive.start_date_ms, drive.end_date_ms.max(drive.start_date_ms)))
+            .chain(charges.iter().map(|charge| {
+                (
+                    charge.start_date_ms,
+                    charge.end_date_ms.unwrap_or(charge.start_date_ms).max(charge.start_date_ms),
+                )
+            }));
+        let range_ms = spans.fold(None, |range, (start, end)| match range {
+            None => Some((start, end)),
+            Some((low, high)) => Some((low.min(start), high.max(end))),
+        });
+        Self {
+            sessions: (drives.len() as u64).saturating_add(charges.len() as u64),
+            range_ms,
+        }
+    }
+}
+
+/// Source sessions a phone route got from one import: packed into its
+/// packs, kept on the Hub's side by the seam, or withheld from it (not
+/// packed, or the route's head not served). Counts only: never a place, name
+/// or address (DEC-246).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourceDbRouteCounts {
+    pub packed: u64,
+    pub kept: u64,
+    pub withheld: u64,
+}
+
+/// The import's final report: the source time range checked (Unix
+/// milliseconds) and the counts of each phone route, the Legacy updates route
+/// and the negotiated 1.4 route (M08-T41, DEC-246).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourceDbImportSummary {
+    pub range_ms: Option<(i64, i64)>,
+    pub legacy: SourceDbRouteCounts,
+    pub physical: SourceDbRouteCounts,
+}
+
+impl SourceDbImportSummary {
+    /// The report's JSON: the checked range as Unix milliseconds (null when
+    /// the source held no session) and each route's counts, nothing else.
+    pub fn to_json(&self) -> serde_json::Value {
+        let counts = |route: &SourceDbRouteCounts| {
+            serde_json::json!({
+                "packed": route.packed,
+                "kept": route.kept,
+                "withheld": route.withheld,
+            })
+        };
+        serde_json::json!({
+            "checkedFromMs": self.range_ms.map(|(from, _)| from),
+            "checkedToMs": self.range_ms.map(|(_, to)| to),
+            "routes": {
+                "legacy": counts(&self.legacy),
+                "physical": counts(&self.physical),
+            },
+        })
+    }
+
+    fn new(
+        basis: SourceDbImportBasis,
+        seam: Option<&crate::import::source_db::seam::SeamPackPlan>,
+        physical_served: bool,
+    ) -> Self {
+        let legacy = match seam {
+            Some(packs) => {
+                let (packed, kept, withheld) = packs.session_counts();
+                SourceDbRouteCounts { packed, kept, withheld }
+            }
+            None => SourceDbRouteCounts {
+                packed: basis.sessions,
+                kept: 0,
+                withheld: 0,
+            },
+        };
+        let physical = if physical_served {
+            legacy
+        } else {
+            SourceDbRouteCounts {
+                packed: 0,
+                kept: 0,
+                withheld: legacy.packed.saturating_add(legacy.withheld),
+            }
+        };
+        Self {
+            range_ms: basis.range_ms,
+            legacy,
+            physical,
+        }
+    }
 }
 
 async fn import_from_postgres_with_updates_capture(
@@ -1134,6 +1243,7 @@ async fn import_pass(
     let physical_source = physical_stage
         .as_ref()
         .map(|_| (materialised_drives.clone(), materialised_charges.clone()));
+    let source_basis = SourceDbImportBasis::of(&materialised_drives, &materialised_charges);
     let cutover = match settle_captured_session(open_session, cutover_policy, || {
         read_open_session(source, password, selected_car_id, limits)
     })
@@ -1206,6 +1316,7 @@ async fn import_pass(
             physical_stage,
             physical_seam,
             physical_source,
+            source_basis,
             publication_gate,
         }));
     }
@@ -1245,6 +1356,7 @@ async fn import_pass(
                 physical_stage,
                 physical_seam,
                 physical_source,
+                source_basis,
                 publication_gate,
             }));
         }
@@ -1269,6 +1381,7 @@ async fn import_pass(
                 physical_stage,
                 physical_seam,
                 physical_source,
+                source_basis,
                 publication_gate,
             }));
         }
@@ -1358,6 +1471,7 @@ async fn import_pass(
                 physical_stage,
                 physical_seam,
                 physical_source,
+                source_basis,
                 publication_gate,
             }));
         }
@@ -1440,6 +1554,7 @@ async fn import_pass(
             physical_stage,
             physical_seam: Some(seam.packs),
             physical_source,
+            source_basis,
             publication_gate,
         }));
     }
@@ -1566,6 +1681,7 @@ async fn import_pass(
         physical_stage,
         physical_seam,
         physical_source,
+        source_basis,
         publication_gate,
     }))
 }
@@ -2645,6 +2761,10 @@ mod tests;
 #[cfg(test)]
 #[path = "importer/open_cutover_tests.rs"]
 mod open_cutover_tests;
+
+#[cfg(test)]
+#[path = "importer/import_summary_tests.rs"]
+mod import_summary_tests;
 
 #[cfg(test)]
 mod n1_src_import_source_db_importer_rs_display_tests {

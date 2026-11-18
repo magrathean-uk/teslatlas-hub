@@ -203,6 +203,75 @@ struct HubSetupInvocation: Equatable {
 }
 
 
+/// The import's final report as the command line prints it (M08-T41, DEC-246): the
+/// source time range checked and, per phone route, the counts packed, kept and
+/// withheld. Counts and dates only; never a place, name or address.
+struct HubImportSummary: Equatable {
+    struct Route: Equatable {
+        let packed: UInt64
+        let kept: UInt64
+        let withheld: UInt64
+    }
+
+    let checkedFrom: Date?
+    let checkedTo: Date?
+    let legacy: Route
+    let physical: Route
+
+    /// The summary in the last `"imported"` report line of the command's output.
+    static func parse(output: String) -> HubImportSummary? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  root["status"] as? String == "imported",
+                  let summary = root["importSummary"] as? [String: Any],
+                  let routes = summary["routes"] as? [String: Any],
+                  let legacy = route(routes["legacy"]),
+                  let physical = route(routes["physical"]) else { continue }
+            return HubImportSummary(checkedFrom: date(summary["checkedFromMs"]),
+                                    checkedTo: date(summary["checkedToMs"]),
+                                    legacy: legacy, physical: physical)
+        }
+        return nil
+    }
+
+    private static func date(_ value: Any?) -> Date? {
+        (value as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+    }
+
+    private static func route(_ value: Any?) -> Route? {
+        guard let counts = value as? [String: Any],
+              let packed = (counts["packed"] as? NSNumber)?.uint64Value,
+              let kept = (counts["kept"] as? NSNumber)?.uint64Value,
+              let withheld = (counts["withheld"] as? NSNumber)?.uint64Value else { return nil }
+        return Route(packed: packed, kept: kept, withheld: withheld)
+    }
+
+    /// The report as plain lines for the last import step.
+    func text(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        let range: String
+        if let checkedFrom, let checkedTo {
+            range = HubL10n.format("hub.importSummary.range", fallback: "Source checked from %1$@ to %2$@.",
+                                   arguments: [formatter.string(from: checkedFrom), formatter.string(from: checkedTo)])
+        } else {
+            range = HubL10n.text("hub.importSummary.noRange", fallback: "The source held no drives or charges.")
+        }
+        func line(_ key: String, _ name: String, _ route: Route) -> String {
+            HubL10n.format(key, fallback: "%1$@: %2$@ packed, %3$@ kept, %4$@ withheld.",
+                           arguments: [name, String(route.packed), String(route.kept), String(route.withheld)])
+        }
+        return [range,
+                line("hub.importSummary.legacy", HubL10n.text("hub.importSummary.legacyName", fallback: "Legacy phone route"), legacy),
+                line("hub.importSummary.physical", HubL10n.text("hub.importSummary.physicalName", fallback: "Phone route 1.4"), physical)]
+            .joined(separator: "\n")
+    }
+}
+
 struct HubMigrationProgress: Equatable {
     let completedRows: UInt64
     let totalRows: UInt64
@@ -3356,6 +3425,9 @@ final class LaunchctlServiceController: HubServiceControlling {
 }
 
 final class HubController {
+    /// The final report of the last completed import, for the surface that ends it.
+    private(set) var lastImportSummary: HubImportSummary?
+
     /// The one lifecycle owner of the application (R-E1F6-1): every surface asks it, and
     /// it alone decides which operation may run. The application's one controller is
     /// authoritative; surfaces that share an operation share this controller.
@@ -4317,6 +4389,7 @@ final class HubController {
                     )))
                     return
                 }
+                self.lastImportSummary = HubImportSummary.parse(output: output)
                 HubAppLog.shared.record("import.completed", category: "history_import",
                                         fields: ["capture_mode": "after_windows"])
                 completion(.success(()))
@@ -5267,6 +5340,7 @@ final class HubController {
                                                       previousProvider: previousProvider,
                                                       historyOnly: historyOnly)
                         )
+                        lastImportSummary = HubImportSummary.parse(output: output)
                         HubAppLog.shared.record("import.completed", category: "history_import",
                                                 fields: durationFields.merging(
                                                     ["handover": "awaiting_verification"]

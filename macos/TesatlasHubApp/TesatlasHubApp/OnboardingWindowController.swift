@@ -1731,6 +1731,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.alignment = .leading
         stack.spacing = 14
         if state.path == .migration {
+            if let summary = controller.lastImportSummary {
+                let label = NSTextField(wrappingLabelWithString: summary.text())
+                label.identifier = NSUserInterfaceItemIdentifier("importSummary")
+                label.font = HubTypography.body
+                label.maximumNumberOfLines = 0
+                stack.addArrangedSubview(label)
+                label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            }
             let tookOver = migrationUseLocalHistory.state != .on
                 && (controller.sourceTakeoverStatus.isTakenOver || controller.sourceTakeoverStatus == .unknown)
             if tookOver {

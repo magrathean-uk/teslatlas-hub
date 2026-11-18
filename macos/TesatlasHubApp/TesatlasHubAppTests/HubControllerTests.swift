@@ -2152,6 +2152,54 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(events.values.contains("service:start"))
     }
 
+    private static let importReportLine =
+        #"{"status":"imported","captureMode":"online-snapshot","importSummary":{"checkedFromMs":1614772800000,"checkedToMs":1763380800000,"routes":{"legacy":{"packed":12,"kept":1,"withheld":2},"physical":{"packed":10,"kept":1,"withheld":4}}}}"#
+
+    func testImportSummaryParsesTheReportAndNamesRangeAndCountsOnly() throws {
+        let summary = try XCTUnwrap(HubImportSummary.parse(output: "progress line\n" + Self.importReportLine + "\n"))
+        XCTAssertEqual(summary.legacy, HubImportSummary.Route(packed: 12, kept: 1, withheld: 2))
+        XCTAssertEqual(summary.physical, HubImportSummary.Route(packed: 10, kept: 1, withheld: 4))
+        let text = summary.text(locale: Locale(identifier: "en_GB"), timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertEqual(text, """
+            Source checked from 3 Mar 2021 to 17 Nov 2025.
+            Legacy phone route: 12 packed, 1 kept, 2 withheld.
+            Phone route 1.4: 10 packed, 1 kept, 4 withheld.
+            """)
+        XCTAssertNil(HubImportSummary.parse(output: #"{"status":"imported","captureMode":"online-snapshot"}"#))
+        XCTAssertNil(HubImportSummary.parse(output: "not json"))
+    }
+
+    func testImportSummaryWithoutARangeSaysTheSourceWasEmpty() throws {
+        let line = #"{"status":"imported","importSummary":{"checkedFromMs":null,"checkedToMs":null,"routes":{"legacy":{"packed":0,"kept":0,"withheld":0},"physical":{"packed":0,"kept":0,"withheld":0}}}}"#
+        let summary = try XCTUnwrap(HubImportSummary.parse(output: line))
+        XCTAssertNil(summary.checkedFrom)
+        XCTAssertTrue(summary.text().hasPrefix("The source held no drives or charges."))
+    }
+
+    func testCompletedImportKeepsItsSummaryForTheLastStep() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.importReportLine))
+        let service = ScriptedService(events: events)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        XCTAssertNil(controller.lastImportSummary)
+        let finished = expectation(description: "migration finished")
+        controller.importSource(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                   carID: "1",
+                                   passwordFile: "/tmp/password",
+                                   acceptSchemaEvidence: true) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(controller.lastImportSummary?.legacy.packed, 12)
+        XCTAssertEqual(controller.lastImportSummary?.physical.withheld, 4)
+    }
+
     func testInstalledMigrationKeepsFleetProviderAndTokensConfig() throws {
         let events = EventRecorder()
         let runner = ScriptedRunner(events: events, result: .success(

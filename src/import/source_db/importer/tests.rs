@@ -1416,6 +1416,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_stage: Some(physical_stage(&[])),
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )
@@ -1450,6 +1451,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_stage: Some(physical_stage(&[])),
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )
@@ -1518,6 +1520,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
                 physical_stage: Some(physical_stage(&[])),
                 physical_seam: Some(crate::import::source_db::seam::SeamPackPlan::default()),
                 physical_source: None,
+                source_basis: SourceDbImportBasis::default(),
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
             },
         )
@@ -1549,6 +1552,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
                 physical_stage: Some(physical_stage(&updates)),
                 physical_seam: None,
                 physical_source: None,
+                source_basis: SourceDbImportBasis::default(),
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
             },
         )
@@ -1632,6 +1636,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_stage: None,
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )

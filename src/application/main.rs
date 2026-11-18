@@ -43,7 +43,7 @@ use tesatlas_hub::{
     server,
     source_db_connection::ReadOnlySource,
     source_db_import::{
-        SourceDbImportReport, SourceDbImportRequest, SourceDbImportScope,
+        SourceDbImportReport, SourceDbImportRequest, SourceDbImportScope, SourceDbImportSummary,
         import_selected_from_postgres_with_schema_22_and_progress,
         import_selected_history_snapshot_from_postgres_with_schema_22_and_progress,
     },

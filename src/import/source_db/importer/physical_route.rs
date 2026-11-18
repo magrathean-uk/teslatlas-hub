@@ -48,6 +48,7 @@ fn finish_selected_schema_22_publication(
         physical_stage,
         physical_seam,
         physical_source,
+        source_basis,
         publication_gate,
     } = captured;
     let vehicle_id = report.vehicle_id;
@@ -102,10 +103,12 @@ fn finish_selected_schema_22_publication(
             legacy_snapshot_id,
         });
     }
+    let summary = SourceDbImportSummary::new(source_basis, physical_seam.as_ref(), physical_v3.is_some());
     Ok(SourceDbSelectedImportReport {
         import: report,
         updates_schema_22,
         physical_v3,
+        summary,
     })
 }
 
