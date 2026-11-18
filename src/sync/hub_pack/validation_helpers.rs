@@ -253,10 +253,24 @@ pub(crate) fn ensure_private_staging_directory(path: &Path) -> Result<(), Projec
     Ok(())
 }
 
+pub(crate) const PHYSICAL_DELTA_TEMP_RANDOM_BYTES: usize = 6;
+
 fn is_owned_staging_name(name: &std::ffi::OsStr) -> bool {
     let Some(name) = name.to_str() else {
         return false;
     };
+    // Match the names already written by the physical changed-set builder.
+    if name
+        .strip_prefix("physical-delta-")
+        .and_then(|name| name.split_once('.'))
+        .is_some_and(|(random, extension)| {
+            random.len() == PHYSICAL_DELTA_TEMP_RANDOM_BYTES
+                && random.bytes().all(|byte| byte.is_ascii_alphanumeric())
+                && matches!(extension, "sqlite" | "zst")
+        })
+    {
+        return true;
+    }
     [
         ".projection.sqlite.tmp",
         ".projection.zst.tmp",

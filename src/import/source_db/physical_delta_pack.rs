@@ -18,8 +18,9 @@ use super::physical_delta_compare::{PhysicalCompareError, PhysicalDeltaCompariso
 use crate::{
     db::PendingPhysicalV3Admission,
     hub_pack::{
-        PHYSICAL_TABLES_2_2, PackCheck, ProjectionBinding, ProjectionPackError, available_bytes,
-        ensure_private_staging_directory, open_verified_physical_pack_2_2,
+        PHYSICAL_DELTA_TEMP_RANDOM_BYTES, PHYSICAL_TABLES_2_2, PackCheck, ProjectionBinding,
+        ProjectionPackError, available_bytes, ensure_private_staging_directory,
+        open_verified_physical_pack_2_2,
     },
     manifest_signing::ManifestSigning,
     protocol::{CursorKey, Sha256Digest},
@@ -119,6 +120,7 @@ impl DeltaOutput {
         let sqlite = tempfile::Builder::new()
             .prefix("physical-delta-")
             .suffix(".sqlite")
+            .rand_bytes(PHYSICAL_DELTA_TEMP_RANDOM_BYTES)
             .tempfile_in(staging)?;
         let connection = Connection::open(sqlite.path())?;
         connection.execute_batch(
@@ -622,6 +624,7 @@ fn publish_pack(
     let mut compressed = tempfile::Builder::new()
         .prefix("physical-delta-")
         .suffix(".zst")
+        .rand_bytes(PHYSICAL_DELTA_TEMP_RANDOM_BYTES)
         .tempfile_in(&staging)?;
     {
         let source_file = fs::File::open(source)?;
