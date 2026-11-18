@@ -168,6 +168,48 @@ fn mutable_stage() -> (tempfile::TempDir, SourceDbStage) {
 }
 
 #[test]
+fn position_page_shares_each_drives_address() {
+    let (_temporary, stage) = stage();
+    let source_drive = stage
+        .get::<SourceDbDrive>(SourceDbStageTable::Drives, 10)
+        .expect("staged drives")
+        .expect("source drive");
+    let drive = project_drive_from_stage(&stage, &source_drive, 1)
+        .expect("drive projection")
+        .expect("completed drive");
+    let first = stage
+        .page::<SourceDbPosition>(SourceDbStageTable::Positions, 0, 1)
+        .expect("staged positions")
+        .rows
+        .pop()
+        .expect("source position");
+    let mut second = first.clone();
+    second.source_id += 1;
+    second.value.id += 1;
+
+    let drives = Arc::new(HashMap::from([(drive.id, drive.into())]));
+    let detachment = Arc::new(PositionDetachmentPolicy::new(&[source_drive], 1, None));
+    let mut pool = PositionProjectionPool::new(1, drives, detachment);
+    let completed = pool
+        .submit(PositionProjectionJob {
+            ordinal: 0,
+            rows: vec![first, second],
+            car_id: 1,
+        })
+        .expect("position job");
+    let mut pages = completed
+        .into_iter()
+        .chain(pool.finish().expect("finish positions"));
+    let rows = pages.next().expect("completed page").rows.expect("projected positions");
+    let first_address = rows[0].drive.as_ref().unwrap().start_address.as_deref().unwrap();
+    let second_address = rows[1].drive.as_ref().unwrap().start_address.as_deref().unwrap();
+    assert!(
+        std::ptr::eq(first_address, second_address),
+        "positions in the same page should share the drive's address allocation",
+    );
+}
+
+#[test]
 fn schema_2_1_writer_rejects_a_sealed_physical_stage_before_pack_work() {
     let temporary = crate::private_tempdir().expect("temporary directory");
     let mut stage = SourceDbStage::create_physical_v3(
