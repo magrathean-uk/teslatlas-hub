@@ -1874,3 +1874,25 @@ fn r53_a_configured_car_the_list_never_names_waits_for_the_inventory_cadence_and
     assert_eq!(core.scheduler.vehicles[&core_id(2)].hold, VehicleHold::Removed);
     assert_eq!(core.scheduler.vehicles[&core_id(2)].reason, "vehicle_removed");
 }
+
+#[test]
+fn an_offline_install_uses_state_checks_until_it_is_online_again() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.t0);
+    assert_eq!(core.scheduler.due_vehicles(core.t0), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Updating, false, core.t0);
+
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "offline")], core.at(10));
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Updating);
+    assert!(core.scheduler.due_vehicles(core.at(120)).is_empty());
+    assert!(core.scheduler.discovery_due(core.at(40)));
+
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.at(130));
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Updating);
+    assert_eq!(core.scheduler.due_vehicles(core.at(130)), vec![id]);
+}
