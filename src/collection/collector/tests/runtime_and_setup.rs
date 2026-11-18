@@ -1404,6 +1404,25 @@ fn invalid_or_future_source_times_fall_back_to_receipt_time() {
     }
 }
 
+#[test]
+fn astra_p06_polling_preserves_the_provider_time_without_a_drive_timestamp() {
+    let provided_at = 1_800_000_000_000_i64;
+    let snapshot = VehicleData::from_provider_raw_json(
+        VehicleId::from_test(9),
+        json!({
+            "response": {
+                "id": 9,
+                "timestamp": provided_at,
+                "charge_state": {"battery_level": 54}
+            }
+        }),
+        &crate::owner_api::ProviderSecrets::none(),
+    )
+    .expect("provider response");
+    assert_eq!(observation_timestamp(&snapshot, provided_at + 1_000), provided_at);
+    assert_eq!(observation_timestamp(&snapshot, provided_at + 2_000), provided_at);
+}
+
 #[tokio::test]
 async fn supervised_heartbeat_renews_during_idle_and_publishes_auth_recovery() {
     let temporary = crate::private_tempdir().expect("temporary store");
