@@ -595,7 +595,11 @@ impl VehicleScheduler {
             return;
         }
         if evidence.parked_gear && vehicle.phase == PollPhase::Driving {
-            make_read_due(vehicle);
+            // The first Park frame can bring a normal read forward. Further
+            // frames must leave a failed read's retry or state check time in place.
+            if vehicle.consecutive_failures == 0 && !vehicle.unavailable_check {
+                make_read_due(vehicle);
+            }
             return;
         }
         if evidence.wants_read
