@@ -7694,6 +7694,104 @@ final class HubController {
         catch { try? manager.removeItem(at: temporary); throw error }
     }
 
+    /// The provider the onboarding and Settings name when they offer address lookup
+    /// (DEC-246): the OpenStreetMap Foundation's public Nominatim service. Hub has no
+    /// default provider; this endpoint is written only when the owner turns lookup on.
+    static let addressLookupProviderName = "OpenStreetMap Nominatim"
+    static let addressLookupEndpoint = "https://nominatim.openstreetmap.org/"
+
+    /// Whether the configuration on disk has address lookup on. A missing file or
+    /// table, or a value other than `true`, reads as off, as the Hub reads it.
+    var addressLookupEnabled: Bool {
+        guard let content = try? readConfigIfPresent() else { return false }
+        return Self.addressLookupEnabled(in: content)
+    }
+
+    /// Writes the owner's address-lookup answer to the configuration (DEC-246) and
+    /// says whether the file changed. The Hub reads it when it next starts; the
+    /// caller restarts a running Hub when the answer changed.
+    @discardableResult
+    func setAddressLookup(_ enabled: Bool) throws -> Bool {
+        guard !previewMode else { throw HubActionError.preview }
+        if try readConfigIfPresent() == nil { try ensureConfig() }
+        guard let original = try readConfigIfPresent() else { return false }
+        let updated = Self.settingAddressLookup(enabled, in: original)
+        guard updated != original else { return false }
+        try Data(updated.utf8).write(to: configPath, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: configPath.path)
+        HubAppLog.shared.record("address_lookup.changed", category: "config",
+                                fields: ["enabled": enabled ? "true" : "false"])
+        return true
+    }
+
+    static func addressLookupEnabled(in content: String) -> Bool {
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        guard let table = lines.firstIndex(where: { uncommented($0) == "[geocoder]" }) else {
+            return false
+        }
+        let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+        for line in lines[(table + 1)..<end] {
+            let value = uncommented(line)
+            guard let equals = value.firstIndex(of: "="),
+                  value[..<equals].trimmingCharacters(in: .whitespaces) == "enabled" else {
+                continue
+            }
+            return value[value.index(after: equals)...].trimmingCharacters(in: .whitespaces) == "true"
+        }
+        return false
+    }
+
+    /// Sets `enabled` in the `[geocoder]` table, adding the table when it is missing.
+    /// Turning lookup on also writes the named provider's endpoint when the table has
+    /// none, so the Hub never falls back to a provider the owner did not see; an
+    /// endpoint the owner set by hand is kept. Turning it off leaves the endpoint.
+    static func settingAddressLookup(_ enabled: Bool, in content: String) -> String {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        func key(_ line: String) -> String? {
+            let value = uncommented(line)
+            guard let equals = value.firstIndex(of: "=") else { return nil }
+            return value[..<equals].trimmingCharacters(in: .whitespaces)
+        }
+        let enabledLine = "enabled = \(enabled ? "true" : "false")"
+        let endpointLine = "endpoint = \(tomlBasicString(addressLookupEndpoint))"
+        if let table = lines.firstIndex(where: { uncommented($0) == "[geocoder]" }) {
+            let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+            let hasEndpoint = lines[(table + 1)..<end].contains { key($0) == "endpoint" }
+            if let setting = lines[(table + 1)..<end].firstIndex(where: { key($0) == "enabled" }) {
+                let indentation = String(lines[setting].prefix { $0 == " " || $0 == "\t" })
+                lines[setting] = indentation + enabledLine
+                if enabled && !hasEndpoint { lines.insert(endpointLine, at: setting + 1) }
+            } else {
+                if enabled && !hasEndpoint { lines.insert(endpointLine, at: table + 1) }
+                lines.insert(enabledLine, at: table + 1)
+            }
+        } else {
+            if !lines.isEmpty && lines.last != "" { lines.append("") }
+            lines.append("[geocoder]")
+            lines.append(enabledLine)
+            if enabled { lines.append(endpointLine) }
+        }
+        if content.hasSuffix("\n") && lines.last != "" { lines.append("") }
+        return lines.joined(separator: "\n")
+    }
+
     private func restoreConfig(_ content: String?) throws {
         guard let content else { return }
         try Data(content.utf8).write(to: configPath, options: .atomic)
