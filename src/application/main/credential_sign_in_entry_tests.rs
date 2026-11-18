@@ -91,7 +91,9 @@ fn ct098_no_override_inputs() {
         vec!["hub", "setup", "--tokens-stdin"],
         vec!["hub", "setup", "--access-token-file", "token", "--refresh-token-file", "token"],
         vec!["hub", "setup-fleet", "--sign-in"],
-        vec!["hub", "setup-fleet", "--all-vehicles"],
+        // `setup-fleet --all-vehicles` is the redeem's car choice (M09-T19); the
+        // two car choices together are still refused.
+        vec!["hub", "setup-fleet", "--vehicle-id", "1", "--all-vehicles"],
         vec!["hub", "setup", "--vehicle-id", "1", "--all-vehicles"],
     ] {
         assert!(Cli::try_parse_from(args.clone()).is_err(), "{args:?} is refused by parsing");

@@ -2970,7 +2970,8 @@ fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
     let store = HubStore::initialize(root.path()).expect("store");
     if owner { credentials::seed_owner_pair_for_test(root.path(), "access-0001", "refresh-0001", None).expect("Owner entry"); }
     let fleet = super::FleetSetupCredentials::new("access-0002".into(), "refresh-0002".into(), "client-0001".into(), super::FleetRegion::EuropeMiddleEastAndAfrica, 3600).expect("Fleet fixture");
-    credentials::seed_fleet_pair_for_test(root.path(), &fleet).expect("Fleet entry");
+    // The Hub's own Fleet grant, the only Fleet pair the vault admits (M09-T11).
+    credentials::seed_own_fleet_pair_for_test(root.path(), &fleet).expect("Fleet entry");
     (root, store)
 }
 
