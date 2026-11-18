@@ -1072,6 +1072,39 @@ fn changed_page_payload_cap_preserves_order_and_cursor_without_loading_an_over_c
 }
 
 #[test]
+fn changed_page_defers_the_byte_check_for_its_lookahead_row() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut state = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+    let entity = SourceDbProjectionStateEntity::Position;
+    for (id, size) in [(1, 1), (2, 100)] {
+        state
+            .record_changed(entity, id, 1, &serde_json::json!({"payload": "x".repeat(size)}))
+            .expect("row fits the configured cap");
+    }
+    state.seal().expect("seal");
+
+    let first = state
+        .changed_page_with_payload_limit(None, 1, 64)
+        .expect("the first row fits the requested page cap");
+    assert_eq!(first.rows.len(), 1);
+    assert_eq!(first.rows[0].state.id, 1);
+    assert_eq!(first.next_after, Some(SourceDbProjectionStateCursor { entity, id: 1 }));
+    assert!(matches!(
+        state.changed_page_with_payload_limit(first.next_after, 1, 64),
+        Err(SourceDbProjectionStateError::ChangedPayloadRowLimitExceeded { .. })
+    ));
+}
+
+#[test]
 fn changed_page_rejects_an_individual_row_before_decoding_it() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let configured_row_cap = 16 * 1024_u64;
