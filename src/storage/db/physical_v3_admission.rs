@@ -178,25 +178,32 @@ impl HubStore {
         let result = self.rotate_pending_physical_v3_admission_inner(
             &candidate, delta.as_ref(), retained_at_ms, serve_state,
         );
+        // A failed commit acknowledgement can still leave both objects
+        // catalogued. Give both candidates the same reference-aware cleanup.
         candidate.retain_catalogued_objects();
+        if let Some(delta) = delta.as_mut() {
+            delta.retain_catalogued_objects();
+        }
         match result {
-            Ok(admission) => {
-                if let Some(delta) = delta.as_mut() { delta.retain_catalogued_objects(); }
-                Ok(admission)
-            }
+            Ok(admission) => Ok(admission),
             Err(error) => {
+                let written_chunks = candidate
+                    .chunks
+                    .iter()
+                    .filter(|chunk| chunk.may_remove_unpublished_file())
+                    .map(|chunk| (chunk.metadata.sha256, chunk.path.as_path()));
+                let written_deltas = delta
+                    .iter()
+                    .flat_map(|delta| &delta.packs)
+                    .filter(|pack| pack.created)
+                    .map(|pack| (pack.sha256, pack.path.as_path()));
                 let mut cleanup_error = None;
-                for chunk in &candidate.chunks {
-                    if chunk.ownership()
-                        == crate::hub_pack::ProjectionPackOwnership::Created
-                        && let Err(source) = self.remove_unretained_pack(
-                            publication_gate,
-                            chunk.metadata.sha256,
-                            &chunk.path,
-                        ) && cleanup_error.is_none()
-                        {
-                            cleanup_error = Some(source);
-                        }
+                for (digest, path) in written_chunks.chain(written_deltas) {
+                    if let Err(source) = self.remove_unretained_pack(publication_gate, digest, path)
+                        && cleanup_error.is_none()
+                    {
+                        cleanup_error = Some(source);
+                    }
                 }
                 Err(cleanup_error.unwrap_or(error))
             }
