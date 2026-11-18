@@ -787,6 +787,31 @@ impl LogCapture {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn queue_timeout_reports_why_the_undelivered_frame_was_dropped() {
+    let capture = LogCapture::start();
+    let peer = Peer::spawn(|connection| async move {
+        let mut socket = connection.ws().await;
+        socket.subscribe().await;
+        socket.send(&u(T0, V1)).await;
+        socket.drain().await;
+    })
+    .await;
+    let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+    rig.capacity = 1;
+    let mut stream = rig.start();
+
+    assert!(matches!(
+        stream.finished(Duration::from_secs(15)).await,
+        Err(super::StreamSupervisorError::EventQueueFull)
+    ));
+    assert!(capture.text().lines().any(|line| {
+        line.contains("stream session summary")
+            && line.contains("end_cause=QueueFull")
+            && line.contains("accepted=0")
+    }));
+}
+
 /// Every cell of every row of `table`, as text.
 fn dump_table(store: &crate::db::HubStore, table: &str) -> String {
     let connection = store.open().expect("connection");
