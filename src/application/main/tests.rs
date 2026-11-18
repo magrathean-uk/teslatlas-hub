@@ -1701,6 +1701,12 @@ fn immutable_diagnostic_waits_for_a_transient_wal() {
     HubStore::initialize(temporary.path()).expect("store initializes");
     let wal = temporary.path().join("hub.sqlite-wal");
     fs::write(&wal, b"pending").expect("create pending WAL witness");
+    // SQLite gives a write-ahead log the catalogue's own mode, whatever the
+    // process umask; the witness does the same.
+    let catalogue_mode = fs::metadata(temporary.path().join("hub.sqlite"))
+        .expect("catalogue metadata")
+        .permissions();
+    fs::set_permissions(&wal, catalogue_mode).expect("WAL witness takes the catalogue mode");
     let mut waits = 0;
 
     run_immutable_diagnostic_with(
@@ -1719,6 +1725,39 @@ fn immutable_diagnostic_waits_for_a_transient_wal() {
     .expect("diagnostic opens after WAL settles");
 
     assert_eq!(waits, 1);
+}
+
+#[test]
+fn immutable_diagnostic_refuses_a_wal_with_an_unsafe_mode() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+        .expect("protect temporary directory");
+    HubStore::initialize(temporary.path()).expect("store initializes");
+    let wal = temporary.path().join("hub.sqlite-wal");
+    fs::write(&wal, b"pending").expect("create pending WAL witness");
+    fs::set_permissions(&wal, fs::Permissions::from_mode(0o644))
+        .expect("give the WAL a mode SQLite never leaves");
+    let mut waits = 0;
+
+    let error = run_immutable_diagnostic_with(
+        temporary.path(),
+        |store| {
+            store.catalogue_check()?;
+            Ok(())
+        },
+        || waits += 1,
+    )
+    .expect_err("an unsafe WAL is refused, not waited for");
+
+    assert!(
+        matches!(
+            error.downcast_ref::<tesatlas_hub::db::StoreError>(),
+            Some(tesatlas_hub::db::StoreError::UnsafeSharedSqlite(path)) if path == &wal
+        ),
+        "unexpected refusal: {error}"
+    );
+    assert_eq!(waits, 0);
+    assert_eq!(fs::read(&wal).expect("WAL kept"), b"pending");
 }
 
 #[test]
