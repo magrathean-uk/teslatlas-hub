@@ -28,6 +28,8 @@ pub const REQUIRED_TABLES: &[&str] = &[
 #[derive(Clone, PartialEq, Eq)]
 pub struct ReadOnlySource {
     url: Url,
+    database: String,
+    user: Option<String>,
 }
 
 impl ReadOnlySource {
@@ -52,11 +54,15 @@ impl ReadOnlySource {
         if url.query().is_some() || url.fragment().is_some() {
             return Err(SourceDbError::Parameters);
         }
-        Ok(Self { url })
+        let database = decode_postgres_name(url.path().trim_start_matches('/'))?;
+        let user = (!url.username().is_empty())
+            .then(|| decode_postgres_name(url.username()))
+            .transpose()?;
+        Ok(Self { url, database, user })
     }
 
     pub fn database_name(&self) -> &str {
-        self.url.path().trim_start_matches('/')
+        &self.database
     }
 
     pub fn host(&self) -> &str {
@@ -74,8 +80,7 @@ impl ReadOnlySource {
     }
 
     pub fn user(&self) -> Option<&str> {
-        let user = self.url.username();
-        (!user.is_empty()).then_some(user)
+        self.user.as_deref()
     }
 
     pub fn is_loopback(&self) -> bool {
@@ -98,6 +103,23 @@ impl ReadOnlySource {
          AND relname = ANY(ARRAY['cars','drives','positions','charging_processes','charges','addresses','geofences','states','updates']) \
          ORDER BY relname"
     }
+}
+
+fn decode_postgres_name(encoded: &str) -> Result<String, SourceDbError> {
+    let mut parts = encoded.split('%');
+    let mut decoded = Vec::with_capacity(encoded.len());
+    decoded.extend_from_slice(parts.next().unwrap_or_default().as_bytes());
+    for part in parts {
+        let escape = part
+            .get(..2)
+            .filter(|escape| escape.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .and_then(|escape| u8::from_str_radix(escape, 16).ok())
+            .filter(|&byte| byte != 0)
+            .ok_or(SourceDbError::InvalidConnectionName)?;
+        decoded.push(escape);
+        decoded.extend_from_slice(&part.as_bytes()[2..]);
+    }
+    String::from_utf8(decoded).map_err(|_| SourceDbError::InvalidConnectionName)
 }
 
 /// Accept one literal address or one DNS hostname. `url` deliberately retains
@@ -132,7 +154,7 @@ impl fmt::Debug for ReadOnlySource {
             .field("userinfo", &self.user().map(|_| "[redacted]"))
             .field("host", &self.host())
             .field("port", &self.port())
-            .field("database", &self.database_name())
+            .field("database", &self.url.path().trim_start_matches('/'))
             .finish()
     }
 }
@@ -148,7 +170,7 @@ impl fmt::Display for ReadOnlySource {
             "{}:{}/{}",
             self.host(),
             self.port(),
-            self.database_name()
+            self.url.path().trim_start_matches('/')
         )
     }
 }
@@ -171,6 +193,8 @@ pub enum SourceDbError {
     EmbeddedSecret,
     #[error("source URL query parameters and fragments are not permitted")]
     Parameters,
+    #[error("source URL has an invalid encoded PostgreSQL user or database name")]
+    InvalidConnectionName,
 }
 
 #[cfg(test)]
@@ -356,6 +380,7 @@ mod n1_src_import_source_db_source_rs_display_tests {
                 SourceDbError::Database => (),
                 SourceDbError::EmbeddedSecret => (),
                 SourceDbError::Parameters => (),
+                SourceDbError::InvalidConnectionName => (),
             }
             assert_name_free(&error);
         }
@@ -367,5 +392,6 @@ mod n1_src_import_source_db_source_rs_display_tests {
         check_source_db_error(SourceDbError::Database);
         check_source_db_error(SourceDbError::EmbeddedSecret);
         check_source_db_error(SourceDbError::Parameters);
+        check_source_db_error(SourceDbError::InvalidConnectionName);
     }
 }
