@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[cfg(test)]
+std::thread_local! {
+    static AFTER_CURRENT_OBSERVATIONS_READ: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn after_current_observations_read(callback: impl FnOnce() + 'static) {
+    AFTER_CURRENT_OBSERVATIONS_READ.with(|hook| *hook.borrow_mut() = Some(Box::new(callback)));
+}
+
 impl HubStore {
     /// Store one geocoder lookup under its own version-2 key.
     ///
@@ -890,11 +901,18 @@ impl HubStore {
                  ORDER BY observed_at_ms, observation_id",
             )
             .map_err(StoreError::Query)?;
-        statement
+        let observations = statement
             .query_map(params![vehicle_id.to_string()], observation_from_row)
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::Query)
+            .map_err(StoreError::Query)?;
+        #[cfg(test)]
+        AFTER_CURRENT_OBSERVATIONS_READ.with(|hook| {
+            if let Some(callback) = hook.take() {
+                callback();
+            }
+        });
+        Ok(observations)
     }
 
     /// Return only the newest durable current-snapshot metadata. Fleet
