@@ -86,31 +86,6 @@ fn parse_sync_entity(value: &str) -> Option<ProjectionDeltaEntity> {
     }
 }
 
-fn load_projection_json<T: DeserializeOwned>(
-    connection: &Connection,
-    table: &str,
-    column: &str,
-    id_column: &str,
-    mutation: &SyncMutation,
-) -> Result<T, StoreError> {
-    let sql = format!("SELECT {column} FROM {table} WHERE vehicle_id = ?1 AND {id_column} = ?2");
-    let json: Option<String> = connection
-        .query_row(
-            &sql,
-            params![mutation.vehicle_id.to_string(), mutation.entity_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(StoreError::Query)?;
-    let json = json.ok_or_else(|| {
-        StoreError::SyncMutation(format!(
-            "missing materialised {} {}",
-            mutation.entity, mutation.entity_id
-        ))
-    })?;
-    serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)
-}
-
 fn insert_live_delta_span_in_transaction(
     transaction: &Transaction<'_>,
     claim: &SyncMutationClaim,

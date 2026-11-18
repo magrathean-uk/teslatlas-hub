@@ -1060,6 +1060,60 @@ fn live_delta_admission_refuses_an_unservable_next_pack_when_no_compaction_can_g
 }
 
 #[test]
+fn live_delta_uses_the_claimed_settings_revision() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _) = imported_v2_base(&store);
+    let (car_claim, car_delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+    store
+        .commit_v2_delta_claim(
+            &car_claim,
+            &car_delta,
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, car_delta.to_sequence),
+        )
+        .expect("publish the car precursor");
+
+    let claimed_settings = ProjectionCarSettings {
+        enabled: false,
+        ..ProjectionCarSettings::default()
+    };
+    store
+        .upsert_car_settings(vehicle.vehicle_id, binding.selected_car_id, &claimed_settings)
+        .expect("record first settings");
+    let claim = store
+        .claim_sync_mutations(vehicle.vehicle_id, 3_000, 1)
+        .expect("claim first revision")
+        .expect("first revision is pending");
+    let later_settings = ProjectionCarSettings {
+        enabled: true,
+        ..claimed_settings.clone()
+    };
+    store
+        .upsert_car_settings(vehicle.vehicle_id, binding.selected_car_id, &later_settings)
+        .expect("record later settings before building the first pack");
+
+    let delta = store
+        .projection_delta_for_mutations(
+            &claim,
+            binding.clone(),
+            SequenceRange {
+                from_exclusive: car_delta.to_sequence,
+                to_inclusive: car_delta.to_sequence + 1,
+            },
+            car_delta.chain_digest,
+        )
+        .expect("build the delta for the first revision");
+    assert_eq!(
+        delta.car_settings,
+        vec![ProjectionCarSettingsPatch {
+            car_id: binding.selected_car_id,
+            settings: claimed_settings,
+        }]
+    );
+}
+
+#[test]
 fn settings_only_sync_delta_is_emitted_and_retained() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");

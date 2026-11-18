@@ -313,8 +313,7 @@ fn staged_seam_sync_in_transaction(
         staged.push(StagedSeamSync {
             from_revision: first.revision,
             to_revision: last.revision,
-            rows: projection_delta_for_mutations_in(
-                connection,
+            rows: HubStore::project_sync_mutations(
                 chunk,
                 binding.clone(),
                 SequenceRange {
