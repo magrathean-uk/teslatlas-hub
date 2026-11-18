@@ -151,7 +151,8 @@ pub fn record_coverage_open(
 
 /// The collection gaps the store recorded inside `[opened_ms, closed_ms]`,
 /// clamped to it. An open gap runs to the close.
-/// When restoring, exclude the backup's open account stop: sealing the lease
+/// When restoring, exclude the backup's account stop, open or since closed by a
+/// resumed window's first start: sealing the lease
 /// gives it an earlier start than its creation and it can overlap stored rows.
 fn store_gaps_within(
     connection: &Connection,
@@ -166,7 +167,7 @@ fn store_gaps_within(
         "SELECT vehicle_id, started_at_ms, ended_at_ms FROM collection_gaps
          WHERE started_at_ms < ?2 AND (ended_at_ms IS NULL OR ended_at_ms > ?1)
            AND (?3 OR kind != 'hub_stopped' OR vehicle_id IS NOT NULL
-                OR ended_at_ms IS NOT NULL OR started_at_ms = created_at_ms)
+                OR started_at_ms = created_at_ms)
          ORDER BY gap_id",
     )?;
     let rows = statement.query_map(params![opened_ms, closed_ms, include_backup_stop], |row| {
