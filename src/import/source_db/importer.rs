@@ -2552,6 +2552,13 @@ pub enum SourceDbImportError {
         "physical V3 publication failed after legacy import; retry the selected-car import: {0}"
     )]
     PhysicalPublication(#[from] crate::physical_publication::SourceDbPhysicalPublicationError),
+    #[error(
+        "history committed for vehicle {vehicle_id} snapshot {legacy_snapshot_id}, but phone sync could not be published with the collection coverage"
+    )]
+    PhysicalHeadWithheld {
+        vehicle_id: Uuid,
+        legacy_snapshot_id: Uuid,
+    },
     #[error("Source database selected car id must be positive")]
     InvalidSelectedCarId,
     #[error(
@@ -2655,6 +2662,7 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         fn check_source_db_import_error(error: SourceDbImportError) {
             match &error {
                 SourceDbImportError::PhysicalPublication(..) => (),
+                SourceDbImportError::PhysicalHeadWithheld { .. } => (),
                 SourceDbImportError::InvalidSelectedCarId => (),
                 SourceDbImportError::InvalidImportGeneration { .. } => (),
                 SourceDbImportError::SelectedCarMissing => (),
@@ -2689,6 +2697,10 @@ mod n1_src_import_source_db_importer_rs_display_tests {
             assert_name_free(&error);
         }
         check_source_db_import_error(SourceDbImportError::PhysicalPublication(example()));
+        check_source_db_import_error(SourceDbImportError::PhysicalHeadWithheld {
+            vehicle_id: example(),
+            legacy_snapshot_id: example(),
+        });
         check_source_db_import_error(SourceDbImportError::InvalidSelectedCarId);
         check_source_db_import_error(SourceDbImportError::InvalidImportGeneration {
             table: "drives",
