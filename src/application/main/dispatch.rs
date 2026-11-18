@@ -1261,9 +1261,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
             // The Mac app's Start: the whole check, with its set-up marker
-            // check and its reader, is the library's (M08-T25).
+            // check and its reader, is the library's (M08-T25), compiled on
+            // every Unix platform (M08-T25-LINUX).
             if !*history_only {
-                let answer = tesatlas_hub::macos_launch_agent::start_preflight(&config)?;
+                let answer = tesatlas_hub::platform::start_preflight::start_preflight(&config)?;
                 println!("{answer}");
                 return Ok(());
             }
