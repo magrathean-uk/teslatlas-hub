@@ -1458,63 +1458,45 @@ where
     use futures_util::StreamExt;
     let mut pending: futures_util::stream::FuturesUnordered<TickFuture<'_>> =
         requests.into_iter().collect();
-    // C3 R11, C4 R56 g: the stream queues are drained at least every
-    // `K_STREAM_DRAIN_CAP` while requests are pending, so a slow request or an
-    // authentication wait cannot fill a queue and end the stream. The interval is
-    // measured from the previous drain, whatever the loop did before this tick, and
-    // an expired deadline is serviced before any ready request (B2 clarification 3).
-    let pump_armed = pump.as_ref().is_some_and(StreamPump::armed);
+    // Keep draining between request results. A ready result gets a turn even
+    // if a stream's queue remains backlogged.
     while !pending.is_empty() {
-        let drain_at = pump.as_ref().map_or_else(Instant::now, StreamPump::deadline);
-        tokio::select! {
-            biased;
-            () = async move {
-                if pump_armed {
-                    tokio::time::sleep_until(drain_at).await;
-                } else {
-                    std::future::pending::<()>().await;
+        let completed = match pump.as_mut() {
+            Some(pump) => pump.while_waiting(run.scheduler, pending.next()).await?,
+            None => pending.next().await,
+        };
+        if let Some((key, result)) = completed {
+            // C3 R2: time is read through the scheduler's clock seam.
+            let now = run.scheduler.clock.mono_now();
+            run.batch.note_result(now);
+            match handle(run, key, result, now) {
+                Ok(ReadFlow::Continue)
+                    if !run.scheduler.mode.is_owner_wire()
+                        || !run.scheduler.wait_running(WaitReason::RateLimited, now) => {}
+                Ok(flow) => {
+                    // After an Owner-wire 429 the shared authentication fuse
+                    // has kept the other requests from sending. Stop polling
+                    // them, just as for a sign-out. Commit the received results
+                    // and account state, then drop the pending requests and
+                    // release the cars so they can be scheduled again.
+                    run.commit_now(now).await?;
+                    drop(pending);
+                    run.scheduler.release_in_flight();
+                    return Ok(flow);
                 }
-            } => {
-                if let Some(pump) = pump.as_mut() {
-                    pump.drain(run.scheduler).await?;
-                    if pump.backlog() {
-                        tokio::task::yield_now().await;
+                Err(error) => {
+                    // A result that ends the run must not hide the error that
+                    // ended it. The loss of the process's sensitive access (R47,
+                    // B2 clarification) writes nothing: the admission that
+                    // guards the store is what failed. Any other error that ends
+                    // a run keeps the snapshots already received in this tick:
+                    // they are stored, best effort, and the error that ended
+                    // collection is reported, not a store fault met on the way
+                    // out.
+                    if !loses_sensitive_access(&error) {
+                        let _ = run.commit_now(now).await;
                     }
-                }
-            }
-            Some((key, result)) = pending.next() => {
-                // C3 R2: time is read through the scheduler's clock seam.
-                let now = run.scheduler.clock.mono_now();
-                run.batch.note_result(now);
-                match handle(run, key, result, now) {
-                    Ok(ReadFlow::Continue)
-                        if !run.scheduler.mode.is_owner_wire()
-                            || !run.scheduler.wait_running(WaitReason::RateLimited, now) => {}
-                    Ok(flow) => {
-                        // After an Owner-wire 429 the shared authentication fuse
-                        // has kept the other requests from sending. Stop polling
-                        // them, just as for a sign-out. Commit the received results
-                        // and account state, then drop the pending requests and
-                        // release the cars so they can be scheduled again.
-                        run.commit_now(now).await?;
-                        drop(pending);
-                        run.scheduler.release_in_flight();
-                        return Ok(flow);
-                    }
-                    Err(error) => {
-                        // A result that ends the run must not hide the error that
-                        // ended it. The loss of the process's sensitive access (R47,
-                        // B2 clarification) writes nothing: the admission that
-                        // guards the store is what failed. Any other error that ends
-                        // a run keeps the snapshots already received in this tick:
-                        // they are stored, best effort, and the error that ended
-                        // collection is reported, not a store fault met on the way
-                        // out.
-                        if !loses_sensitive_access(&error) {
-                            let _ = run.commit_now(now).await;
-                        }
-                        return Err(error);
-                    }
+                    return Err(error);
                 }
             }
         }
