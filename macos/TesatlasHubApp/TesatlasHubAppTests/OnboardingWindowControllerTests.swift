@@ -760,7 +760,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(dashboard.importButton.isEnabled)
         XCTAssertFalse(dashboard.detailsButton.isEnabled)
         XCTAssertEqual(dashboard.activeModalKind, .onboarding)
-        for title in ["Stop Hub…", "Climate", "Access", "More"] {
+        for title in ["Stop Hub…"] {
             let button = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
                 .first { $0.title == title })
             XCTAssertFalse(button.isEnabled, "\(title) remained active during account setup")
@@ -778,9 +778,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
         let refreshed = expectation(description: "dashboard actions restored")
         DispatchQueue.main.async {
-            let climate = self.buttons(in: dashboard.window?.contentView)
-                .first { $0.title == "Climate" }
-            XCTAssertTrue(climate?.isEnabled ?? false)
+            XCTAssertNil(self.buttons(in: dashboard.window?.contentView)
+                .first { $0.title == "Climate" }, "no vehicle action is offered")
             refreshed.fulfill()
         }
         wait(for: [refreshed], timeout: 1)
