@@ -72,6 +72,43 @@ fn sealed_reopen_preserves_the_digest_and_rejects_persisted_accounting_mismatch(
 }
 
 #[test]
+fn nearest_physical_position_handles_extreme_timestamps_and_ties() {
+    use crate::{
+        hub_pack::ProjectionFixedNumericV2_2,
+        source_db_projection::SourceDbPositionPhysicalV2_2,
+    };
+
+    let temporary = tempdir().expect("temporary directory");
+    let mut stage = SourceDbStage::create_physical_v3(private_imports(&temporary), limits())
+        .expect("physical stage");
+    let mut position: SourceDbPositionPhysicalV2_2 = serde_json::from_value(serde_json::json!({
+        "id": 1,
+        "car_id": 1,
+        "date_pg_us": 0,
+        "latitude_e6": ProjectionFixedNumericV2_2::Finite(0),
+        "longitude_e6": ProjectionFixedNumericV2_2::Finite(0),
+    }))
+    .expect("physical position fixture");
+    for (id, instant) in [(1, i64::MIN), (2, 2), (3, 0), (4, 0), (5, i64::MAX)] {
+        position.id = id;
+        position.date_pg_us = instant;
+        stage
+            .insert(SourceDbStageTable::Positions, id.into(), &position)
+            .expect("stage position");
+    }
+    stage.seal().expect("seal");
+    stage
+        .edit_sealed::<SourceDbStageError>(|edit| {
+            assert_eq!(edit.nearest_position(0)?, Some(3));
+            assert_eq!(edit.nearest_position(1)?, Some(3));
+            assert_eq!(edit.nearest_position(i64::MIN)?, Some(1));
+            assert_eq!(edit.nearest_position(i64::MAX)?, Some(5));
+            Ok(())
+        })
+        .expect("position lookup spans the full timestamp domain");
+}
+
+#[test]
 fn stage_format_is_explicit_and_compatibility_remains_the_default() {
     let temporary = tempdir().expect("temp dir");
     let mut compatibility = SourceDbStage::create(temporary.path().join("compatibility"), limits())
