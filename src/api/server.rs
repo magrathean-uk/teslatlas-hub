@@ -1572,27 +1572,13 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
     ) {
         return denied.into_status_response();
     }
-    let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
-        Ok(observations) => observations,
+    let rows = match state.store.current_vehicle_rows(vehicle_id) {
+        Ok(rows) => rows,
         Err(crate::db::StoreError::UnknownVehicle(_)) => {
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle observations");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let car = match state.store.materialised_car_for_vehicle(vehicle_id) {
-        Ok(car) => car,
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle identity");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let lifecycle = match state.store.load_lifecycle_state(vehicle_id) {
-        Ok(lifecycle) => lifecycle,
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle lifecycle");
+            tracing::error!(%error, %vehicle_id, "cannot load current vehicle rows");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
@@ -1602,9 +1588,9 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
     };
     let mut summary = crate::current_state::build_current_vehicle_summary(
         vehicle_id,
-        &observations,
-        car,
-        lifecycle.as_ref(),
+        &rows.observations,
+        rows.car,
+        rows.lifecycle.as_ref(),
         None,
         now_ms,
         state.offline_drive_timeout_ms,
