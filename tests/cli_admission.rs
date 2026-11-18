@@ -1145,7 +1145,13 @@ fn folder_snapshot(folder: &Path) -> Vec<(String, u32, Vec<u8>)> {
 fn setup_fleet_figures_leave_the_development_journal_alone() {
     let hub = Hub::new();
     fs::write(hub.path("config.toml"), figures_config(&hub, "1200", "")).expect("config");
-    let journal = hub.path("journal");
+    // The journal accepts only a folder whose every ancestor is private, which
+    // the short socket folder (possibly under `/tmp`) need not be.
+    let private = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .expect("private folder");
+    let journal = private.path().join("journal");
     fs::create_dir(&journal).expect("journal folder");
     fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).expect("journal mode");
     fs::write(journal.join("hub-events.0.jsonl"), b"{\"earlier\":true}\n").expect("segment");
