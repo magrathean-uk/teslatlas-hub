@@ -221,6 +221,39 @@ fn claimed_collector_delta(
 }
 
 #[test]
+fn lineage_read_keeps_one_head_during_delta_commit() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _) = imported_v2_base(&store);
+    let old = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("read old lineage")
+        .expect("old lineage");
+    let (claim, delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+    let replacement_sequence = delta.to_sequence;
+    let writer = store.clone();
+    APPEND_DURING_LINEAGE_READ.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let cursor = import_delta_test_cursor(&binding, replacement_sequence);
+            writer
+                .commit_v2_delta_claim(&claim, &delta, &import_delta_test_cursor_key(), &cursor)
+                .expect("advance head between the reader's catalogue reads");
+        })));
+    });
+
+    assert_eq!(
+        store.lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("read a complete lineage during the commit"),
+        Some(old)
+    );
+    let current = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("read current lineage")
+        .expect("lineage after commit");
+    assert_eq!(current.head_sequence, replacement_sequence);
+}
+
+#[test]
 fn live_setting_recorded_before_import_base_remains_pending_for_client_delta() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");

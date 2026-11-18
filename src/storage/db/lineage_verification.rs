@@ -1349,6 +1349,10 @@ impl HubStore {
             deltas.push(delta);
         }
         drop(statement);
+        #[cfg(test)]
+        if let Some(publish) = APPEND_DURING_LINEAGE_READ.with(|hook| hook.take()) {
+            publish();
+        }
 
         let (head_base_snapshot, head_sequence, head_digest, terminal_cursor): (
             String,
@@ -1453,4 +1457,13 @@ impl HubStore {
         lineage.validate().map_err(StoreError::Manifest)?;
         Ok(Some(lineage))
     }
+}
+
+#[cfg(test)]
+type LineageReadHook = Box<dyn FnOnce()>;
+
+#[cfg(test)]
+thread_local! {
+    static APPEND_DURING_LINEAGE_READ:
+        std::cell::Cell<Option<LineageReadHook>> = const { std::cell::Cell::new(None) };
 }
