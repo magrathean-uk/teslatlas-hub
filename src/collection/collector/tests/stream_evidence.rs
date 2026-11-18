@@ -2891,3 +2891,33 @@ fn m04_t12_answered_stream_check_cannot_delay_or_cancel_a_408_check() {
         );
     }
 }
+
+#[test]
+fn park_frames_do_not_shorten_vehicle_read_backoff() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.t0);
+    assert_eq!(core.scheduler.due_vehicles(core.t0), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Driving, false, core.t0);
+
+    let failed_at = core.at(20);
+    core.scheduler
+        .schedule_stream_evidence(id, Some("P"), Some(0.0), Some(0), failed_at);
+    assert_eq!(core.scheduler.due_vehicles(failed_at), vec![id]);
+    core.scheduler
+        .vehicle_failed_for_error(id, &ep_status(503), failed_at);
+
+    let retry_at = core.at(30);
+    for seconds in 21..30 {
+        let now = core.at(seconds);
+        core.scheduler
+            .schedule_stream_evidence(id, Some("P"), Some(0.0), Some(0), now);
+        assert!(
+            core.scheduler.due_vehicles(now).is_empty(),
+            "park evidence made the read due again at {seconds}s"
+        );
+    }
+    assert_eq!(core.scheduler.due_vehicles(retry_at), vec![id]);
+}
