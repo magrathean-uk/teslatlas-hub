@@ -151,10 +151,13 @@ pub fn record_coverage_open(
 
 /// The collection gaps the store recorded inside `[opened_ms, closed_ms]`,
 /// clamped to it. An open gap runs to the close.
+/// When restoring, exclude the backup's open account stop: sealing the lease
+/// gives it an earlier start than its creation and it can overlap stored rows.
 fn store_gaps_within(
     connection: &Connection,
     opened_ms: i64,
     closed_ms: i64,
+    include_backup_stop: bool,
 ) -> Result<Vec<CoverageGap>, CoverageError> {
     if !named_table_present(connection, "collection_gaps")? {
         return Ok(Vec::new());
@@ -162,9 +165,11 @@ fn store_gaps_within(
     let mut statement = connection.prepare(
         "SELECT vehicle_id, started_at_ms, ended_at_ms FROM collection_gaps
          WHERE started_at_ms < ?2 AND (ended_at_ms IS NULL OR ended_at_ms > ?1)
+           AND (?3 OR kind != 'hub_stopped' OR vehicle_id IS NOT NULL
+                OR ended_at_ms IS NOT NULL OR started_at_ms = created_at_ms)
          ORDER BY gap_id",
     )?;
-    let rows = statement.query_map(params![opened_ms, closed_ms], |row| {
+    let rows = statement.query_map(params![opened_ms, closed_ms, include_backup_stop], |row| {
         Ok((
             row.get::<_, Option<String>>(0)?,
             row.get::<_, i64>(1)?,
@@ -223,7 +228,7 @@ pub fn record_coverage_handback(
         }
     }
     let mut gaps = window.gaps.clone();
-    for gap in store_gaps_within(&transaction, window.opened_at_ms, window.closed_at_ms)? {
+    for gap in store_gaps_within(&transaction, window.opened_at_ms, window.closed_at_ms, true)? {
         if !gaps.contains(&gap) {
             gaps.push(gap);
         }
@@ -468,15 +473,19 @@ pub fn seal_restored_open_windows(
             closed_ms = closed_ms.max(end);
             ends.insert(vehicle.clone(), Value::from(end));
         }
+        let gaps = store_gaps_within(&transaction, opened_ms, closed_ms, false)?;
+        let gaps_json = serde_json::to_string(&gaps)
+            .map_err(|error| CoverageError::Malformed(error.to_string()))?;
         transaction.execute(
             "UPDATE collection_coverage
-             SET closed_at_ms = ?2, vehicle_ends_json = ?3, sealed = ?4
+             SET closed_at_ms = ?2, vehicle_ends_json = ?3, sealed = ?4, gaps_json = ?5
              WHERE seq = ?1 AND closed_at_ms IS NULL",
             params![
                 seq,
                 closed_ms,
                 Value::Object(ends.clone()).to_string(),
-                COVERAGE_SEALED_RESTORE
+                COVERAGE_SEALED_RESTORE,
+                gaps_json,
             ],
         )?;
         sealed += 1;

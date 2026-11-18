@@ -1581,3 +1581,49 @@ fn cs_p3_lift_and_c3_reset_roll_back_together() {
     assert_eq!((auth.state.as_str(), auth.collecting), ("ready", true));
     assert_eq!(cs_p3_auth_written_ms(&store), Some(CS_W0 + 50_000));
 }
+
+#[test]
+fn astra_p06_restored_open_window_keeps_recorded_collection_gap() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    let vehicle_key = vehicle.vehicle_id.to_string();
+    let connection = store.open().expect("catalogue");
+    let opened = 10_000;
+    let gap = (11_000, 12_000);
+    let final_row = 13_000;
+
+    assert!(record_coverage_open(&connection, 1, "synthetic-grant", opened).unwrap());
+    connection
+        .execute(
+            "INSERT INTO collection_gaps(kind, started_at_ms, ended_at_ms, alert, created_at_ms)
+             VALUES ('hub_down', ?1, ?2, 0, ?1)",
+            [gap.0, gap.1],
+        )
+        .expect("persisted gap");
+    connection
+        .execute(
+            "INSERT INTO materialised_positions(vehicle_id, position_id, car_id, position_json)
+             VALUES (?1, ?2, 1, ?3)",
+            params![
+                vehicle_key,
+                hub_ids::HUB_ID_BASE,
+                serde_json::json!({"date_ms": final_row}).to_string(),
+            ],
+        )
+        .expect("later local position");
+
+    connection
+        .execute(
+            "INSERT INTO collection_gaps(kind, started_at_ms, alert, created_at_ms)
+             VALUES ('hub_stopped', ?1, 0, ?2)",
+            [final_row - 100, final_row + 100],
+        )
+        .expect("backup's sealed lease gap");
+
+    assert_eq!(seal_restored_open_windows(&connection, None).unwrap(), 1);
+    assert_eq!(
+        coverage_intervals_for_vehicle(&connection, &vehicle_key).unwrap(),
+        vec![(opened, gap.0), (gap.1, final_row + 1)]
+    );
+}
