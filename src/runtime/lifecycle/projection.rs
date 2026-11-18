@@ -438,7 +438,7 @@ fn apply_lifecycle_steps(
     apply_version_facts(state, observation, delta)?;
 
     // Step 4: closes, drive then charge.
-    drive_close_step(state, observation, delta)?;
+    let closed_drive_odometer_untrusted = drive_close_step(state, observation, delta)?;
     charge_close_step(state, observation, delta)?;
     // R27: offline closes nothing by itself. The flag on an open drive is
     // informational only; the gap rules judge the drive on the next evidence.
@@ -462,6 +462,14 @@ fn apply_lifecycle_steps(
     // Step 8: standalone position, parked snapshot.
     standalone_position_step(state, observation, delta)?;
     parked_snapshot_step(state, observation);
+    // A drive that closed with an untrusted odometer does not hand its
+    // closing reading to the next drive as a lead. The next observation can
+    // establish a fresh parked odometer normally.
+    if closed_drive_odometer_untrusted
+        && let Some(snapshot) = state.parked_snapshot.as_mut().filter(|value| value.after_drive)
+    {
+        snapshot.odometer_km = None;
+    }
 
     // Step 9: phase and state interval.
     let phase = derive_phase(state, observation);

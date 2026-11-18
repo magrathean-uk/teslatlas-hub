@@ -1906,3 +1906,110 @@ fn astra_p07_f03_battery_only_update_does_not_refresh_old_drive_start_values() {
     assert_eq!(drive.start_latitude, Some(11.0));
     assert_eq!(drive.start_soc, Some(60));
 }
+
+#[test]
+fn astra_p07_f02_one_odometer_spike_cannot_inflate_drive_distance() {
+    let result = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+        parked(3, T0 + 2 * MIN, 10.002, Some(1001.0)),
+    ]);
+    let distance = result.delta.drives[0].distance_km.unwrap();
+    assert!(close_to(distance, K_MILE_KM), "distance: {distance}");
+}
+
+#[test]
+fn astra_p07_f02_return_after_restart_preserves_the_recorded_spike() {
+    let opened = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+    ]);
+    assert!(opened.delta.open_drive_positions.iter().any(|row| {
+        row.odometer == Some(1_000_000.0 * K_MILE_KM)
+    }));
+    let restored = OpenSessionState::decode(&opened.state.encode().unwrap()).unwrap();
+    let closed = step_one(restored, &parked(3, T0 + 2 * MIN, 10.002, Some(1001.0)));
+    assert!(close_to(closed.delta.drives[0].distance_km.unwrap(), K_MILE_KM));
+}
+
+#[test]
+fn astra_p07_f02_persistent_forward_changes_are_not_dropped() {
+    let result = run(&[
+        driving(1, T0, 10.0, Some(1000.0)),
+        driving(2, T0 + MIN, 10.001, Some(1_000_000.0)),
+        parked(3, T0 + 2 * MIN, 10.002, Some(1_000_001.0)),
+    ]);
+    assert!(close_to(result.delta.drives[0].distance_km.unwrap(), 999_001.0 * K_MILE_KM));
+}
+
+#[test]
+fn astra_p07_f02_unresolved_and_persistent_falls_have_unknown_distance() {
+    for end_readings in [vec![900.0], vec![900.0, 901.0]] {
+        let mut samples = vec![
+            driving(1, T0, 10.0, Some(1000.0)),
+            driving(2, T0 + MIN, 10.001, Some(1001.0)),
+        ];
+        for (at, odometer) in end_readings.iter().enumerate() {
+            let id = at as i64 + 3;
+            let time = T0 + (id - 1) * MIN;
+            let latitude = 10.002 + at as f64 * 0.001;
+            samples.push(if at + 1 == end_readings.len() {
+                parked(id, time, latitude, Some(*odometer))
+            } else {
+                driving(id, time, latitude, Some(*odometer))
+            });
+        }
+        let result = run(&samples);
+        assert_eq!(result.delta.drives[0].distance_km, None);
+        assert!(result.delta.open_drive_positions.iter().any(|row| {
+            row.odometer == Some(900.0 * K_MILE_KM)
+        }));
+        assert_eq!(result.state.parked_snapshot.unwrap().odometer_km, None);
+    }
+}
+
+#[test]
+fn astra_p07_f02_a_fine_to_coarse_fall_keeps_a_mixed_drive_distance() {
+    // Polls and stream frames interleaved: each coarse frame reads below the
+    // full poll before it, which is the known precision difference between
+    // the two sources and never an untrusted reading.
+    let result = run(&[
+        full(1, T0, json!("D"), json!(30), 10.0, Some(1000.0), None),
+        full(2, T0 + 10 * SEC, json!("D"), json!(30), 10.001, Some(1000.456789), None),
+        frame(3, T0 + 20 * SEC, Some("D"), Some(30), 10.002, Some(1000.4)),
+        frame(4, T0 + 30 * SEC, Some("D"), Some(30), 10.003, Some(1000.5)),
+        full(5, T0 + 40 * SEC, json!("D"), json!(30), 10.004, Some(1001.123456), None),
+        frame(6, T0 + 50 * SEC, Some("D"), Some(5), 10.005, Some(1001.1)),
+        frame(7, T0 + 60 * SEC, Some("P"), Some(0), 10.005, Some(1001.1)),
+    ]);
+    assert_eq!(result.delta.drives.len(), 1);
+    let distance = result.delta.drives[0].distance_km.expect("distance kept");
+    assert!(close_to(distance, 1.123456 * K_MILE_KM), "distance: {distance}");
+    // The closing frame's own reading stays the next drive's lead.
+    let snapshot = result.state.parked_snapshot.expect("snapshot");
+    assert!(close_to(snapshot.odometer_km.unwrap(), 1001.1 * K_MILE_KM));
+    assert!(snapshot.odometer_coarse);
+}
+
+#[test]
+fn astra_p07_f02_a_same_class_fall_is_refused_between_other_class_readings() {
+    // A persistent fall among full polls stays untrusted even when coarse
+    // frames arrive between them.
+    let result = run(&[
+        full(1, T0, json!("D"), json!(30), 10.0, Some(1000.0), None),
+        frame(2, T0 + 10 * SEC, Some("D"), Some(30), 10.001, Some(1000.4)),
+        full(3, T0 + 20 * SEC, json!("D"), json!(30), 10.002, Some(900.0), None),
+        frame(4, T0 + 30 * SEC, Some("D"), Some(30), 10.003, Some(1000.5)),
+        full(5, T0 + 40 * SEC, Value::Null, Value::Null, 10.004, Some(901.0), None),
+    ]);
+    assert_eq!(result.delta.drives[0].distance_km, None);
+    assert_eq!(result.state.parked_snapshot.unwrap().odometer_km, None);
+    // A persistent fall among coarse frames is refused the same way.
+    let result = run(&[
+        frame(1, T0, Some("D"), Some(30), 10.0, Some(1000.4)),
+        frame(2, T0 + 10 * SEC, Some("D"), Some(30), 10.001, Some(1000.5)),
+        frame(3, T0 + 20 * SEC, Some("D"), Some(30), 10.002, Some(900.0)),
+        frame(4, T0 + 30 * SEC, Some("P"), Some(0), 10.003, Some(900.1)),
+    ]);
+    assert_eq!(result.delta.drives[0].distance_km, None);
+}

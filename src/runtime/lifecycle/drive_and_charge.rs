@@ -224,6 +224,16 @@ impl ElevationWalk {
 }
 
 impl OpenDrive {
+    /// Whether the odometer readings of this drive can be trusted: no
+    /// same-class fall is waiting for its next reading or has persisted.
+    fn odometer_is_known(&self) -> bool {
+        self.odometer_history.as_ref().is_none_or(|history| {
+            !history.invalid
+                && history.fine.pending_fall.is_none()
+                && history.coarse.pending_fall.is_none()
+        })
+    }
+
     /// A drive with nothing folded yet.
     fn empty(id: i64, car_id: i64, start_date_ms: i64) -> Self {
         Self {
@@ -245,6 +255,7 @@ impl OpenDrive {
             last_rated_range_km: None,
             last_odometer: None,
             first_odometer: None,
+            odometer_history: None,
             power_max: None,
             power_min: None,
             inside_temp_sum: 0.0,
@@ -339,6 +350,46 @@ fn fold_drive_point(
         }
     }
     if let Some(odometer) = point.odometer_km.filter(|value| value.is_finite()) {
+        // The lead taken from the parked snapshot stands as the previous
+        // reading of its own class until the drive folds a reading.
+        let lead = open
+            .odometer_history
+            .is_none()
+            .then_some(open.last_odometer)
+            .flatten()
+            .filter(|_| open.odometer_coarse == point.odometer_coarse);
+        let mut history = open.odometer_history.take().unwrap_or_default();
+        let maximum_before = open.last_odometer;
+        let class = if point.odometer_coarse {
+            &mut history.coarse
+        } else {
+            &mut history.fine
+        };
+        // A fall is judged only between two readings of the same class. A
+        // coarse stream frame below a full poll is the known precision
+        // difference between the sources, not an untrusted reading, so it
+        // keeps the clamp below.
+        if !history.invalid {
+            if let Some(before_fall) = class.pending_fall.take() {
+                // Only the next reading of the class can contradict a single
+                // fall. A fall that persists is retained as uncertainty.
+                history.invalid = odometer < before_fall;
+            } else if let Some(previous) = class.previous.or(lead)
+                && odometer < previous
+            {
+                if let Some(before) = class.maximum_before_previous
+                    && previous > before
+                    && odometer >= before
+                {
+                    // The preceding reading of this class jumped and returned.
+                    // Its stored position stays untouched; only the total rolls
+                    // back.
+                    open.last_odometer = Some(before);
+                } else {
+                    class.pending_fall = Some(previous);
+                }
+            }
+        }
         let first = *open.first_odometer.get_or_insert(odometer);
         // An odometer cannot decrease, and mixed-source rounding must not
         // create a negative distance, so "last" is the greatest reading and
@@ -348,6 +399,9 @@ fn fold_drive_point(
                 .map_or(odometer, |last| last.max(odometer))
                 .max(first),
         );
+        class.previous = Some(odometer);
+        class.maximum_before_previous = maximum_before;
+        open.odometer_history = Some(history);
         open.odometer_coarse |= point.odometer_coarse;
     }
     if let Some(level) = point.battery_level {
@@ -701,7 +755,9 @@ fn finalize_drive(
         .max(open.start_date_ms);
     // R46: odometer-based only; GPS path length is never substituted.
     let distance_km = match (open.first_odometer, open.last_odometer) {
-        (Some(first), Some(last)) if first.is_finite() && last.is_finite() => {
+        (Some(first), Some(last))
+            if first.is_finite() && last.is_finite() && open.odometer_is_known() =>
+        {
             Some((last - first).max(0.0))
         }
         _ => None,
@@ -1702,17 +1758,19 @@ fn fold_into_open_drive(
 /// and is not listed.
 ///
 /// The close also leaves the parked snapshot (R69) and the references of the
-/// standalone rule (R53) at the drive's latest emitted position.
+/// standalone rule (R53) at the drive's latest emitted position. It returns
+/// whether a drive closed with an untrusted odometer.
 fn close_open_drive(
     state: &mut OpenSessionState,
     delta: &mut LifecycleDelta,
     loe_end: bool,
     closing_position: Option<ProjectionPosition>,
     explicit_end: Option<i64>,
-) -> Result<(), LifecycleError> {
+) -> Result<bool, LifecycleError> {
     let Some(mut open) = state.open_drive.take() else {
-        return Ok(());
+        return Ok(false);
     };
+    let odometer_untrusted = !open.odometer_is_known();
     record_drive_close_references(state, &open);
     let imported = state
         .imported_open
@@ -1765,7 +1823,7 @@ fn close_open_drive(
             }
         }
     }
-    Ok(())
+    Ok(odometer_untrusted)
 }
 
 /// What a closing drive leaves behind (C1 R53, R69), taken from the open drive
@@ -1796,7 +1854,7 @@ fn record_drive_close_references(state: &mut OpenSessionState, open: &OpenDrive)
         battery_level: open.last_soc,
         ideal_range_km: open.end_ideal_range_km,
         rated_range_km: open.last_rated_range_km,
-        odometer_km: open.last_odometer,
+        odometer_km: open.last_odometer.filter(|_| open.odometer_is_known()),
         odometer_coarse: open.odometer_coarse,
         latitude: open.last_latitude.or(open.start_latitude),
         longitude: open.last_longitude.or(open.start_longitude),
@@ -1816,13 +1874,14 @@ fn record_drive_close_references(state: &mut OpenSessionState, open: &OpenDrive)
 /// folding this observation first would stretch the drive across the gap. Park
 /// is the car's own end-of-drive state, and that observation carries the parked
 /// position the end geofence label needs. A plugged-in car cannot be driving.
+/// It returns whether a drive closed with an untrusted odometer.
 fn drive_close_step(
     state: &mut OpenSessionState,
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
-) -> Result<(), LifecycleError> {
+) -> Result<bool, LifecycleError> {
     let Some(open) = state.open_drive.as_ref() else {
-        return Ok(());
+        return Ok(false);
     };
     let drive_facts = has_fresh_drive_facts(observation);
     let t_drive = observation.parsed.drive_timestamp_ms;
@@ -1843,8 +1902,7 @@ fn drive_close_step(
             && observation.drive == DriveEvidence::NoInfo
             && t_drive.saturating_sub(last_motion) > gap);
     if loe {
-        close_open_drive(state, delta, true, None, None)?;
-        return Ok(());
+        return close_open_drive(state, delta, true, None, None);
     }
     // Item 6: Park in a fresh motion family. Item 7: plugged evidence.
     let parked = observation.drive == DriveEvidence::Park;
@@ -1857,12 +1915,11 @@ fn drive_close_step(
             || (observation.fresh.position && t_drive >= last_folded);
         if can_end_here {
             let position = fold_into_open_drive(state, observation)?;
-            close_open_drive(state, delta, false, position, Some(t_drive))?;
-        } else {
-            close_open_drive(state, delta, true, None, None)?;
+            return close_open_drive(state, delta, false, position, Some(t_drive));
         }
+        return close_open_drive(state, delta, true, None, None);
     }
-    Ok(())
+    Ok(false)
 }
 
 impl OpenCharge {
