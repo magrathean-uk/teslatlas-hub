@@ -873,6 +873,7 @@ fn physical_delta_multiple_packs_are_all_referenced_and_backed_up() {
             store.packs_dir(),
             0,
             4096,
+            crate::hub_pack::PackCheck::Full,
         )
         .expect("bounded multi-pack change");
     assert!(delta.packs.len() > 1);

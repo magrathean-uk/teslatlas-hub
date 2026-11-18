@@ -108,6 +108,30 @@ pub(crate) fn publish_recorded_physical_v3_stage_with_gate_at(
     now_ms: i64,
     record: &dyn Fn(Uuid) -> Result<(), StoreError>,
 ) -> Result<PhysicalV3Publication, SourceDbPhysicalPublicationError> {
+    publish_recorded_physical_v3_stage_reporting_month(
+        store, cursor_key, binding, stage, gate, now_ms, record,
+    )
+    .map(|(publication, _)| publication)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Fails the next month preparation on this thread (M08-T19 tests).
+    pub(crate) static FAIL_NEXT_PREPARATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// As [`publish_recorded_physical_v3_stage_with_gate_at`], also saying
+/// whether the optional prepared month was made (M08-T19).
+pub(crate) fn publish_recorded_physical_v3_stage_reporting_month(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: ProjectionBinding,
+    stage: SourceDbStage,
+    gate: &PublicationGate,
+    now_ms: i64,
+    record: &dyn Fn(Uuid) -> Result<(), StoreError>,
+) -> Result<(PhysicalV3Publication, bool), SourceDbPhysicalPublicationError> {
+    let mut prepared = false;
     let result = publish_sealed_physical_v3_stage_inner(
         store,
         cursor_key,
@@ -118,17 +142,18 @@ pub(crate) fn publish_recorded_physical_v3_stage_with_gate_at(
         SourceDbPhysicalFragmentLimits::default(),
         record,
     );
-    if let Ok(publication) = &result
-        && let Err(error) = crate::sync::prepared_map::publish_selected_month(
+    if let Ok(publication) = &result {
+        match crate::sync::prepared_map::publish_selected_month(
             store,
             cursor_key,
             &stage,
             &publication.admission,
             now_ms,
-        )
-    {
-        tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
-                "optional prepared month is unavailable; local map generation remains authoritative");
+        ) {
+            Ok(()) => prepared = true,
+            Err(error) => tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
+                "optional prepared month is unavailable; local map generation remains authoritative"),
+        }
     }
     use crate::runtime::development_event_log as dev;
     let mut event = dev::Event::new(
@@ -147,7 +172,7 @@ pub(crate) fn publish_recorded_physical_v3_stage_with_gate_at(
     dev::record(event);
     let cleanup = stage.discard();
     match (result, cleanup) {
-        (Ok(publication), Ok(())) => Ok(publication),
+        (Ok(publication), Ok(())) => Ok((publication, prepared)),
         (Err(error), Ok(())) => Err(error),
         (_, Err(error)) => Err(SourceDbPhysicalPublicationError::StageCleanup(error)),
     }
@@ -246,6 +271,8 @@ fn publish_sealed_physical_v3_stage_inner(
         stage_limits.max_stage_bytes,
         stage_limits.minimum_free_bytes,
     )?;
+    #[cfg(test)]
+    crate::hub_pack::record_verification("stage-emit", stage.path().display(), true);
     let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
         stage,
         &writer,
@@ -274,7 +301,7 @@ fn publish_sealed_physical_v3_stage_inner(
                 candidate.binding.selected_car_id,
             ) {
                 Ok(target) => {
-                    match crate::import::source_db::physical_delta_pack::prepare_changed_set(
+                    match crate::import::source_db::physical_delta_pack::prepare_changed_set_of_verified_heads(
                         &prior,
                         &target,
                         &candidate.binding,
@@ -314,7 +341,7 @@ fn publish_sealed_physical_v3_stage_inner(
     }
 }
 
-fn physical_v3_snapshot_id(stage_digest: Sha256Digest, binding: &ProjectionBinding) -> Uuid {
+pub(crate) fn physical_v3_snapshot_id(stage_digest: Sha256Digest, binding: &ProjectionBinding) -> Uuid {
     let mut digest = Sha256::new();
     digest.update(b"teslatlas-hub/hub-sync-v1/1.3.0/physical-v3-snapshot/v1\0"); // rename:keep
     digest.update(stage_digest.as_bytes());
