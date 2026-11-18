@@ -162,6 +162,29 @@ fn schema_22_manifest_is_catalogued_as_full_snapshot() {
 }
 
 #[test]
+fn first_schema_22_publication_removes_interrupted_noop_temporary() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let vehicle = Uuid::new_v4();
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let directory = store.open_schema_22_noop_directory(true).expect("no-op directory");
+    let leftover = directory
+        .path
+        .join(format!(".{vehicle}.{}.{}.tmp", Uuid::new_v4(), Uuid::new_v4()));
+    std::fs::write(&leftover, b"interrupted write").expect("temporary no-op");
+    std::fs::set_permissions(
+        &leftover,
+        std::fs::Permissions::from_mode(PRIVATE_SCHEMA_22_NOOP_STAGING_MODE),
+    )
+    .expect("private staging permissions");
+
+    store
+        .prepare_schema_22_noop_publication(&gate, vehicle, None)
+        .expect("prepare publication without a current manifest");
+    assert!(!leftover.exists(), "interrupted temporary must be removed");
+}
+
+#[test]
 fn schema_22_noop_fault_matrix_is_old_or_exact_candidate() {
     use crate::durability_fault::{DurabilityFaultPoint, inject};
 
