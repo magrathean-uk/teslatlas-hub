@@ -50,11 +50,14 @@ final class DevelopmentEventLogTests: XCTestCase {
         }))
         XCTAssertNil(swapError)
     }
+    /// The journal's own walk refuses a path that is not in standardised form, a link or a group-writable
+    /// ancestor, so its scratch must be a canonical path: the private test volume the script mounts.
     private func canonicalTemporaryDirectory() throws -> URL {
-        guard let lab = ProcessInfo.processInfo.environment["TESATLAS_LAB"] ?? ProcessInfo.processInfo.environment["TESLATLAS_LAB"] else { // rename:keep (earlier name, one release)
-            throw XCTSkip("external lab is required for the local source-run journal gate") }
-        let temporary = URL(fileURLWithPath: lab, isDirectory: true).appendingPathComponent("tmp", isDirectory: true)
-        guard let path = realpath(temporary.path, nil) else { throw POSIXError(.EIO) }
+        guard let volume = ProcessInfo.processInfo.environment[HubTestScratch.volumeVariable],
+              volume.hasPrefix("/Volumes/TesatlasHubTests-") else {
+            throw XCTSkip("private test volume is not mounted: run through scripts/test-macos-appkit-focused.sh")
+        }
+        guard let path = realpath(HubTestScratch.validatedVolume.path, nil) else { throw POSIXError(.EIO) }
         defer { free(path) }
         return URL(fileURLWithPath: String(cString: path), isDirectory: true)
     }
