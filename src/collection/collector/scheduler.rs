@@ -1848,10 +1848,12 @@ impl VehicleScheduler {
                 vehicle
             });
             if vehicle.placeholder {
-                // The first list that names a configured car: its stored state
-                // comes back in full, and it is a listed car from now on.
+                // The settings load already restored any hold. Keep the current
+                // hold, which an owner action may have changed before this list.
                 vehicle.placeholder = false;
-                if let Some(restored) = &restored {
+                if let Some(restored) = &restored
+                    && !matches!(restored.row.hold.as_str(), "removed" | "paused" | "service")
+                {
                     Self::apply_restored(vehicle, restored, now, wall_ms);
                 }
             }
