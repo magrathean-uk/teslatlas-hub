@@ -122,28 +122,94 @@ fn paired_devices_json(store: &HubStore) -> Result<String, Box<dyn std::error::E
     )?)
 }
 
-/// Whether `command` is a vehicle action (wake, climate, charge, lock and
-/// the rest). No vehicle command is ever sent (M09-T19 ruling 1): every one
-/// is refused, with or without `--confirm`, for a Fleet Hub and a Legacy Hub
-/// alike, before any configuration, catalogue or service is touched.
-fn is_vehicle_action(command: &ControlCommand) -> bool {
-    matches!(
-        command,
-        ControlCommand::Wake { .. }
-            | ControlCommand::ClimateStart { .. }
-            | ControlCommand::ClimateStop { .. }
-            | ControlCommand::ChargeStart { .. }
-            | ControlCommand::ChargeStop { .. }
-            | ControlCommand::SetChargeLimit { .. }
-            | ControlCommand::Lock { .. }
-            | ControlCommand::Unlock { .. }
-            | ControlCommand::FlashLights { .. }
-            | ControlCommand::HonkHorn { .. }
-    )
+/// The vehicle action `command` asks for (wake, climate, charge, lock and the
+/// rest) and whether it carries `--confirm`; `None` for every other control.
+fn vehicle_action(
+    command: &ControlCommand,
+) -> Option<(tesatlas_hub::owner_api::LegacyVehicleAction, bool)> {
+    use tesatlas_hub::owner_api::LegacyVehicleAction as Action;
+    Some(match command {
+        ControlCommand::Wake { confirm } => (Action::Wake, *confirm),
+        ControlCommand::ClimateStart { confirm } => (Action::ClimateStart, *confirm),
+        ControlCommand::ClimateStop { confirm } => (Action::ClimateStop, *confirm),
+        ControlCommand::ChargeStart { confirm } => (Action::ChargeStart, *confirm),
+        ControlCommand::ChargeStop { confirm } => (Action::ChargeStop, *confirm),
+        ControlCommand::SetChargeLimit { percent, confirm } => {
+            (Action::SetChargeLimit(*percent), *confirm)
+        }
+        ControlCommand::Lock { confirm } => (Action::Lock, *confirm),
+        ControlCommand::Unlock { confirm } => (Action::Unlock, *confirm),
+        ControlCommand::FlashLights { confirm } => (Action::FlashLights, *confirm),
+        ControlCommand::HonkHorn { confirm } => (Action::HonkHorn, *confirm),
+        _ => return None,
+    })
 }
 
-/// The refusal of a vehicle action: a fixed code and the service's text.
+/// The contracted refusals of a vehicle action (DEC-246): `code: text`, exit 1,
+/// nothing on standard output and nothing sent.
 const VEHICLE_COMMANDS_NOT_OFFERED_CODE: &str = "vehicle_commands_not_offered";
+const VEHICLE_ACTION_UNCONFIRMED_CODE: &str = "vehicle_action_unconfirmed";
+const VEHICLE_ACTION_UNCONFIRMED: &str =
+    "a vehicle action is sent only with --confirm; nothing was sent";
+const COLLECTION_WINDOW_CLOSED_CODE: &str = "collection_window_closed";
+const VEHICLE_ACTION_UNKNOWN_CODE: &str = "vehicle_action_unknown";
+
+/// The line a vehicle action ends with when the running service does not send
+/// it. The window, the Fleet route and an unknown action carry their contracted
+/// codes; a refused or ambiguous send keeps the service's own text.
+fn vehicle_action_refusal_line(error: &collector::ResidentVehicleActionError) -> String {
+    use collector::ResidentVehicleActionError as Refusal;
+    match error {
+        Refusal::CommandsNotOffered => format!("{VEHICLE_COMMANDS_NOT_OFFERED_CODE}: {error}"),
+        Refusal::WindowClosed | Refusal::Unavailable => format!(
+            "{COLLECTION_WINDOW_CLOSED_CODE}: {}",
+            collector::VEHICLE_ACTION_WINDOW_CLOSED
+        ),
+        Refusal::UnknownAction => format!("{VEHICLE_ACTION_UNKNOWN_CODE}: {error}"),
+        _ => error.to_string(),
+    }
+}
+
+/// `control <action> --confirm` (DEC-246). The Mac app never calls it. A Fleet
+/// Hub refuses every action (polling only), with or without `--confirm`, before
+/// the catalogue is opened. A Legacy Hub refuses an action without `--confirm`,
+/// then one with no running service collecting inside an Open window, both
+/// before the catalogue is opened; otherwise the selected car's action goes to
+/// the running service, which checks the window again, writes the outbound
+/// audit receipt as an explicit vehicle command and sends it once through the
+/// Legacy Owner route. Nothing here contacts Tesla itself.
+async fn run_vehicle_action(
+    config: &HubConfig,
+    requested_vehicle_id: Option<uuid::Uuid>,
+    action: tesatlas_hub::owner_api::LegacyVehicleAction,
+    confirmed: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if config.collector.provider == CollectorProvider::Fleet {
+        return Err(format!(
+            "{VEHICLE_COMMANDS_NOT_OFFERED_CODE}: {}",
+            collector::VEHICLE_COMMANDS_NOT_OFFERED
+        )
+        .into());
+    }
+    if !confirmed {
+        return Err(format!("{VEHICLE_ACTION_UNCONFIRMED_CODE}: {VEHICLE_ACTION_UNCONFIRMED}").into());
+    }
+    if !collector::resident_vehicle_control_present(&config.data_dir) {
+        return Err(format!(
+            "{COLLECTION_WINDOW_CLOSED_CODE}: {}",
+            collector::VEHICLE_ACTION_WINDOW_CLOSED
+        )
+        .into());
+    }
+    let store = HubStore::open_existing(&config.data_dir)?;
+    let vehicle_id = control_target(&store, requested_vehicle_id)?;
+    drop(store);
+    let report = collector::request_resident_vehicle_action(&config.data_dir, vehicle_id, action)
+        .await
+        .map_err(|error| vehicle_action_refusal_line(&error))?;
+    println!("{}", serde_json::to_string(&report)?);
+    Ok(())
+}
 
 fn validate_streaming_setting(
     provider: CollectorProvider,
@@ -413,14 +479,10 @@ async fn run_control(
     if requested_vehicle_id.is_some() && matches!(command, ControlCommand::Pair { .. }) {
         return Err(CONTROL_PAIR_VEHICLE_ID_USAGE.into());
     }
-    if is_vehicle_action(command) {
-        return Err(format!(
-            "{VEHICLE_COMMANDS_NOT_OFFERED_CODE}: {}",
-            collector::VEHICLE_COMMANDS_NOT_OFFERED
-        )
-        .into());
-    }
     let config = HubConfig::load(config_path)?;
+    if let Some((action, confirmed)) = vehicle_action(command) {
+        return run_vehicle_action(&config, requested_vehicle_id, action, confirmed).await;
+    }
     if matches!(command, ControlCommand::SignOut | ControlCommand::RotateCredentialKey) {
         #[cfg(feature = "credential-relocation-fixture")]
         credential_relocation_fixture::require_entry_path(&config.data_dir)?;
@@ -495,7 +557,7 @@ async fn run_control(
         | ControlCommand::Unlock { .. }
         | ControlCommand::FlashLights { .. }
         | ControlCommand::HonkHorn { .. } => {
-            unreachable!("vehicle actions are refused before the configuration is read")
+            unreachable!("vehicle actions returned before the catalogue was opened")
         }
         ControlCommand::Settings {
             enabled,

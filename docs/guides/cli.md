@@ -90,14 +90,40 @@ serving. Old command/configuration names are refused with replacement guidance.
 ## Vehicle control
 
 `control` manages collection settings, paired devices, geofences, GPX export,
-and explicit vehicle actions. Vehicle actions require `--confirm`; multiple
-vehicles also require `--vehicle-id UUID`.
+and explicit vehicle actions.
+
+### Vehicle actions
+
+The actions are `wake`, `climate-start`, `climate-stop`, `charge-start`,
+`charge-stop`, `set-charge-limit --percent N` (50 to 100), `lock`, `unlock`,
+`flash-lights` and `honk-horn`. Only the command line sends them; the Mac app
+shows none. Each needs `--confirm`, and with more than one car,
+`--vehicle-id UUID`.
 
 ```sh
 sudo -u tesatlas -- /usr/bin/tesatlas-hub \
   --config /etc/tesatlas-hub/config.toml control \
   --vehicle-id 11111111-1111-4111-8111-111111111111 wake --confirm
 ```
+
+An action is sent only by a Legacy Hub whose running service is collecting
+inside an open collection window. The command hands it to that service, which
+checks the window again, records it in the outbound audit as an explicit vehicle
+command (a wake as a direct wake command) and sends it once through the Owner
+route; it is never repeated. On success the command prints the service's report
+as one JSON line. Otherwise it prints nothing on standard output, exits 1 and
+writes one of these lines to standard error, and nothing is sent:
+
+| Line | When |
+| --- | --- |
+| `vehicle_commands_not_offered: ...` | The Hub is configured for Fleet. Fleet is polling only, with or without `--confirm`. |
+| `vehicle_action_unconfirmed: ...` | `--confirm` is missing. |
+| `collection_window_closed: ...` | No running Hub is collecting inside an open window, or its window has closed. |
+| `vehicle_action_unknown: ...` | The running Hub does not know the action. |
+
+An action name the command line does not know is a usage error (exit 2). A
+refused or ambiguous send keeps the service's own text; after an ambiguous
+outcome, check the car before repeating anything.
 
 Do not run real vehicle commands during testing. Charging, climate, lock, wake,
 light, and horn actions affect physical property and third-party services.

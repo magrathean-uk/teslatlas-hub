@@ -192,9 +192,11 @@ pub enum ControlCommand {
     /// Rotate the credential key while the service is stopped.
     #[command(name = "rotate-credential-key")]
     RotateCredentialKey,
-    // The vehicle actions keep `--confirm` for scripts that pass it, but no
-    // longer require it: with or without it, every one ends in the product's
-    // refusal `vehicle_commands_not_offered`, exit 1 (M09-T19 ruling 1).
+    // The vehicle actions (DEC-246): a Legacy Hub sends one only with
+    // `--confirm` and only while the running service collects inside an Open
+    // window, and audits it as an explicit vehicle command; otherwise it ends
+    // in a contracted refusal, exit 1. A Fleet Hub refuses every one with
+    // `vehicle_commands_not_offered`, with or without `--confirm`.
     /// Explicitly wake the selected car once.
     Wake {
         #[arg(long)]

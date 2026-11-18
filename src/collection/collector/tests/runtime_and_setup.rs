@@ -434,9 +434,8 @@ async fn resident_control_socket_is_private_bounded_and_service_owned() {
         LegacyVehicleAction::Wake,
     )
     .await
-    .expect_err("every vehicle command is refused locally");
-    // M09-T19 ruling 1: refused before the car is even looked up.
-    assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered));
+    .expect_err("unconfigured vehicle rejected locally");
+    assert!(matches!(error, ResidentVehicleActionError::VehicleMissing));
 
     task.abort();
     let _ = (&mut task).await;
@@ -1935,11 +1934,128 @@ async fn m09_t19_the_fleet_service_refuses_every_vehicle_action_inside_an_open_w
     assert_eq!(counter.view().requests[RequestCategory::Command.index()].1, 0, "no command counted");
 }
 
-/// M09-T19 ruling 1, Legacy: the service's control socket, with the Hub's
-/// own Owner login inside an Open window, refuses every vehicle action
-/// before any token use, receipt or send.
+/// The receipts the outbound audit holds, oldest first: operation, safety
+/// class, transport and outcome.
+fn dec246_receipt_rows(store: &HubStore) -> Vec<(String, String, String, String)> {
+    let connection = store.open().expect("catalogue");
+    let mut statement = connection
+        .prepare(
+            "SELECT operation, safety_class, transport, outcome FROM outbound_request_receipts ORDER BY id",
+        )
+        .expect("receipts query");
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        .expect("receipts")
+        .collect::<Result<_, _>>()
+        .expect("receipt rows")
+}
+
+/// DEC-246, Legacy: the service's control socket, with the Hub's own Owner
+/// login inside an Open window, sends each confirmed action once through the
+/// Owner route (a loopback double here; nothing reaches Tesla) and writes each
+/// to the outbound audit as an explicit vehicle command.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn m09_t19_the_legacy_service_refuses_every_vehicle_action_inside_an_open_window() {
+async fn dec246_the_legacy_service_sends_every_action_inside_an_open_window() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let rig = ResidentRig::new(crate::legacy_auth::AuthMode::Tesla).await;
+            let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+            let _route = window.route(rig.token_url.as_str());
+            let before = dec246_receipt_rows(&rig.store).len();
+            let socket = ResidentControlSocket::bind(&rig.dir).expect("control socket");
+            let serving = tokio::spawn(socket.serve(
+                rig.store.clone(),
+                rig.client.clone(),
+                Arc::clone(&rig.manager),
+                Arc::clone(&rig.fuse),
+                Arc::clone(&rig.refresh),
+            ));
+            for (sent, action) in M09_T19_EVERY_ACTION.into_iter().enumerate() {
+                let report = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                    .await
+                    .unwrap_or_else(|error| panic!("{action:?}: {error:?}"));
+                assert_eq!(report.provider, CollectorProvider::Legacy, "{action:?}");
+                assert_eq!(report.action, action);
+                assert_eq!(report.hub_vehicle_id, rig.hub_vehicle);
+                assert_eq!(report.tesla_eid, rig.eid);
+                assert_eq!(rig.fake.action_requests(), sent + 1, "{action:?}: sent once");
+            }
+            serving.abort();
+            let _ = serving.await;
+            let rows = dec246_receipt_rows(&rig.store);
+            assert_eq!(rows.len() - before, M09_T19_EVERY_ACTION.len(), "one receipt per send");
+            for ((operation, safety_class, transport, outcome), action) in
+                rows[before..].iter().zip(M09_T19_EVERY_ACTION)
+            {
+                let expected = if action == LegacyVehicleAction::Wake {
+                    ("vehicle_wake", "direct_wake_command")
+                } else {
+                    ("vehicle_command", "explicit_vehicle_command")
+                };
+                assert_eq!((operation.as_str(), safety_class.as_str()), expected, "{action:?}");
+                assert_eq!(transport, "owner_api", "{action:?}");
+                assert_eq!(outcome, "success", "{action:?}");
+            }
+            assert_eq!(rig.fake.owner_requests(), 0, "no read was made for an action");
+        })
+        .await;
+}
+
+/// DEC-246, Legacy: outside an Open window (none opened, or the one held has
+/// closed) the service refuses every action before its receipt, a token use
+/// or a send.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dec246_the_legacy_service_refuses_every_action_outside_an_open_window() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let rig = ResidentRig::new(crate::legacy_auth::AuthMode::Tesla).await;
+            let receipts = rig.receipts();
+            for opened in [false, true] {
+                let window = if opened {
+                    let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+                    window.close();
+                    window
+                } else {
+                    crate::fleet_api::egress::test_support::TestWindow::closed()
+                };
+                let route = window.route(rig.token_url.as_str());
+                let socket = ResidentControlSocket::bind(&rig.dir).expect("control socket");
+                let serving = tokio::spawn(socket.serve(
+                    rig.store.clone(),
+                    rig.client.clone(),
+                    Arc::clone(&rig.manager),
+                    Arc::clone(&rig.fuse),
+                    Arc::clone(&rig.refresh),
+                ));
+                for action in M09_T19_EVERY_ACTION {
+                    let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                        .await
+                        .expect_err("refused");
+                    assert!(
+                        matches!(error, ResidentVehicleActionError::WindowClosed),
+                        "opened {opened} {action:?}: {error:?}"
+                    );
+                    assert_eq!(error.to_string(), VEHICLE_ACTION_WINDOW_CLOSED);
+                }
+                serving.abort();
+                let _ = serving.await;
+                drop(route);
+            }
+            assert_eq!(rig.fake.action_requests(), 0, "nothing sent");
+            assert_eq!(rig.fake.token_requests(), 0, "no token refresh");
+            assert_eq!(rig.fake.owner_requests(), 0, "no Owner API request");
+            assert_eq!(rig.receipts(), receipts, "no audit receipt started");
+        })
+        .await;
+}
+
+/// DEC-246: a request of this protocol naming an action the service does not
+/// know is refused as unknown, apart from a malformed request; nothing is
+/// sent and no receipt starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dec246_the_legacy_service_refuses_an_unknown_action() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     SUPERVISED_COLLECTOR_TEST_SEAM
         .scope(seam, async {
@@ -1955,17 +2071,26 @@ async fn m09_t19_the_legacy_service_refuses_every_vehicle_action_inside_an_open_
                 Arc::clone(&rig.fuse),
                 Arc::clone(&rig.refresh),
             ));
-            for action in M09_T19_EVERY_ACTION {
-                let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+            let vehicle = rig.hub_vehicle;
+            for (request, code) in [
+                (json!({"protocol": 1, "hub_vehicle_id": vehicle, "action": "open_frunk"}), "unknown_action"),
+                (json!({"protocol": 1, "hub_vehicle_id": vehicle, "action": {"set_charge_limit": 300}}), "unknown_action"),
+                (json!({"protocol": 2, "hub_vehicle_id": vehicle, "action": "open_frunk"}), "invalid_request"),
+                (json!({"protocol": 1, "action": "wake"}), "invalid_request"),
+            ] {
+                let mut stream = tokio::net::UnixStream::connect(rig.dir.join(RESIDENT_CONTROL_SOCKET_NAME))
                     .await
-                    .expect_err("refused");
-                assert!(matches!(error, ResidentVehicleActionError::CommandsNotOffered), "{action:?}: {error:?}");
+                    .expect("connect");
+                stream.write_all(request.to_string().as_bytes()).await.expect("request");
+                stream.shutdown().await.expect("end of request");
+                let mut answer = Vec::new();
+                stream.read_to_end(&mut answer).await.expect("answer");
+                let answer: Value = serde_json::from_slice(&answer).expect("answer JSON");
+                assert_eq!(answer, json!({"status": "error", "code": code}), "{request}");
             }
             serving.abort();
             let _ = serving.await;
             assert_eq!(rig.fake.action_requests(), 0, "nothing sent");
-            assert_eq!(rig.fake.token_requests(), 0, "no token refresh");
-            assert_eq!(rig.fake.owner_requests(), 0, "no Owner API request");
             assert_eq!(rig.receipts(), receipts, "no audit receipt started");
         })
         .await;

@@ -4,8 +4,9 @@
 //!
 //! This is not a polling loop or a Fleet implementation. It sends authenticated
 //! reads to the legacy-compatible product list and crate-local `vehicle_data`
-//! paths. Vehicle commands are available only through explicit one-shot calls;
-//! the collector never invokes them.
+//! paths. Vehicle commands are available only through explicit one-shot calls
+//! (DEC-246: the command line's confirmed action, inside an Open collection
+//! window); the collector never invokes them.
 //!
 //! Legacy authentication is supplied only through typed credential owners;
 //! raw bearer strings never enter the production API.
@@ -265,6 +266,19 @@ impl OwnerApi {
 
     pub(crate) fn legacy_auth_http_client(&self) -> Client {
         self.legacy_auth_client.clone()
+    }
+
+    /// Whether the collection window lets an explicit vehicle action go to this
+    /// Owner base now (DEC-246). Asked before the action's audit receipt starts,
+    /// so an action outside an Open window writes and sends nothing; the permit
+    /// is released at once and the send asks the gate again.
+    pub(crate) fn vehicle_action_window_open(&self) -> bool {
+        crate::fleet_api::egress::ask(
+            self.base_url.as_str(),
+            crate::fleet_api::egress::Provider::Legacy,
+            crate::fleet_api::egress::PermitKind::Request,
+        )
+        .is_ok()
     }
 
     fn build(
