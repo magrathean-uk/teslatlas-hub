@@ -1276,8 +1276,11 @@ impl HubStore {
         vehicle_id: Uuid,
         verification: LineagePackVerification,
     ) -> Result<Option<LineageManifestV2>, StoreError> {
-        let connection = self.open_read_only_connection()?;
-        let base_row: Option<(String, i64, String, Vec<u8>)> = connection
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(StoreError::Begin)?;
+        let base_row: Option<(String, i64, String, Vec<u8>)> = transaction
             .query_row(
                 "SELECT snapshot_id, base_sequence, base_digest, packs_json
                  FROM sync_bases WHERE vehicle_id = ?1",
@@ -1306,7 +1309,7 @@ impl HubStore {
         }
 
         let mut deltas = Vec::new();
-        let mut statement = connection
+        let mut statement = transaction
             .prepare(
                 "SELECT from_sequence, to_sequence, parent_chain_digest,
                         chain_digest, pack_digest, pack_json
@@ -1359,7 +1362,7 @@ impl HubStore {
             i64,
             String,
             String,
-        ) = connection
+        ) = transaction
             .query_row(
                 "SELECT base_snapshot_id, head_sequence, head_digest, terminal_cursor
                      FROM sync_heads WHERE vehicle_id = ?1",
@@ -1379,7 +1382,7 @@ impl HubStore {
         // must continue to use the persisted binding and fail if it is lost.
         let (installation_id, account_id, generation) =
             if base_packs[0].schema.support() == Some(SchemaSupport::GenericTransport) {
-                let payload: Vec<u8> = connection
+                let payload: Vec<u8> = transaction
                     .query_row(
                         "SELECT manifest_json FROM sync_manifests
                          WHERE snapshot_id = ?1 AND vehicle_id = ?2",
@@ -1425,7 +1428,7 @@ impl HubStore {
                     )
                 }
             } else {
-                let binding = self.v2_projection_binding(vehicle_id)?;
+                let binding = Self::v2_projection_binding_in(&transaction, vehicle_id)?;
                 (
                     binding.installation_id,
                     binding.account_id,
