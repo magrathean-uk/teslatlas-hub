@@ -437,6 +437,8 @@ impl VehicleScheduler {
                         "update_stale",
                     );
                     clear_pending_reads(vehicle);
+                    // Let the next online list confirm reachability again.
+                    vehicle.reported_state = None;
                 }
                 _ => {}
             }
