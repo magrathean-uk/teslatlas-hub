@@ -1226,7 +1226,7 @@ fn parse_vehicle_state(fields: Map<String, Value>) -> Result<String, OwnerApiErr
 pub(crate) fn allowlisted_provider_response_v1(
     raw_json: &Value,
 ) -> Result<Map<String, Value>, OwnerApiError> {
-    const ROOT_FIELDS: &[&str] = &["id", "vehicle_id", "vin", "display_name", "state"];
+    const ROOT_FIELDS: &[&str] = &["id", "vehicle_id", "vin", "display_name", "state", "timestamp"];
     const DRIVE_STATE_FIELDS: &[&str] = &[
         "active_route_destination",
         "active_route_energy_at_arrival",
