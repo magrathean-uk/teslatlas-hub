@@ -937,3 +937,128 @@ fn astra_p03_restored_closing_snapshot_does_not_lower_a_newer_anchor() {
     assert!(permit_refused(&hub));
     assert_eq!(rig.anchor.read(&anchor_name()).unwrap(), newer);
 }
+
+#[test]
+fn astra_p03_restart_downtime_is_a_coverage_gap() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.clock.advance(100);
+    hub.tick().unwrap();
+    drop(hub);
+    rig.clock.advance(600);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert!(handback.gaps.iter().any(|gap| gap.start <= T0 + 100 && gap.end >= T0 + 700),
+        "the handback must not claim coverage while the service was stopped");
+    assert!(handback.coverage_seconds <= 200);
+}
+
+#[test]
+fn astra_p03_restart_after_expiry_excludes_downtime() {
+    let rig = Rig::new();
+    let hub = open_hub(&rig, 0, 3600);
+    rig.clock.advance(100);
+    hub.tick().unwrap();
+    drop(hub);
+    rig.clock.advance(4000);
+    let (hub, outcome) = rig.start_hub();
+    assert_eq!(outcome, ResumeOutcome::ClosedAtStart(CloseReason::Expired));
+    let handback = hub.status().last_handback.unwrap();
+    assert!(handback.gaps.iter().any(|gap| gap.start <= T0 + 100 && gap.end == T0 + 3600),
+        "the interval after the last running tick must remain available to import");
+    assert!(handback.coverage_seconds <= 100);
+}
+
+/// A store that reports one answer about the Hub's newest row, and the
+/// interval it was asked about.
+struct NewestRow {
+    answer: crate::collection::window::NewestHubRow,
+    asked: std::sync::Mutex<Option<(i64, i64)>>,
+}
+
+impl HandbackSource for NewestRow {
+    fn high_water(&self) -> HighWater {
+        HighWater::default()
+    }
+
+    fn newest_row(&self, from_ms: i64, until_ms: i64) -> crate::collection::window::NewestHubRow {
+        *self.asked.lock().unwrap() = Some((from_ms, until_ms));
+        self.answer
+    }
+}
+
+/// Opens a window, ticks at +100 s, stops, and restarts at +700 s with `source`.
+fn restart_with(rig: &Rig, source: Arc<NewestRow>) -> WindowController {
+    let hub = open_hub(rig, 0, 3600);
+    rig.clock.advance(100);
+    hub.tick().unwrap();
+    drop(hub);
+    rig.clock.advance(600);
+    let (hub, outcome) = rig.start_hub_with(source);
+    assert_eq!(outcome, ResumeOutcome::Resumed(Phase::Open));
+    hub
+}
+
+#[test]
+fn m08_t39_restart_gap_starts_after_the_newest_hub_row() {
+    use crate::collection::window::NewestHubRow;
+    let rig = Rig::new();
+    // A position collected 3.4 s after the last persisted tick, before the stop.
+    let row_ms = (T0 + 103) * 1000 + 400;
+    let source = Arc::new(NewestRow {
+        answer: NewestHubRow::At(row_ms),
+        asked: std::sync::Mutex::new(None),
+    });
+    let hub = restart_with(&rig, source.clone());
+    assert_eq!(
+        *source.asked.lock().unwrap(),
+        Some(((T0 + 100) * 1000, (T0 + 700) * 1000)),
+        "the store is asked from the last tick to this start"
+    );
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert_eq!(
+        handback.gaps,
+        vec![crate::collection::window::Gap { start: T0 + 104, end: T0 + 700 }],
+        "the gap starts on the first whole second after the Hub's newest row"
+    );
+    assert!(handback.gaps.iter().all(|gap| gap.start * 1000 > row_ms));
+    assert_eq!(handback.coverage_seconds, 800 - 596);
+}
+
+#[test]
+fn m08_t39_restart_gap_never_starts_before_the_last_tick() {
+    use crate::collection::window::NewestHubRow;
+    let rig = Rig::new();
+    // A newest row older than the tick (a clock-corrected sample) does not
+    // move the gap back over time the process was observed running.
+    let source = Arc::new(NewestRow {
+        answer: NewestHubRow::At((T0 + 40) * 1000),
+        asked: std::sync::Mutex::new(None),
+    });
+    let hub = restart_with(&rig, source);
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert_eq!(handback.gaps, vec![crate::collection::window::Gap { start: T0 + 100, end: T0 + 700 }]);
+}
+
+#[test]
+fn m08_t39_restart_gap_is_not_guessed_when_the_store_cannot_say() {
+    use crate::collection::window::NewestHubRow;
+    let rig = Rig::new();
+    let source = Arc::new(NewestRow {
+        answer: NewestHubRow::Unknown,
+        asked: std::sync::Mutex::new(None),
+    });
+    let hub = restart_with(&rig, source);
+    rig.clock.advance(100);
+    hub.close(CloseReason::OperatorClose);
+    let handback = hub.finish_close().unwrap().unwrap();
+    assert!(handback.gaps.is_empty(), "no Hub row is tombstoned on a guess");
+    assert_eq!(handback.coverage_seconds, 800);
+}
