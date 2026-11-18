@@ -235,6 +235,18 @@ mod tests {
     }
 
     #[test]
+    fn source_connection_uses_decoded_postgres_names() {
+        let source = ReadOnlySource::parse(
+            "postgresql://fixture+reader%40group@127.0.0.1:5433/source%20archive%2F%25",
+        )
+        .expect("valid source URL");
+
+        assert_eq!(source.user(), Some("fixture+reader@group"));
+        assert_eq!(source.database_name(), "source archive/%");
+        assert!(!source.to_string().contains("fixture+reader"));
+    }
+
+    #[test]
     fn rejects_embedded_secrets_and_connection_options() {
         let secret = ReadOnlySource::parse("postgresql://reader:secret@localhost/sourcedb")
             .expect_err("password must be rejected");
