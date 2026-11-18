@@ -1668,3 +1668,58 @@ async fn ct67c_a_token_the_request_refreshed_for_itself_is_not_refreshed_again()
     assert!(fleet_credential_stop(&error), "{error:?}");
     assert!(tick.refreshed());
 }
+
+#[tokio::test]
+async fn an_owner_rate_limit_leaves_queued_requests_unsent() {
+    let mut bed = TickBed::owner();
+    bed.list(vec![core_vehicle(1, "online"), core_vehicle(2, "online")])
+        .await;
+    let now = bed.now();
+    bed.scheduler.begin_tick();
+    let due = bed.scheduler.due_vehicles(now);
+    assert_eq!(due, vec![core_id(1), core_id(2)]);
+    let first = due[0];
+    let second = due[1];
+    let fuse = tokio::sync::Mutex::new(());
+    let first_turn = fuse.lock().await;
+    let second_sent = AtomicBool::new(false);
+    let requests: Vec<TickFuture<'_>> = vec![
+        Box::pin(async move {
+            let _fuse = first_turn;
+            (TickKey::Read(first), Err(ep_rate_limited(120)))
+        }),
+        Box::pin(async {
+            let _fuse = fuse.lock().await;
+            second_sent.store(true, Ordering::SeqCst);
+            (TickKey::Read(second), Ok(TickPayload::InService(false)))
+        }),
+    ];
+    let mut run = TickRun {
+        scheduler: &mut bed.scheduler,
+        identities: &mut bed.identities,
+        commit: TickCommit {
+            store: &bed.store,
+            cursor_key: &bed.cursor_key,
+            provider: bed.provider,
+            offline_drive_timeout: Duration::from_secs(600),
+        },
+        batch: TickBatch::default(),
+        terrain_wake: &bed.terrain,
+        any_wrote: false,
+    };
+
+    drive_requests(&mut run, requests, None, |run, key, result, now| {
+        if let (TickKey::Read(vehicle_id), Err(error)) = (key, result) {
+            run.scheduler.vehicle_failed_for_error(vehicle_id, &error, now);
+        }
+        Ok(ReadFlow::Continue)
+    })
+    .await
+    .expect("the tick commits the rate-limit deadline");
+
+    assert!(!second_sent.load(Ordering::SeqCst));
+    assert!(run.scheduler.due_vehicles(now + Duration::from_secs(119)).is_empty());
+    let mut retry = run.scheduler.due_vehicles(now + Duration::from_secs(120));
+    retry.sort();
+    assert_eq!(retry, due);
+}
