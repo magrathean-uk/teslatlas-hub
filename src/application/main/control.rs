@@ -53,6 +53,11 @@ async fn main() -> ExitCode {
         Command::Serve => dev::Kind::Serve,
         _ => dev::Kind::Command,
     };
+    // Every other `setup-fleet` verb ends through the Fleet report (M09-T24).
+    #[cfg(unix)]
+    let fleet = matches!(&cli.command, Command::SetupFleet { .. });
+    #[cfg(not(unix))]
+    let fleet = false;
     let started = Instant::now();
     dev::record(dev::Event::new(kind, dev::Outcome::Start));
     let result = run(cli).await;
@@ -69,7 +74,29 @@ async fn main() -> ExitCode {
     if !dev::flush() {
         eprintln!("tesatlas-hub: development journal incomplete");
     }
-    ExitCode::from(report_outcome(result, &mut std::io::stderr()))
+    let mut stderr = std::io::stderr();
+    ExitCode::from(if fleet { report_fleet_outcome(result, &mut stderr) } else { report_outcome(result, &mut stderr) })
+    }
+}
+
+/// The exit status of a finished `setup-fleet` verb. A refusal is the
+/// contract's bare `<code>: <text>` line on `stderr` (M09-T19a sections 1 and
+/// 11), the form `setup-fleet figures` writes and the Mac app reads, with
+/// exit 1. An error that carries no refusal code is reported as every other
+/// command reports it.
+fn report_fleet_outcome(
+    result: Result<(), Box<dyn std::error::Error>>,
+    stderr: &mut impl std::io::Write,
+) -> u8 {
+    match result {
+        Err(error) => match error.downcast::<OperatorRefusal>() {
+            Ok(refusal) => {
+                let _ = writeln!(stderr, "{refusal}");
+                1
+            }
+            Err(error) => report_outcome(Err(error), stderr),
+        },
+        result => report_outcome(result, stderr),
     }
 }
 

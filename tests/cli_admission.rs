@@ -1193,3 +1193,261 @@ fn setup_fleet_figures_leave_the_development_journal_alone() {
     assert_eq!(other.status.code(), Some(1), "{}", stderr(&other));
     assert_ne!(folder_snapshot(&journal), before, "the journal folder was usable");
 }
+
+/// The refusal texts of the `setup-fleet` verbs, as the binary prints them.
+#[cfg(target_os = "macos")]
+mod fleet_refusal_lines {
+    pub const NOT_RUNNING: &str = "service_not_running: the Hub service is not running; start Hub and try again";
+    pub const UNAUTHENTICATED: &str =
+        "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent";
+    pub const INPUT_INVALID: &str = "setup_input_invalid: setup-fleet input is unreadable or larger than 4 KiB";
+    pub const SOURCE_CREDENTIAL_TEXT: &str = "Source credentials are disabled: apart from the one-time takeover of \
+        the migration source's login, the Hub does not import, store, use or refresh another application's sign-in, \
+        its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, \
+        or with setup --sign-in).";
+    pub const SIGN_IN_SETTINGS_TEXT: &str = "The Fleet sign-in settings were missing, incomplete, too large or \
+        written with an escape the Hub does not read. Nothing was changed. Check them and start again.";
+    pub const PARTNER_SETTINGS_INVALID: &str = "fleet_partner_settings_invalid: setup-fleet register reads one JSON \
+        object with exactly clientId, clientSecret, domain (a host name such as example.com) and region (na, eu or \
+        cn), with no escape other than \\/ or \\u";
+    pub const WINDOW_CLOSED: &str = "window_closed: sign-in and vehicle discovery need an open collection window";
+    pub const NOT_FLEET: &str = "fleet_activation_unavailable: this Hub does not collect with the Fleet API";
+    pub const SIGN_IN_REQUIRED: &str = "fleet_sign_in_required: sign in with your Fleet application (setup-fleet \
+        begin, then setup-fleet) before collection is switched on";
+    pub const PATH_PROTECTED: &str = "fleet_public_key_path_protected: the public key cannot be saved inside the \
+        Hub's own data, secrets, configuration or log folders; choose another folder";
+    pub const UNWRITABLE: &str = "fleet_public_key_unwritable: the public key file cannot be written at that path";
+}
+
+/// One `setup-fleet` refusal: the verb, its arguments, its input and the
+/// whole standard error line the contract gives it, with what the binary did.
+#[cfg(target_os = "macos")]
+struct FleetRefusal {
+    verb: &'static str,
+    arguments: Vec<String>,
+    line: String,
+    output: Output,
+}
+
+/// Runs `verb` (with `extra` arguments and `input`) on `hub` and records it
+/// with the line it must print.
+#[cfg(target_os = "macos")]
+fn fleet_refusal(hub: &Hub, verb: &'static str, extra: &[&str], input: &[u8], line: impl Into<String>) -> FleetRefusal {
+    let mut arguments: Vec<String> = verb.split(' ').map(str::to_owned).collect();
+    arguments.extend(extra.iter().map(|argument| (*argument).to_owned()));
+    let output = hub.run(&arguments.iter().map(String::as_str).collect::<Vec<_>>(), input);
+    FleetRefusal { verb, arguments, line: line.into(), output }
+}
+
+/// Every `setup-fleet` verb but `figures` (which answers without the
+/// service), with the arguments it needs.
+#[cfg(target_os = "macos")]
+const FLEET_VERBS: [&str; 6] = [
+    "setup-fleet begin",
+    "setup-fleet",
+    "setup-fleet discover",
+    "setup-fleet activate",
+    "setup-fleet register",
+    "setup-fleet public-key",
+];
+
+/// A Hub that `serve` can run: a free loopback port, no geocoder or terrain
+/// lookups, and the test build's window anchor in the test's own folder
+/// (never the login Keychain), as `tests/idle_start.rs` runs it.
+#[cfg(target_os = "macos")]
+fn write_serving_config(hub: &Hub, collector: &str) {
+    let port = TcpListener::bind("127.0.0.1:0").expect("bind").local_addr().expect("address").port();
+    let config = format!(
+        "data_dir = {:?}\nbind = \"127.0.0.1:{port}\"\n{collector}\n[geocoder]\nenabled = false\n\n[terrain]\nenabled = false\n",
+        hub.data()
+    );
+    fs::write(hub.path("config.toml"), config).expect("config");
+    fs::write(hub.path("doubles.json"), serde_json::json!({ "anchorDir": hub.path("anchor") }).to_string())
+        .expect("doubles");
+}
+
+/// Runs `serve` on `hub` until its operator channel answers, then `work`,
+/// then stops it with SIGTERM.
+#[cfg(target_os = "macos")]
+fn while_serving(hub: &Hub, label: &str, work: impl FnOnce()) {
+    let doubles = hub.path("doubles.json");
+    let log = |name: &str| fs::File::create(hub.path(&format!("{label}.{name}"))).expect("log");
+    let mut serve = Command::new(BIN)
+        .arg("--config")
+        .arg(hub.path("config.toml"))
+        .arg("serve")
+        .env_clear()
+        .env("HOME", hub.path("home"))
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+        .env("TMPDIR", hub.tmp.path())
+        .env("RUST_LOG", "off")
+        .env("TESATLAS_HUB_JOURNEY_DOUBLES", &doubles)
+        .env("HTTP_PROXY", &hub.endpoint.address)
+        .env("HTTPS_PROXY", &hub.endpoint.address)
+        .env("ALL_PROXY", &hub.endpoint.address)
+        .env("http_proxy", &hub.endpoint.address)
+        .env("https_proxy", &hub.endpoint.address)
+        .stdin(Stdio::null())
+        .stdout(log("out"))
+        .stderr(log("err"))
+        .spawn()
+        .expect("serve starts");
+    let serve_log = || fs::read_to_string(hub.path(&format!("{label}.err"))).unwrap_or_default();
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(status) = serve.try_wait().expect("serve state") {
+            panic!("{label}: serve exited {status} before answering: {}", serve_log());
+        }
+        if hub.run(&["window", "status"], b"").status.success() {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(90), "{label}: serve did not answer: {}", serve_log());
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work));
+    let _ = Command::new("/bin/kill").args(["-TERM", &serve.id().to_string()]).status();
+    let stopping = std::time::Instant::now();
+    while serve.try_wait().expect("serve state").is_none() {
+        if stopping.elapsed() > Duration::from_secs(90) {
+            let _ = serve.kill();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = serve.wait();
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+/// The fixture the Mac app's Fleet refusal test parses: every line below,
+/// exactly as the built binary printed it.
+#[cfg(target_os = "macos")]
+const FLEET_REFUSAL_FIXTURE: &str = "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/fleet-refusal-lines.json";
+
+/// M09-T24: every `setup-fleet` verb refuses with the contract's bare
+/// `<code>: <text>` line (interface sections 1 and 11), the form `setup-fleet
+/// figures` writes and the Mac app's `HubFleetRefusal.parse` reads: exit 1,
+/// nothing on standard output, and standard error exactly that one line. Each
+/// code is reached as the real service and command give it: with no service,
+/// with another program on the socket, and with the real `serve` idle (no
+/// Open window) for a Legacy and a Fleet Hub. Codes that need Tesla or an
+/// Open window are not reached here; they leave through the same report.
+///
+/// What the binary printed is written to the app's fixture with each case's
+/// contract code; the app's Fleet refusal test parses every entry and must get
+/// that code back. A changed line rewrites the
+/// fixture and fails this test, so the change is seen and committed with the
+/// app test that reads it.
+#[cfg(target_os = "macos")]
+#[test]
+fn setup_fleet_refusals_are_the_contract_lines() {
+    use fleet_refusal_lines::*;
+
+    let hub = Hub::new();
+    let mut printed = Vec::new();
+
+    // No service: every verb is refused before it reads its input.
+    let key = hub.path("fleet-public-key.pem");
+    let key = key.to_str().expect("path");
+    for verb in FLEET_VERBS {
+        let extra: &[&str] = if verb.ends_with("public-key") { &["--output", key] } else { &[] };
+        printed.push(fleet_refusal(&hub, verb, extra, TOKENS, NOT_RUNNING));
+    }
+
+    // Another program of the same user on the socket is not the service.
+    {
+        let impostor_hub = Hub::new();
+        let impostor = Impostor::bind(&impostor_hub.data());
+        for verb in FLEET_VERBS {
+            let extra: &[&str] = if verb.ends_with("public-key") { &["--output", key] } else { &[] };
+            printed.push(fleet_refusal(&impostor_hub, verb, extra, TOKENS, UNAUTHENTICATED));
+        }
+        assert_eq!(impostor.bytes_received(), 0, "the impostor received nothing");
+    }
+
+    // The real service, idle: a Legacy Hub.
+    write_serving_config(&hub, "");
+    let oversized = vec![b' '; 5000];
+    let token: &[u8] = br#"{"accessToken":"access-0001"}"#;
+    let begin: &[u8] = br#"{"clientId":"fleet-client-0001","region":"eu","redirectUri":"https://owner.example/fleet/callback"}"#;
+    let redeem: &[u8] = br#"{"code":"code-0001","redirectUri":"https://owner.example/fleet/callback","clientId":"fleet-client-0001","clientSecret":"fleet-secret-value-0001","region":"eu","binding":"6f1c2a52-7d7e-4b8e-9a39-2d1f6b0c4e11"}"#;
+    let register: &[u8] = br#"{"clientId":"synthetic-client","clientSecret":"fleet-secret-value-0001","domain":"synthetic.example.test","region":"eu"}"#;
+    // The command checks the sign-in settings with the sign-in's own error,
+    // whose text already starts with its code (present behaviour, M09-T24
+    // notes).
+    let source_credential_sign_in = format!("source_credential_disabled: source_credential_disabled: {SOURCE_CREDENTIAL_TEXT}");
+    let settings = format!("sign_in_settings_invalid: sign_in_settings_invalid: {SIGN_IN_SETTINGS_TEXT}");
+    let protected = hub.data().join("fleet-public-key.pem");
+    let protected = protected.to_str().expect("path");
+    let unwritable = hub.path("missing").join("fleet-public-key.pem");
+    let unwritable = unwritable.to_str().expect("path");
+    while_serving(&hub, "legacy", || {
+        for verb in ["setup-fleet begin", "setup-fleet"] {
+            printed.push(fleet_refusal(&hub, verb, &[], &oversized, INPUT_INVALID));
+            printed.push(fleet_refusal(&hub, verb, &[], token, source_credential_sign_in.as_str()));
+            printed.push(fleet_refusal(&hub, verb, &[], b"{}", settings.as_str()));
+        }
+        printed.push(fleet_refusal(&hub, "setup-fleet begin", &[], begin, WINDOW_CLOSED));
+        printed.push(fleet_refusal(&hub, "setup-fleet", &[], redeem, WINDOW_CLOSED));
+        printed.push(fleet_refusal(&hub, "setup-fleet discover", &[], b"", WINDOW_CLOSED));
+        printed.push(fleet_refusal(&hub, "setup-fleet activate", &[], b"", NOT_FLEET));
+        printed.push(fleet_refusal(&hub, "setup-fleet register", &[], &oversized, INPUT_INVALID));
+        printed.push(fleet_refusal(
+            &hub,
+            "setup-fleet register",
+            &[],
+            token,
+            format!("source_credential_disabled: {SOURCE_CREDENTIAL_TEXT}"),
+        ));
+        printed.push(fleet_refusal(&hub, "setup-fleet register", &[], b"{}", PARTNER_SETTINGS_INVALID));
+        printed.push(fleet_refusal(&hub, "setup-fleet register", &[], register, WINDOW_CLOSED));
+        printed.push(fleet_refusal(&hub, "setup-fleet public-key", &["--output", protected], b"", PATH_PROTECTED));
+        printed.push(fleet_refusal(&hub, "setup-fleet public-key", &["--output", unwritable], b"", UNWRITABLE));
+    });
+
+    // The real service, idle: a Fleet Hub that is not signed in yet.
+    write_serving_config(&hub, "[collector]\nprovider = \"fleet\"\ninterval_seconds = 0\n");
+    while_serving(&hub, "fleet", || {
+        printed.push(fleet_refusal(&hub, "setup-fleet activate", &[], b"", SIGN_IN_REQUIRED));
+    });
+
+    // The fixture holds what the binary printed, before any line is judged.
+    let document = serde_json::to_string_pretty(
+        &printed
+            .iter()
+            .map(|refusal| {
+                serde_json::json!({
+                    "verb": refusal.verb,
+                    "code": refusal.line.split(": ").next().expect("code"),
+                    "stderr": stderr(&refusal.output),
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("fixture") + "\n";
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(FLEET_REFUSAL_FIXTURE);
+    let unchanged = fs::read_to_string(&fixture).is_ok_and(|held| held == document);
+    if !unchanged {
+        fs::write(&fixture, &document).expect("write the fixture");
+    }
+
+    let mut wrong = Vec::new();
+    for FleetRefusal { arguments, line, output, .. } in &printed {
+        let expected = format!("{line}\n");
+        if output.status.code() != Some(1) || !output.stdout.is_empty() || stderr(output) != expected {
+            wrong.push(format!(
+                "{arguments:?}: exit {:?}, stdout {:?}\n  stderr   {:?}\n  expected {expected:?}",
+                output.status.code(),
+                stdout(output),
+                stderr(output)
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "refusals not in the contracted form:\n{}", wrong.join("\n"));
+    let codes: std::collections::BTreeSet<&str> =
+        printed.iter().map(|refusal| refusal.line.split(": ").next().expect("code")).collect();
+    assert_eq!(codes.len(), 11, "every code reached: {codes:?}");
+    assert_eq!(hub.endpoint.connections(), 0, "nothing was sent");
+    assert!(unchanged, "{FLEET_REFUSAL_FIXTURE} did not hold the lines the binary prints; it now does: commit it");
+}

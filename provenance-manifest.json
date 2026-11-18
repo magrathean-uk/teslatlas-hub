@@ -506,6 +506,7 @@
         "macos/TesatlasHubApp/TesatlasHubApp/ServiceDetailsWindowController.swift",
         "macos/TesatlasHubApp/TesatlasHubApp/main.swift",
         "macos/TesatlasHubApp/project.yml",
+        "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/fleet-refusal-lines.json",
         "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/import-history-argv.json",
         "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-not-recognised.json",
         "macos/TesatlasHubApp/TesatlasHubAppTests/Fixtures/source-check-recognised.json",

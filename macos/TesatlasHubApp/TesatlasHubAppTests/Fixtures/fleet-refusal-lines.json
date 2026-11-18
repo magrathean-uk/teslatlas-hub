@@ -1,0 +1,147 @@
+[
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "service_not_running",
+    "stderr": "service_not_running: the Hub service is not running; start Hub and try again\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "service_unauthenticated",
+    "stderr": "service_unauthenticated: the process on the control channel is not the Hub service; nothing was sent\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "setup_input_invalid",
+    "stderr": "setup_input_invalid: setup-fleet input is unreadable or larger than 4 KiB\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "source_credential_disabled",
+    "stderr": "source_credential_disabled: source_credential_disabled: Source credentials are disabled: apart from the one-time takeover of the migration source's login, the Hub does not import, store, use or refresh another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "sign_in_settings_invalid",
+    "stderr": "sign_in_settings_invalid: sign_in_settings_invalid: The Fleet sign-in settings were missing, incomplete, too large or written with an escape the Hub does not read. Nothing was changed. Check them and start again.\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "setup_input_invalid",
+    "stderr": "setup_input_invalid: setup-fleet input is unreadable or larger than 4 KiB\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "source_credential_disabled",
+    "stderr": "source_credential_disabled: source_credential_disabled: Source credentials are disabled: apart from the one-time takeover of the migration source's login, the Hub does not import, store, use or refresh another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "sign_in_settings_invalid",
+    "stderr": "sign_in_settings_invalid: sign_in_settings_invalid: The Fleet sign-in settings were missing, incomplete, too large or written with an escape the Hub does not read. Nothing was changed. Check them and start again.\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "window_closed",
+    "stderr": "window_closed: sign-in and vehicle discovery need an open collection window\n",
+    "verb": "setup-fleet begin"
+  },
+  {
+    "code": "window_closed",
+    "stderr": "window_closed: sign-in and vehicle discovery need an open collection window\n",
+    "verb": "setup-fleet"
+  },
+  {
+    "code": "window_closed",
+    "stderr": "window_closed: sign-in and vehicle discovery need an open collection window\n",
+    "verb": "setup-fleet discover"
+  },
+  {
+    "code": "fleet_activation_unavailable",
+    "stderr": "fleet_activation_unavailable: this Hub does not collect with the Fleet API\n",
+    "verb": "setup-fleet activate"
+  },
+  {
+    "code": "setup_input_invalid",
+    "stderr": "setup_input_invalid: setup-fleet input is unreadable or larger than 4 KiB\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "source_credential_disabled",
+    "stderr": "source_credential_disabled: Source credentials are disabled: apart from the one-time takeover of the migration source's login, the Hub does not import, store, use or refresh another application's sign-in, its tokens or its key, and no option or setting changes that. Sign in with the Hub's own login (in the app, or with setup --sign-in).\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "fleet_partner_settings_invalid",
+    "stderr": "fleet_partner_settings_invalid: setup-fleet register reads one JSON object with exactly clientId, clientSecret, domain (a host name such as example.com) and region (na, eu or cn), with no escape other than \\/ or \\u\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "window_closed",
+    "stderr": "window_closed: sign-in and vehicle discovery need an open collection window\n",
+    "verb": "setup-fleet register"
+  },
+  {
+    "code": "fleet_public_key_path_protected",
+    "stderr": "fleet_public_key_path_protected: the public key cannot be saved inside the Hub's own data, secrets, configuration or log folders; choose another folder\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_public_key_unwritable",
+    "stderr": "fleet_public_key_unwritable: the public key file cannot be written at that path\n",
+    "verb": "setup-fleet public-key"
+  },
+  {
+    "code": "fleet_sign_in_required",
+    "stderr": "fleet_sign_in_required: sign in with your Fleet application (setup-fleet begin, then setup-fleet) before collection is switched on\n",
+    "verb": "setup-fleet activate"
+  }
+]

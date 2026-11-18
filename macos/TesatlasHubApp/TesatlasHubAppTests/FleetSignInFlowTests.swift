@@ -1009,6 +1009,22 @@ final class FleetSignInFlowTests: XCTestCase {
         XCTAssertEqual(message("Hub command failed."), "Hub command failed.", "a line without a code stays as it is")
     }
 
+    /// The refusals the built Hub really prints for every `setup-fleet` verb, written by the
+    /// command-line test `setup_fleet_refusals_are_the_contract_lines` (M09-T24).
+    func testEveryRefusalTheBuiltHubPrintsIsReadWithItsCode() throws {
+        struct Printed: Decodable { let verb: String; let code: String; let stderr: String }
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/fleet-refusal-lines.json")
+        let printed = try JSONDecoder().decode([Printed].self, from: Data(contentsOf: url))
+        XCTAssertEqual(Set(printed.map(\.verb)), ["setup-fleet begin", "setup-fleet", "setup-fleet discover",
+                                                   "setup-fleet activate", "setup-fleet register", "setup-fleet public-key"])
+        for entry in printed {
+            XCTAssertEqual(HubFleetRefusal.parse(entry.stderr)?.code, entry.code, "\(entry.verb): \(entry.stderr)")
+            XCTAssertEqual((HubFleetRefusal.from(HubActionError.commandExited(1, entry.stderr)) as? HubFleetRefusal)?.code,
+                           entry.code, "\(entry.verb): \(entry.stderr)")
+        }
+    }
+
     func testALostRedeemAnswerReadsTheStateAndContinuesFromIt() throws {
         let fixture = try Fixture(state: .awaitingSignIn, consented: true)
         defer { fixture.tearDown() }
