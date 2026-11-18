@@ -20,6 +20,46 @@ fn physical_stage(root: &std::path::Path, name: &str, updates: &[i32]) -> Source
     stage
 }
 
+#[tokio::test]
+async fn physical_control_read_keeps_one_head_during_rotation() {
+    let temporary = crate::private_tempdir().expect("private store root");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x40; 32]);
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        physical_stage(temporary.path(), "reader-first", &[10]),
+        1_000,
+    )
+    .await
+    .expect("first head");
+    let vehicle = binding.vehicle_id;
+    let writer = store.clone();
+    let stage = physical_stage(temporary.path(), "reader-next", &[10, 11]);
+    crate::db::ROTATE_DURING_PHYSICAL_ADMISSION_READ.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let gate = writer.try_acquire_publication_gate().expect("writer gate");
+            let publication = publish_sealed_physical_v3_stage_with_gate_at(
+                &writer, &key, binding, stage, &gate, 2_000,
+            )
+            .expect("rotate while the reader holds the old manifest");
+            assert_eq!(publication.admission.head_sequence, 2);
+        })));
+    });
+
+    let observed = store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle)
+        .expect("read one complete publication during the swap");
+    assert_eq!(observed, Some(first.admission));
+    let current = store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle)
+        .expect("read after the swap")
+        .expect("replacement head");
+    assert_eq!(current.head_sequence, 2);
+}
+
 async fn blocked_successor(
     store: &HubStore,
     key: &CursorKey,

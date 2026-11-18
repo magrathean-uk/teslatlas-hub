@@ -1098,6 +1098,10 @@ impl HubStore {
         {
             return Err(StoreError::PhysicalV3AdmissionInvalid);
         }
+        #[cfg(test)]
+        if let Some(publish) = ROTATE_DURING_PHYSICAL_ADMISSION_READ.with(|hook| hook.take()) {
+            publish();
+        }
         let pack_rows = connection
             .prepare(
                 "SELECT ordinal, sha256, relative_path,
@@ -1506,6 +1510,15 @@ fn insert_physical_v3_delta_transition(
         ).map_err(StoreError::PublishManifest)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+type PhysicalAdmissionReadHook = Box<dyn FnOnce()>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ROTATE_DURING_PHYSICAL_ADMISSION_READ:
+        std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
 }
 
 impl HubStore {
