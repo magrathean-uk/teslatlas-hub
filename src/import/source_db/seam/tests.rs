@@ -470,6 +470,26 @@ fn import_seam_plan_hub_wins_inside_coverage() {
 }
 
 #[test]
+fn short_source_drive_does_not_split_overlapping_drives() {
+    let coverage = coverage(&[WINDOW]);
+    let hub_drive = hub_id(1);
+    let hub = store(HubRows {
+        drives: vec![session(hub_drive, 1_210, 1_490)],
+        ..HubRows::default()
+    });
+    let source = SourceRows {
+        drives: vec![session(10, 1_220, 1_250), session(11, 1_260, 1_490)],
+        ..SourceRows::default()
+    };
+
+    let planned = plan(&coverage, &hub, &source);
+    assert_eq!(planned.drives.hub_kept, vec![hub_drive]);
+    assert_eq!(planned.drives.imported, vec![10]);
+    assert_eq!(planned.drives.skipped, vec![link(11, hub_drive)]);
+    assert_replays("short drive between overlapping drives", &coverage, &hub, &source);
+}
+
+#[test]
 fn import_seam_plan_neither_covers_longer_wins_children_move() {
     // The source saw the start, the Hub saw more of the drive: the Hub's row
     // is longer and wins; the source's positions outside the window stay and
