@@ -209,8 +209,11 @@ final class BackupSettingsTests: XCTestCase {
         running.running = true
         var done = HubBackupStatus()
         done.lastGeneration = "generation-9"
-        done.lastSuccess = Date()
-        done.lastAttempt = Date()
+        // One stamp: the service records a run's attempt and success as the same instant, and two
+        // Date() reads can differ when the Mac is busy between them.
+        let finishedAt = Date()
+        done.lastSuccess = finishedAt
+        done.lastAttempt = finishedAt
         backend.statusAnswers = [.success(running), .failure(HubActionError.commandTimedOut), .success(done)]
         for _ in 0..<3 {
             XCTAssertEqual(pending.count, 1)
