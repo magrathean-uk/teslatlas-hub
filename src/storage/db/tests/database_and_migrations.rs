@@ -288,6 +288,48 @@ fn tree_contents(root: &Path) -> Vec<(PathBuf, u32, Option<(u64, String)>)> {
     entries
 }
 
+// M08-T17: a store last written by the previously bundled SQLite (3.53.2) opens
+// with the present one, passes SQLite's integrity check before and after the
+// Hub's admitted open, and keeps its rows.
+#[test]
+fn a_store_written_by_the_previous_bundled_sqlite_opens_and_checks() {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/catalogue-floor.sqlite");
+    let bytes = fs::read(source).expect("fixture");
+    let writer = u32::from_be_bytes(bytes[96..100].try_into().unwrap());
+    assert_eq!(writer, 3_053_002, "fixture last written by SQLite 3.53.2");
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let path = temporary.path().join("hub.sqlite");
+    fs::write(&path, &bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let integrity = |connection: &Connection| -> String {
+        connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .expect("integrity check")
+    };
+    let expected_id: String = {
+        let connection =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert_eq!(integrity(&connection), "ok");
+        connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = 'installation_id'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("installation id row")
+    };
+
+    let store = HubStore::initialize(temporary.path()).expect("admitted open and migration");
+    store.quick_check().expect("quick check");
+    store.catalogue_check().expect("catalogue check");
+    let connection = store.open().expect("reopen store");
+    assert_eq!(integrity(&connection), "ok");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    assert_eq!(store.sqlite_version().unwrap(), BUNDLED_SQLITE_VERSION);
+    assert_eq!(store.installation_id().unwrap().to_string(), expected_id);
+}
+
 #[test]
 fn initializes_a_checked_wal_database() {
     let temp = crate::private_tempdir().expect("temp directory");

@@ -15,7 +15,7 @@
   "base": {
     "snapshot_id": "55555555-5555-4555-8555-555555555555",
     "sequence": 7,
-    "digest": "f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6",
+    "digest": "fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015",
     "packs": [
       {
         "pack_id": "44444444-4444-4444-8444-444444444444",
@@ -27,8 +27,8 @@
         },
         "format": "hub_projection_sqlite",
         "compression": "zstd",
-        "relative_path": "/v1/packs/sha256/f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6.sqlite.zst",
-        "sha256": "f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6",
+        "relative_path": "/v1/packs/sha256/fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015.sqlite.zst",
+        "sha256": "fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015",
         "compressed_bytes": 3049,
         "uncompressed_bytes": 61440,
         "row_count": 6,
@@ -52,9 +52,9 @@
     {
       "from_sequence": 7,
       "to_sequence": 8,
-      "parent_chain_digest": "f4d2e7257d48d57aed745df8778c8036e0a333dc325022348744f3781fd7e7c6",
-      "chain_digest": "36f70fd6d578e900173a3765cd1324dbb460b27eeb67dd0ee83a49ae77d8f72e",
-      "pack_digest": "46d12c7c7ddb1b097bb61a60c9c85686e5f9ebd238093b601c268a6edf3cdf92",
+      "parent_chain_digest": "fda1af64f9d73b8023c17b6f1339da2a52cdfcdf7a0d306abd9bf834c0fa4015",
+      "chain_digest": "9fcf9ef216374ad21c5248a29b197fc9a6c9730463bd6ef7cbfc87686c19ca47",
+      "pack_digest": "f98c469d2ca6e2b22b0e7a39552424f17b7f5821e35ed9004a6b83b546ca9129",
       "pack": {
         "pack_id": "88888888-8888-4888-8888-888888888881",
         "snapshot_id": "55555555-5555-4555-8555-555555555555",
@@ -65,8 +65,8 @@
         },
         "format": "hub_projection_sqlite",
         "compression": "zstd",
-        "relative_path": "/v1/packs/sha256/46d12c7c7ddb1b097bb61a60c9c85686e5f9ebd238093b601c268a6edf3cdf92.sqlite.zst",
-        "sha256": "46d12c7c7ddb1b097bb61a60c9c85686e5f9ebd238093b601c268a6edf3cdf92",
+        "relative_path": "/v1/packs/sha256/f98c469d2ca6e2b22b0e7a39552424f17b7f5821e35ed9004a6b83b546ca9129.sqlite.zst",
+        "sha256": "f98c469d2ca6e2b22b0e7a39552424f17b7f5821e35ed9004a6b83b546ca9129",
         "compressed_bytes": 2967,
         "uncompressed_bytes": 65536,
         "row_count": 2,
@@ -83,9 +83,9 @@
     {
       "from_sequence": 8,
       "to_sequence": 9,
-      "parent_chain_digest": "36f70fd6d578e900173a3765cd1324dbb460b27eeb67dd0ee83a49ae77d8f72e",
-      "chain_digest": "b241f9ea8d57c4c0155b081c429595876e27919bbc4c435c2470ef3c44906c5e",
-      "pack_digest": "f032e30058eb699837fed8d1caa96664fcf02a9a4ac5deb424afc89e84e8aa2b",
+      "parent_chain_digest": "9fcf9ef216374ad21c5248a29b197fc9a6c9730463bd6ef7cbfc87686c19ca47",
+      "chain_digest": "0394234882dafec1f01fb676dbe9b04834b1087bbfc274f8233f650ae68a35f9",
+      "pack_digest": "124e5374166bdddff6d7d63f50f01c02f90e70f2ea0190677b3e8dc2b0ffb18c",
       "pack": {
         "pack_id": "99999999-9999-4999-8999-999999999991",
         "snapshot_id": "55555555-5555-4555-8555-555555555555",
@@ -96,9 +96,9 @@
         },
         "format": "hub_projection_sqlite",
         "compression": "zstd",
-        "relative_path": "/v1/packs/sha256/f032e30058eb699837fed8d1caa96664fcf02a9a4ac5deb424afc89e84e8aa2b.sqlite.zst",
-        "sha256": "f032e30058eb699837fed8d1caa96664fcf02a9a4ac5deb424afc89e84e8aa2b",
-        "compressed_bytes": 2971,
+        "relative_path": "/v1/packs/sha256/124e5374166bdddff6d7d63f50f01c02f90e70f2ea0190677b3e8dc2b0ffb18c.sqlite.zst",
+        "sha256": "124e5374166bdddff6d7d63f50f01c02f90e70f2ea0190677b3e8dc2b0ffb18c",
+        "compressed_bytes": 2970,
         "uncompressed_bytes": 65536,
         "row_count": 3,
         "sequence": {
@@ -114,6 +114,6 @@
     }
   ],
   "head_sequence": 9,
-  "head_digest": "b241f9ea8d57c4c0155b081c429595876e27919bbc4c435c2470ef3c44906c5e",
+  "head_digest": "0394234882dafec1f01fb676dbe9b04834b1087bbfc274f8233f650ae68a35f9",
   "terminal_cursor": "tsp1.5453504301000100000002000111111111111141118111111111111111222222222222422282222222222222223333333333334333833333333333333300000000000000010000000000000009.98bf34bcb5cd3d7e21e9d143a616628fb6fe20255e9bb753d01a5f4d51b507b7"
 }
