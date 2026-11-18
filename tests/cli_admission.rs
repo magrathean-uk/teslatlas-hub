@@ -1542,10 +1542,9 @@ fn setup_fleet_refusals_are_the_contract_lines() {
     assert_eq!(codes.len(), 20, "every code reached: {codes:?}");
     assert_eq!(hub.endpoint.connections(), 0, "nothing was sent");
 
-    // Only now, with every line proven, is the fixture brought up to date: a
-    // failing run leaves the tracked file as it was. A passing run that
-    // changes it leaves the change in the working tree to commit with the
-    // case that made it.
+    // Only now, with every line proven, is the fixture compared. A drifted
+    // fixture is rewritten so a deliberate update can be committed, and the
+    // run still fails so the drift is never silent.
     let document = serde_json::to_string_pretty(
         &printed
             .iter()
@@ -1562,5 +1561,6 @@ fn setup_fleet_refusals_are_the_contract_lines() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(FLEET_REFUSAL_FIXTURE);
     if fs::read_to_string(&fixture).ok().as_deref() != Some(document.as_str()) {
         fs::write(&fixture, &document).expect("write the fixture");
+        panic!("{FLEET_REFUSAL_FIXTURE} was out of date and has been rewritten; commit the updated fixture");
     }
 }

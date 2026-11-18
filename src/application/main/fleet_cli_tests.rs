@@ -52,7 +52,12 @@ const FLEET_REFUSAL_CODES: &[&str] = &[
     "sign_in_stored_unconfirmed", "setup_marker_unavailable",
     // The vault's codes.
     "keyring_changed", "keyring_exists", "keyring_invalid", "keyring_missing", "keyring_newer",
-    "keyring_unreadable", "keyring_unsafe",
+    "keyring_unreadable", "keyring_unsafe", "credential_store_unavailable", "durability_unavailable",
+    "secrets_backup_exclusion_failed", "binding_mismatch", "corrupt", "credential_lock_poisoned",
+    "empty_access_token", "empty_refresh_token", "fresh_sign_in_required", "invalid_origin",
+    "migration_pending", "over_cap", "refresh_token_spent", "sensitive_access_unavailable",
+    "slot_occupied", "successor_not_canonical", "token_too_large", "unknown_format", "unknown_key",
+    "unknown_origin",
     // discover.
     "discovery_pair_unavailable", "discovery_settings_invalid", "discovery_selection_required",
     "discovery_vehicle_not_listed", "discovery_no_vehicles", "discovery_vehicle_conflict",
