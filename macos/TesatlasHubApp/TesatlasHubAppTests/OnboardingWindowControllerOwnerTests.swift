@@ -603,7 +603,7 @@ extension OnboardingWindowControllerTests {
         func commandButtons() -> [NSButton] {
             harness.buttons(in: harness.window.vehiclesView).filter { ["Climate", "Access", "More"].contains($0.title) }
         }
-        XCTAssertTrue(commandButtons().allSatisfy(\.isEnabled), "commands are offered before any command")
+        XCTAssertTrue(commandButtons().isEmpty, "no vehicle action is offered")
         let item = NSMenuItem(title: "Lock", action: nil, keyEquivalent: "")
         item.representedObject = HubVehicleControl.lock.rawValue
         _ = card.perform(NSSelectorFromString("runCommand:"), with: item)
@@ -612,7 +612,7 @@ extension OnboardingWindowControllerTests {
         spinBriefly(0.2)
         XCTAssertEqual(harness.runner.count("control"), 1, "the one recorded command")
         XCTAssertTrue(MainWindowController.vehicleControlOutcomeIsUnknown(HubActionError.commandTimedOut))
-        XCTAssertTrue(commandButtons().allSatisfy { !$0.isEnabled }, "an unknown outcome disables the commands")
+        XCTAssertTrue(commandButtons().isEmpty, "still no vehicle action is offered")
 
         // Neither a refresh nor the owner settling brings a command back or repeats one.
         var refreshed = 0

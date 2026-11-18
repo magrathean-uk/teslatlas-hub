@@ -166,7 +166,9 @@ final class HubVehicleCardView: NSView {
             stateStack.bottomAnchor.constraint(equalTo: stateCard.bottomAnchor)
         ])
 
-        let content = NSStackView(views: [header, stateCard, commandArea, legacySurface])
+        // DEC-246: the Mac app offers no vehicle action. The command groups, the menu
+        // handlers and `actions.command` stay for later use but no view reaches them.
+        let content = NSStackView(views: [header, stateCard])
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = 14
@@ -178,9 +180,7 @@ final class HubVehicleCardView: NSView {
             content.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
             content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
             header.widthAnchor.constraint(equalTo: content.widthAnchor),
-            stateCard.widthAnchor.constraint(equalTo: content.widthAnchor),
-            commandArea.widthAnchor.constraint(equalTo: content.widthAnchor),
-            legacySurface.widthAnchor.constraint(equalTo: content.widthAnchor)
+            stateCard.widthAnchor.constraint(equalTo: content.widthAnchor)
         ])
     }
 
@@ -206,8 +206,7 @@ final class HubVehicleCardView: NSView {
         connectionRow.statusTone = vehicle?.telemetryStatus == .current ? .success : .neutral
 
         let fleet = provider == .fleet
-        commandStack.superview?.superview?.isHidden = !fleet
-        legacySurface.isHidden = fleet
+        legacySurface.isHidden = true
         commandGroupButtons.forEach { $0.isEnabled = enabled && fleet && vehicle != nil }
         setAccessibilityLabel(vehicle.map { "\($0.displayName), \($0.status)" } ?? emptyTitle)
     }
@@ -405,13 +404,7 @@ final class HubVehiclesView: HubSurfaceView {
         header.alignment = .centerY
         header.spacing = 16
 
-        let noteIcon = NSImageView(image: NSImage(systemSymbolName: "lock",
-                                                   accessibilityDescription: nil) ?? NSImage())
-        noteIcon.contentTintColor = .secondaryLabelColor
-        let note = NSTextField(labelWithString: HubL10n.text("hub.HubVehicleViews.410.1679", fallback: "Commands always ask for confirmation before they are sent."))
-        note.font = .systemFont(ofSize: 12)
-        note.textColor = .secondaryLabelColor
-        let footer = NSStackView(views: [noteIcon, note, NSView(),
+        let footer = NSStackView(views: [NSView(),
                                          NSTextField(labelWithString: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Tesatlas Hub %1$@", arguments: [String(describing: HubRelease.bundledVersion)]))])
         footer.alignment = .centerY
         footer.spacing = 8

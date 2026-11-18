@@ -1378,13 +1378,7 @@ final class HubControllerTests: XCTestCase {
         DispatchQueue.main.async {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Aurora" })
-            for title in ["Climate", "Access", "More"] {
-                let button = self.buttons(in: windowController.window?.contentView)
-                    .first { $0.title == title }
-                XCTAssertNotNil(button, "missing \(title)")
-                XCTAssertFalse(button?.isHidden ?? true, "hidden \(title)")
-                XCTAssertTrue(button?.isEnabled ?? false, "preview disabled \(title)")
-            }
+            self.assertNoVehicleActionOffered(in: windowController, "preview Fleet dashboard")
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Fleet API" })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
@@ -1694,14 +1688,7 @@ final class HubControllerTests: XCTestCase {
         let settled = expectation(description: "legacy dashboard settled")
 
         DispatchQueue.main.async {
-            for title in ["Climate", "Access", "More"] {
-                let button = self.buttons(in: windowController.window?.contentView)
-                    .first { $0.title == title }
-                XCTAssertNotNil(button, "missing \(title)")
-                XCTAssertFalse(button?.isEnabled ?? true, "enabled \(title)")
-            }
-            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue == "Vehicle commands require Tesla Fleet API." })
+            self.assertNoVehicleActionOffered(in: windowController, "legacy dashboard")
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Owner sign-in" })
             settled.fulfill()
@@ -4896,6 +4883,27 @@ final class HubControllerTests: XCTestCase {
     private func configContents(in home: URL) throws -> String {
         let config = home.appendingPathComponent("Library/Application Support/Tesatlas Hub/config.toml")
         return try String(contentsOf: config, encoding: .utf8)
+    }
+
+    /// DEC-246: no vehicle action (button, menu item or card control) is reachable in the
+    /// windows or the menus. The service calls stay in the code, unused by the views.
+    private func assertNoVehicleActionOffered(in windowController: MainWindowController,
+                                              _ context: String,
+                                              file: StaticString = #filePath, line: UInt = #line) {
+        let actionTitles = Set(HubVehicleControl.allCases.map(\.title)
+            + ["Climate", "Access", "More", "Other commands", "Vehicle controls", "Wake", "Honk",
+               "Flash Lights", "Honk Horn", "Lock", "Unlock", "Start Climate", "Stop Climate"])
+        windowController.selectMainSection(.vehicles)
+        for view in [windowController.window?.contentView, windowController.vehiclesView,
+                     windowController.dashboardView] {
+            XCTAssertEqual(buttons(in: view).filter { actionTitles.contains($0.title) }.map(\.title), [],
+                           "\(context): an action button is offered", file: file, line: line)
+            XCTAssertEqual(labels(in: view).filter { actionTitles.contains($0.stringValue) }.map(\.stringValue), [],
+                           "\(context): an action heading is shown", file: file, line: line)
+        }
+        let menus = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }
+        XCTAssertFalse(menus.contains { actionTitles.contains($0.title) },
+                       "\(context): a menu offers an action", file: file, line: line)
     }
 
     private func buttons(in view: NSView?) -> [NSButton] {
