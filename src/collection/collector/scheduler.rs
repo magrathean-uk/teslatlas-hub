@@ -1017,14 +1017,24 @@ impl ScheduledVehicle {
             // for no faster state check of its own (R53, R16).
             _ if self.placeholder => false,
             VehicleHold::Service | VehicleHold::Paused(_) => true,
-            VehicleHold::None => !self.phase.is_read_phase(),
+            VehicleHold::None => !self.phase.is_read_phase() || self.waiting_for_update_reconnect(),
         }
+    }
+
+    /// Keep the update phase during a disconnect, using the list to find its return.
+    fn waiting_for_update_reconnect(&self) -> bool {
+        self.phase == PollPhase::Updating && self.reported_state.as_deref() == Some("offline")
+    }
+
+    fn read_due_at(&self) -> Option<Instant> {
+        self.next_read_due
+            .filter(|_| !self.waiting_for_update_reconnect())
     }
 
     /// The earliest instant any of the car's own timers fires.
     fn next_due(&self) -> Option<Instant> {
         [
-            self.next_read_due,
+            self.read_due_at(),
             self.next_check_due,
             self.next_probe_due,
             self.suspend_at,
@@ -1961,7 +1971,7 @@ impl VehicleScheduler {
             .filter(|(_, vehicle)| vehicle.hold == VehicleHold::None && !vehicle.in_flight)
             .filter_map(|(id, vehicle)| {
                 vehicle
-                    .next_read_due
+                    .read_due_at()
                     .filter(|due| *due <= now)
                     .map(|due| (due, *id))
             })
@@ -2485,7 +2495,7 @@ impl VehicleScheduler {
             for vehicle in self.vehicles.values() {
                 if vehicle.hold == VehicleHold::None
                     && !vehicle.in_flight
-                    && let Some(due) = vehicle.next_read_due
+                    && let Some(due) = vehicle.read_due_at()
                 {
                     consider(self.after_wait(due));
                 }
