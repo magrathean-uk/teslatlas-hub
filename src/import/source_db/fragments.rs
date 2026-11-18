@@ -569,7 +569,7 @@ fn write_position_fragments(
     let mut source_drives = Vec::new();
     for_each_page::<SourceDbDrive, _>(stage, SourceDbStageTable::Drives, |drive| {
         if let Some(projected) = project_drive_from_stage(stage, &drive, car.id)? {
-            projected_drives.insert(drive.id, projected);
+            projected_drives.insert(drive.id, Arc::new(projected));
         }
         source_drives.push(drive);
         Ok(())
@@ -579,8 +579,8 @@ fn write_position_fragments(
     let detachment = Arc::new(PositionDetachmentPolicy::new(&source_drives, car.id, held_drive_id));
     let mut expected_detached = 0_u64;
     drop(source_drives);
-    let projected_drives = Arc::new(projected_drives);
-    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone(), detachment.clone());
+    let mut projection_pool =
+        PositionProjectionPool::new(car.id, Arc::new(projected_drives), detachment.clone());
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     let mut ordinal = 0_u64;
     let mut after_id = 0_i64;
@@ -654,10 +654,10 @@ fn append_projected_positions(
             sink,
             drive_is_present,
             || Ok((1, serialized_bytes(&position)?)),
-            || Ok((1, serialized_bytes(&drive)?)),
+            || Ok((1, serialized_bytes(drive.as_ref())?)),
         )?;
         if accumulator.drive_ids.insert(drive.id) {
-            accumulator.drives.push(drive);
+            accumulator.drives.push(drive.as_ref().clone());
         }
         accumulator.positions.push(position);
         report.projected_positions = report
@@ -949,7 +949,7 @@ struct PositionProjectionJob {
 
 struct ProjectedPosition {
     position: ProjectionPosition,
-    drive: Option<ProjectionDrive>,
+    drive: Option<Arc<ProjectionDrive>>,
 }
 
 struct PositionProjectionResult {
@@ -972,7 +972,11 @@ struct PositionProjectionPool {
 }
 
 impl PositionProjectionPool {
-    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>, detachment: Arc<PositionDetachmentPolicy>) -> Self {
+    fn new(
+        car_id: i64,
+        drives: Arc<HashMap<i64, Arc<ProjectionDrive>>>,
+        detachment: Arc<PositionDetachmentPolicy>,
+    ) -> Self {
         let workers = thread::available_parallelism()
             .map(|value| value.get())
             .unwrap_or(1)
@@ -1002,7 +1006,7 @@ impl PositionProjectionPool {
                             let drive = match row.value.drive_id {
                                 None => None,
                                 Some(drive_id) => match drives.get(&drive_id) {
-                                    Some(drive) => Some(drive.clone()),
+                                    Some(drive) => Some(Arc::clone(drive)),
                                     None => {
                                         detached += 1;
                                         None
