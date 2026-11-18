@@ -747,9 +747,11 @@ fn collection_window_supervisor_keeps_api_up_and_restarts_with_backoff() {
     slot.log.lock().unwrap().fail_starts = 2;
     rig.clock.advance(1);
     assert!(!supervisor.step().collector_running);
-    rig.clock.advance(10);
+    rig.clock.advance(4);
     assert!(!supervisor.step().collector_running);
-    rig.clock.advance(30);
+    rig.clock.advance(8);
+    assert!(!supervisor.step().collector_running);
+    rig.clock.advance(16);
     assert!(supervisor.step().collector_running);
     assert_eq!(
         hub.status().phase,

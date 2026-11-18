@@ -50,6 +50,7 @@ pub struct Supervisor<S: CollectorSlot> {
     slot: S,
     failures: u32,
     retry_at_mono: u64,
+    started_at_mono: Option<u64>,
     gap_start: Option<i64>,
     /// An owner sign-in's claim on the credential vault (M02-T12): while it
     /// is requested the collector is stopped and not started.
@@ -63,6 +64,7 @@ impl<S: CollectorSlot> Supervisor<S> {
             slot,
             failures: 0,
             retry_at_mono: 0,
+            started_at_mono: None,
             gap_start: None,
             custody: CredentialCustody::process_wide().clone(),
         }
@@ -88,6 +90,7 @@ impl<S: CollectorSlot> Supervisor<S> {
     pub fn reset_start_backoff(&mut self) {
         self.failures = 0;
         self.retry_at_mono = 0;
+        self.started_at_mono = None;
     }
 
     fn note_failure(&mut self, wall: i64, mono: u64) {
@@ -121,7 +124,7 @@ impl<S: CollectorSlot> Supervisor<S> {
                 if self.slot.is_running() {
                     self.slot.stop();
                 }
-                self.failures = 0;
+                self.reset_start_backoff();
                 self.gap_start = None;
             }
             Phase::Open if self.custody.requested() => {
@@ -130,27 +133,40 @@ impl<S: CollectorSlot> Supervisor<S> {
                 if self.slot.is_running() {
                     self.slot.stop();
                 }
+                self.started_at_mono = None;
                 self.gap_start.get_or_insert(wall);
             }
             Phase::Open => {
                 if self.slot.is_running() {
                     self.end_gap(wall);
-                    self.failures = 0;
-                } else if mono >= self.retry_at_mono {
-                    let deadline = status.deadline.unwrap_or(wall);
-                    match self.slot.start(deadline) {
-                        Ok(()) => {
-                            self.end_gap(wall);
-                            self.failures = 0;
-                        }
-                        Err(_) => self.note_failure(wall, mono),
+                    // The slot reports running as soon as it spawns the task. Only
+                    // a sustained run clears the backoff from previous failures.
+                    if self.started_at_mono.is_some_and(|started| {
+                        mono.saturating_sub(started) >= BACKOFF_CAP_SECONDS
+                    }) {
+                        self.failures = 0;
                     }
                 } else {
-                    self.gap_start.get_or_insert(wall);
+                    if self.started_at_mono.take().is_some() {
+                        self.note_failure(wall, mono);
+                    }
+                    if mono >= self.retry_at_mono {
+                        let deadline = status.deadline.unwrap_or(wall);
+                        match self.slot.start(deadline) {
+                            Ok(()) => {
+                                self.end_gap(wall);
+                                self.started_at_mono = Some(mono);
+                            }
+                            Err(_) => self.note_failure(wall, mono),
+                        }
+                    } else {
+                        self.gap_start.get_or_insert(wall);
+                    }
                 }
                 report.collector_running = self.slot.is_running();
             }
             Phase::Closing => {
+                self.started_at_mono = None;
                 self.slot.stop();
                 let closing_at = status.closing_at.unwrap_or(wall);
                 let gate = self.controller.gate();
