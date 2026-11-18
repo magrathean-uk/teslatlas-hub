@@ -1125,6 +1125,9 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?;
+        // Packs are digest-named and immutable: release the snapshot before the
+        // stat and hash loop so it does not pin the WAL.
+        drop(transaction);
         if pack_rows.len() != manifest.chunks.len() {
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
