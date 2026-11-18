@@ -1083,10 +1083,12 @@ fn figures_config(hub: &Hub, state: &str, extra: &str) -> String {
 #[test]
 fn setup_fleet_figures_streams_are_exactly_the_contract_lines() {
     let hub = Hub::new();
-    let deprecated = format!(
-        "[{}]\n",
-        tesatlas_hub::runtime::legacy_names::DEPRECATED_CONFIG_TABLE_IMPORT_SOURCE
-    );
+    // The accepted earlier name of `[import_source]`, as the loader's own
+    // warning names it.
+    let warning = tesatlas_hub::config::deprecated_table_warning();
+    let name = warning.split('[').nth(1).and_then(|rest| rest.split(']').next()).expect("table name");
+    assert_ne!(name, "import_source");
+    let deprecated = format!("[{name}]\n");
     for extra in ["", deprecated.as_str()] {
         fs::write(hub.path("config.toml"), figures_config(&hub, "1200", extra)).expect("config");
         let output = hub.run(&["setup-fleet", "figures"], b"");
