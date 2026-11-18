@@ -49,6 +49,41 @@ impl PriorProjectionStateLookup for MemoryPrior {
 }
 
 #[test]
+fn tombstones_skip_removed_rows_that_the_seam_never_published() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut state = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+    state.seal().expect("empty current capture");
+
+    let mut prior = MemoryPrior::default();
+    let entity = SourceDbProjectionStateEntity::Position;
+    for (id, digest) in [
+        (1, seam_left_out_digest(entity, &Sha256Digest::from_bytes([7; 32]))),
+        (2, Sha256Digest::from_bytes([8; 32])),
+    ] {
+        prior.rows.insert(
+            (entity.ordinal(), id),
+            SourceDbProjectionStateDigestRow { entity, id, car_id: 1, digest },
+        );
+    }
+
+    let (tombstones, next) = state.tombstone_page(&mut prior, None, 10).expect("tombstones");
+    assert!(next.is_none());
+    assert_eq!(
+        tombstones.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![2],
+    );
+}
+
+#[test]
 fn write_batch_capacity_uses_a_small_fixed_margin_not_the_state_cap() {
     assert_eq!(
         write_batch_required_free_bytes(512 * 1024 * 1024).expect("bounded reserve"),
