@@ -1120,6 +1120,22 @@ fn check_arguments(command: &str, flag: &str) -> Vec<String> {
 }
 
 #[test]
+fn source_commands_refuse_car_ids_outside_postgres_smallint() {
+    for command in ["source-check", "migrate"] {
+        let mut arguments = check_arguments(command, "--accept-schema-evidence");
+        let car_id = arguments.iter().position(|arg| arg == "--car-id").unwrap() + 1;
+        for valid in ["1", "32767"] {
+            arguments[car_id] = valid.to_owned();
+            assert!(Cli::try_parse_from(&arguments).is_ok(), "{command}: {valid}");
+        }
+        for invalid in ["32768", "0", "-1", "not-a-number"] {
+            arguments[car_id] = invalid.to_owned();
+            assert!(Cli::try_parse_from(&arguments).is_err(), "{command}: {invalid}");
+        }
+    }
+}
+
+#[test]
 fn deprecated_alias_schema_flag_works_warns_and_is_hidden() {
     for command in ["source-check", "migrate"] {
         let mut warnings = Vec::new();
