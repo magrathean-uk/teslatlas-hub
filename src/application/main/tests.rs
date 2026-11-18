@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 use std::{
     fs,
@@ -69,6 +68,9 @@ mod b3_c8_k;
 mod charge_cost_cli_tests;
 #[path = "collector_cli_tests.rs"]
 mod collector_cli_tests;
+#[cfg(target_os = "macos")]
+#[path = "fleet_cli_tests.rs"]
+mod fleet_cli_tests;
 #[path = "pairing_scope_tests.rs"]
 mod pairing_scope_tests;
 #[path = "readiness_cli_tests.rs"]
@@ -159,7 +161,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(81),
-            location_name: Some("Home".into()),
+            location_name: None,
             telemetry_status: "cached",
         }
     );
@@ -1689,40 +1691,50 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     store.checkpoint_catalogue_for_immutable_read().expect("checkpoint");
     run(Cli { config: Some(config), command: Command::Doctor }).await.expect("doctor");
     assert!(credentials::pair_matches_for_test(temporary.path(), false, "access-0001", "refresh-0001").expect("Owner retained"));
-    // The stored Fleet row is kept (counted below) but refused at load: Fleet
-    // is parked and supplied rows are source credentials (M02-T02).
-    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").is_err(), "Fleet row refused at load");
+    // The stored Fleet row is kept (counted below) and still loads: it is the
+    // Hub's own grant (M09-T11). A supplied Fleet row can no longer be stored
+    // (the un-park barrier); its refusal at load is the library's
+    // `fleet_preflight_rejects_a_pair_without_the_recorded_scope_witness`.
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet retained"), "Fleet row retained");
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
     assert_eq!((inventory.owner_api_credential_rows, inventory.fleet_api_credential_rows), (1, 1));
 }
 
-#[test]
-fn immutable_diagnostic_waits_for_a_transient_wal() {
+/// A store with a pending WAL witness; `None` gives it the catalogue's mode, as SQLite does.
+fn store_with_pending_wal(mode: Option<u32>) -> (tempfile::TempDir, PathBuf) {
     let temporary = tempfile::tempdir().expect("temporary directory");
-    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
-        .expect("protect temporary directory");
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700)).expect("protect temporary directory");
     HubStore::initialize(temporary.path()).expect("store initializes");
     let wal = temporary.path().join("hub.sqlite-wal");
     fs::write(&wal, b"pending").expect("create pending WAL witness");
+    let catalogue = || fs::metadata(temporary.path().join("hub.sqlite")).expect("catalogue").permissions();
+    fs::set_permissions(&wal, mode.map_or_else(catalogue, fs::Permissions::from_mode)).expect("WAL mode");
+    (temporary, wal)
+}
+
+#[test]
+fn immutable_diagnostic_waits_for_a_transient_wal() {
+    let (temporary, wal) = store_with_pending_wal(None);
     let mut waits = 0;
-
-    run_immutable_diagnostic_with(
-        temporary.path(),
-        |store| {
-            store.catalogue_check()?;
-            Ok(())
-        },
-        || {
-            waits += 1;
-            if wal.exists() {
-                fs::remove_file(&wal).expect("settle WAL");
-            }
-        },
-    )
+    run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || {
+        waits += 1;
+        if wal.exists() {
+            fs::remove_file(&wal).expect("settle WAL");
+        }
+    })
     .expect("diagnostic opens after WAL settles");
-
     assert_eq!(waits, 1);
+}
+
+#[test]
+fn immutable_diagnostic_refuses_a_wal_with_an_unsafe_mode() {
+    let (temporary, wal) = store_with_pending_wal(Some(0o644));
+    let mut waits = 0;
+    let error = run_immutable_diagnostic_with(temporary.path(), |store| Ok(store.catalogue_check()?), || waits += 1)
+        .expect_err("an unsafe WAL is refused, not waited for");
+    assert!(matches!(error.downcast_ref::<tesatlas_hub::db::StoreError>(), Some(tesatlas_hub::db::StoreError::UnsafeSharedSqlite(path)) if path == &wal), "unexpected refusal: {error}");
+    assert_eq!((waits, fs::read(&wal).expect("WAL kept")), (0, b"pending".to_vec()));
 }
 
 #[test]
@@ -1889,36 +1901,6 @@ fn setup_command_takes_only_a_positive_optional_vehicle() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn fleet_sign_in_setup_fleet_grammar_routes_to_the_service() {
-    use tesatlas_hub::runtime::operator::{admission::{Route, requires_user_hub_admission as command_requires_user_hub_admission, route}, cli::FleetSetupStep};
-    let parse = |args: &[&str]| Cli::try_parse_from([&["tesatlas-hub"][..], args].concat()).map(|cli| cli.command);
-    assert!(matches!(parse(&["setup-fleet"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: false }));
-    assert!(matches!(parse(&["setup-fleet", "--vehicle-id", "70"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: Some(70), all_vehicles: false }));
-    assert!(matches!(parse(&["setup-fleet", "--all-vehicles"]).expect("redeem"), Command::SetupFleet { step: None, vehicle_id: None, all_vehicles: true }));
-    assert!(matches!(parse(&["setup-fleet", "begin"]).expect("begin"), Command::SetupFleet { step: Some(FleetSetupStep::Begin), .. }));
-    for args in [&["setup-fleet", "--sign-in"][..], &["setup-fleet", "--vehicle-id", "70", "--all-vehicles"], &["setup-fleet", "begin", "--all-vehicles"],
-        &["setup-fleet", "--vehicle-id", "70", "begin"], &["setup-fleet", "--client-secret", "x"], &["setup-fleet", "--access-token-file", "x"]] {
-        assert!(parse(args).is_err(), "{args:?}");
-    }
-    for command in [parse(&["setup-fleet"]).expect("redeem"), parse(&["setup-fleet", "begin"]).expect("begin")] {
-        assert_eq!(route(&command), Route::Service);
-        assert!(!command_requires_user_hub_admission(&command), "forwarded, never the lifetime lock");
-    }
-    assert_eq!(route(&Command::ConfigureFleetTelemetry), Route::Refused("provider_parked"));
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn fleet_rejects_enabling_legacy_streaming() {
-    use tesatlas_hub::config::CollectorProvider;
-
-    assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(true)).is_err());
-    assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(false)).is_ok());
-    assert!(validate_streaming_setting(CollectorProvider::Legacy, Some(true)).is_ok());
-}
-
-#[cfg(target_os = "macos")]
-#[test]
 fn sign_out_clears_both_providers_but_preserves_cursor_key() {
     use tesatlas_hub::auth::credential_sign_in as credentials;
     let (temporary, store) = v2_credential_pair_fixture(true);
@@ -1973,10 +1955,9 @@ fn source_credential_disabled_setup_and_migrate_token_inputs_change_nothing() {
     }
     let after = credentials::credential_status(&store, temporary.path(), 1_800_000_000_000).expect("after");
     assert_eq!(after, before, "no stored pair changed");
-    // The retained Fleet row is the supplied row an older Hub could hold: it
-    // is kept, and refused at load (M02-T02 round 3).
-    let refused = credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect_err("Fleet pair refused at load");
-    assert!(refused.to_string().contains("Source credentials are disabled") || format!("{refused:?}").contains("source_credential_disabled"), "{refused:?}");
+    // The retained Fleet row is the Hub's own grant (M09-T11): it is kept and
+    // unchanged. A supplied row can no longer be stored to be refused at load.
+    assert!(credentials::pair_matches_for_test(temporary.path(), true, "access-0002", "refresh-0002").expect("Fleet pair retained"), "Fleet pair unchanged");
 }
 
 #[cfg(target_os = "linux")]
@@ -2991,7 +2972,8 @@ fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
     let store = HubStore::initialize(root.path()).expect("store");
     if owner { credentials::seed_owner_pair_for_test(root.path(), "access-0001", "refresh-0001", None).expect("Owner entry"); }
     let fleet = super::FleetSetupCredentials::new("access-0002".into(), "refresh-0002".into(), "client-0001".into(), super::FleetRegion::EuropeMiddleEastAndAfrica, 3600).expect("Fleet fixture");
-    credentials::seed_fleet_pair_for_test(root.path(), &fleet).expect("Fleet entry");
+    // The Hub's own Fleet grant, the only Fleet pair the vault admits (M09-T11).
+    credentials::seed_own_fleet_pair_for_test(root.path(), &fleet).expect("Fleet entry");
     (root, store)
 }
 

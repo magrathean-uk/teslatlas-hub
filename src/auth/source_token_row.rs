@@ -205,6 +205,15 @@ async fn read_snapshot(
         let refresh = checked_value(row.refresh_bytes, row.refresh)?;
         let tokens = decrypt_legacy_owner_tokens(encryption_key, &access, &refresh)
             .map_err(map_decrypt_error)?;
+        // Hub refreshes this login as the public owner client. A pinned Tesla
+        // issuer alone does not make a different client's refresh token usable.
+        if !crate::legacy_auth::parse_jwt(crate::legacy_auth::trim_token_whitespace(
+            tokens.access_token(),
+        ))
+        .is_some_and(|claims| claims.owner_client_compatible)
+        {
+            return Err(SourceTokenRowError::Invalid);
+        }
         // Use exactly the runtime grammar and issuer pin, with no provider
         // endpoint or region fallback that could admit a foreign/opaque token.
         LegacyAuth::from_access_token(
@@ -433,6 +442,66 @@ mod tests {
                 ["prepare", "sessions", "rows", "rollback"]
             );
         }
+    }
+
+    #[tokio::test]
+    async fn source_token_row_refuses_a_login_issued_to_another_client() {
+        let claims = Zeroizing::new(serde_json::json!({
+            "iss": "https://auth.tesla.com/oauth2/v3",
+            "exp": 1_900_000_000,
+            "azp": "synthetic-other-client",
+            "synthetic": true,
+        }).to_string());
+        let access = Zeroizing::new(format!(
+            "e30.{}.synthetic-signature",
+            URL_SAFE_NO_PAD.encode(claims.as_bytes()),
+        ));
+        let (result, events) = run(FakeSnapshot::new(vec![encrypted_row(
+            access.as_bytes(), SYNTHETIC_REFRESH,
+        )])).await;
+        assert_eq!(result.unwrap_err(), SourceTokenRowError::Invalid);
+        assert_eq!(*events.borrow(), ["prepare", "sessions", "rows", "rollback"]);
+    }
+
+    #[tokio::test]
+    async fn source_token_row_checks_explicit_client_claims_without_changing_legacy_admission() {
+        for party in [serde_json::json!("ownerapi"), serde_json::json!(""),
+            serde_json::Value::Null, serde_json::json!(["ownerapi"]), serde_json::json!(7)]
+        {
+            let accepted = party == serde_json::json!("ownerapi");
+            let claims = Zeroizing::new(serde_json::json!({
+                "iss": "https://auth.tesla.com/oauth2/v3",
+                "exp": 1_900_000_000,
+                "azp": party,
+                "synthetic": true,
+            }).to_string());
+            let access = Zeroizing::new(format!(
+                "e30.{}.synthetic-signature", URL_SAFE_NO_PAD.encode(claims.as_bytes()),
+            ));
+            let (result, events) = run(FakeSnapshot::new(vec![encrypted_row(
+                access.as_bytes(), SYNTHETIC_REFRESH,
+            )])).await;
+            assert_eq!(result.is_ok(), accepted);
+            if !accepted { assert_eq!(result.unwrap_err(), SourceTokenRowError::Invalid); }
+            assert_eq!(*events.borrow(), ["prepare", "sessions", "rows", "rollback"]);
+        }
+        // Existing fixtures omit azp, as older source tokens may do.
+        assert!(run(FakeSnapshot::new(vec![valid_row()])).await.0.is_ok());
+        // Surrounding whitespace is admitted by the runtime grammar (R46), so the
+        // client check reads the token trimmed too.
+        let claims = Zeroizing::new(serde_json::json!({
+            "iss": "https://auth.tesla.com/oauth2/v3",
+            "exp": 1_900_000_000,
+            "azp": "ownerapi",
+            "synthetic": true,
+        }).to_string());
+        let access = Zeroizing::new(format!(
+            " e30.{}.synthetic-signature ", URL_SAFE_NO_PAD.encode(claims.as_bytes()),
+        ));
+        let (result, _) = run(FakeSnapshot::new(vec![encrypted_row(
+            access.as_bytes(), SYNTHETIC_REFRESH,
+        )])).await;
+        assert!(result.is_ok(), "a whitespace-padded owner token stays admitted");
     }
 
     #[tokio::test]

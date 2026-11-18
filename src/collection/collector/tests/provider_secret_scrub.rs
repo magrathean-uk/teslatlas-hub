@@ -8,7 +8,7 @@ const SCRUB_LEGACY_ACCESS: &str = "old-access-secret";
 const SCRUB_LEGACY_REFRESH: &str = "old-refresh-secret";
 const SCRUB_FLEET_ACCESS: &str = "scrub-fleet-access-token";
 const SCRUB_FLEET_REFRESH: &str = "scrub-fleet-refresh-token";
-const SCRUB_FLEET_NEXT_ACCESS: &str = "scrub-fleet-next-access-token";
+const SCRUB_FLEET_NEXT_ACCESS: &str = "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.scrub-fleet-next-access-token";
 const SCRUB_FLEET_NEXT_REFRESH: &str = "scrub-fleet-next-refresh-token";
 const SCRUB_VIN: &str = "5YJ3E1EA7KF000001";
 /// What the collector stores for a vehicle with no provider display name.
@@ -292,7 +292,6 @@ async fn scrub_fleet_fixture(
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_collection_stores_and_serves_no_reflected_credential() {
     let log = crate::owner_api::provider_secrets::capture::LogCapture::start();
     let temp = crate::private_tempdir().expect("temporary store");
@@ -365,7 +364,6 @@ async fn fleet_collection_stores_and_serves_no_reflected_credential() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_retry_after_refresh_scrubs_against_the_refreshed_pair() {
     let temp = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temp.path()).expect("store");
@@ -747,7 +745,6 @@ async fn legacy_list_state_that_reflects_a_credential_is_stored_and_served_as_un
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn fleet_list_state_that_reflects_a_credential_is_stored_and_served_as_unknown() {
     let log = crate::owner_api::provider_secrets::capture::LogCapture::start();
     let temp = crate::private_tempdir().expect("temporary store");

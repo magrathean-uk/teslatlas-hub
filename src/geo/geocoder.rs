@@ -162,6 +162,8 @@ pub struct Geocoder {
     /// different binding and never reads or rewrites this one's rows.
     binding: AddressLookupBinding,
     limiter: SharedLimiter,
+    // Read at refusal receipt; the test factory supplies the caller's logical clock.
+    refusal_clock: fn(i64) -> Result<i64, GeocoderError>,
 }
 
 impl std::fmt::Debug for Geocoder {
@@ -216,6 +218,11 @@ impl Geocoder {
             language,
             binding,
             limiter,
+            refusal_clock: if test_mode {
+                Ok
+            } else {
+                current_refusal_time_ms
+            },
         })
     }
 
@@ -266,6 +273,18 @@ impl Geocoder {
         admit(egress_guard)?;
         wait_for_slot_every(&self.limiter, request_interval(&self.endpoint)).await?;
         admit(egress_guard)?;
+
+        // Scripted responses exercise the cached request path without network I/O.
+        #[cfg(test)]
+        if let Some((delay, status, retry_after_seconds)) =
+            tests::SCRIPTED_REFUSAL.with(|response| response.take())
+        {
+            tokio::time::sleep(delay).await;
+            return Err(RequestFailure {
+                error: GeocoderError::HttpStatus(status),
+                retry_after_seconds,
+            });
+        }
 
         // C7 R1 step 5: one GET with exactly three headers (R13, R14).
         let response = self
@@ -349,6 +368,7 @@ impl Geocoder {
                 match failure.error {
                     // C7 R58: the provider refuses this client now.
                     GeocoderError::HttpStatus(status @ (403 | 429)) => {
+                        let refused_at_ms = (self.refusal_clock)(looked_up_at_ms)?;
                         // The state row is a store mutation after the request's
                         // awaits, so the guard stands in front of it too.
                         admit(egress_guard)?;
@@ -358,7 +378,7 @@ impl Geocoder {
                             state.as_ref(),
                             status,
                             failure.retry_after_seconds,
-                            looked_up_at_ms,
+                            refused_at_ms,
                         )?;
                     }
                     // C7 R62: the provider answered, with something other than a refusal.
@@ -547,6 +567,14 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
     response_mapping::parse_response(body)
 }
 
+fn current_refusal_time_ms(_looked_up_at_ms: i64) -> Result<i64, GeocoderError> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+        .ok_or(GeocoderError::ClockUnavailable)
+}
+
 fn classify_request_error(error: reqwest::Error) -> GeocoderError {
     if error.is_timeout() {
         GeocoderError::Timeout
@@ -569,6 +597,8 @@ pub enum GeocoderError {
     Timeout,
     #[error("geocoder transport failed")]
     Transport,
+    #[error("geocoder response time is unavailable")]
+    ClockUnavailable,
     #[error("geocoder returned HTTP status {0}")]
     HttpStatus(u16),
     #[error("geocoder response is too large")]
@@ -602,6 +632,49 @@ mod tests {
     };
 
     use axum::{Router, body::Body, response::Response, routing::any};
+
+    thread_local! {
+        pub(super) static SCRIPTED_REFUSAL:
+            std::cell::Cell<Option<(Duration, u16, Option<u64>)>> = const {
+                std::cell::Cell::new(None)
+            };
+    }
+
+    #[tokio::test]
+    async fn p21_f02_slow_refusals_keep_the_full_pause_after_the_response() {
+        // Keep the reserved slots off the process-wide limiter that c7_t62_seed reads;
+        // the current-thread runtime keeps this thread's limiter for the whole test.
+        let _limiter = isolate_global_limiter_for_test();
+        for (status, retry_after, pause_ms) in [(403, None, 60_000), (429, Some(120), 120_000)] {
+            let temporary = crate::private_tempdir().unwrap();
+            let store = HubStore::initialize(temporary.path()).unwrap();
+            let geocoder = Geocoder::new(&config("https://geocoder.example/".into())).unwrap();
+            let started_at_ms = i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap();
+            // The collector's tick can already be old when enrichment starts.
+            let looked_up_at_ms = started_at_ms - 120_000;
+            SCRIPTED_REFUSAL.with(|response| {
+                response.set(Some((Duration::from_millis(120), status, retry_after)));
+            });
+            let result = geocoder
+                .reverse_cached(&store, Wgs84Point::new(1.0, 2.0).unwrap(), looked_up_at_ms)
+                .await;
+            assert!(matches!(result, Err(GeocoderError::HttpStatus(code)) if code == status));
+            let state: serde_json::Value = serde_json::from_str(
+                &store.geocoder_provider_state().unwrap().unwrap(),
+            )
+            .unwrap();
+            let since_ms = state["since_ms"].as_i64().unwrap();
+            let until_ms = state["until_ms"].as_i64().unwrap();
+            assert!(since_ms >= started_at_ms + 100, "the refusal was received after the delay");
+            assert_eq!(until_ms - since_ms, pause_ms);
+        }
+    }
 
     // Reverse-geocoder request, admission and pacing tests (C7 part A).
     #[path = "b3_c7_a_tests.rs"]

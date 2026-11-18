@@ -42,6 +42,7 @@ const META_MINIMUM_FREE_BYTES: &str = "minimum_free_bytes";
 const META_FORMAT: &str = "format";
 const MIN_STAGE_BYTES: u64 = 64 * 1024;
 const MAX_PAGE_SIZE: u32 = 10_000;
+
 const MAX_ENCODING_WORKERS: usize = 8;
 const DEFAULT_MINIMUM_FREE_BYTES: u64 = 512 * 1024 * 1024;
 const CHARGE_SAMPLES_PAGE_SQL: &str = "SELECT source_id, row_json
@@ -379,12 +380,21 @@ impl SourceDbStage {
     /// callers must resume/rebuild them with a writer, not treat them as a
     /// source-consistent history.
     pub fn open_sealed(path: impl AsRef<Path>) -> Result<Self, SourceDbStageError> {
-        Self::open_sealed_with_hook(path.as_ref(), || {})
+        Self::open_sealed_with_hook(path.as_ref(), || {}, true)
+    }
+
+    /// As [`SourceDbStage::open_sealed`], without SQLite's full integrity
+    /// check, for a stage that is only authenticated by its recorded logical
+    /// digest ([`SourceDbStage::sealed_logical_digest`]) and copied: the
+    /// copy's pages are checked when a publication reads it (M08-T19).
+    pub(crate) fn open_sealed_to_copy(path: impl AsRef<Path>) -> Result<Self, SourceDbStageError> {
+        Self::open_sealed_with_hook(path.as_ref(), || {}, false)
     }
 
     fn open_sealed_with_hook(
         path: &Path,
         before_sqlite_open: impl FnOnce(),
+        integrity: bool,
     ) -> Result<Self, SourceDbStageError> {
         let stage_path = ensure_private_stage_path(path)?;
         let path = stage_path.path.clone();
@@ -412,7 +422,9 @@ impl SourceDbStage {
         if stats.state != SourceDbStageState::Sealed {
             return Err(SourceDbStageError::StageNotSealed);
         }
-        stage.verify_integrity()?;
+        if integrity {
+            stage.verify_integrity()?;
+        }
         stage.verify_accounting(stats)?;
         verify_stage_path_identity(
             &stage.directory,
@@ -527,16 +539,35 @@ impl SourceDbStage {
     }
 
     /// Hash the logical contents of one sealed stage independently of its
-    /// SQLite page layout. Every PhysicalV3 table contributes its name, row
-    /// count, ordered source IDs, and exact persisted JSON bytes, including
-    /// empty tables. Callers bind this digest to the installation/source/
-    /// vehicle identity before deriving a stable publication snapshot ID.
+    /// SQLite page layout, after SQLite's full integrity check of this very
+    /// database. Every PhysicalV3 table contributes its name, row count,
+    /// ordered source IDs, and exact persisted JSON bytes, including empty
+    /// tables. Callers bind this digest to the installation/source/vehicle
+    /// identity before deriving a stable publication snapshot ID; a
+    /// publication takes it after the stage's last write, so the check is of
+    /// the database it reads (M08-T19).
     pub(crate) fn sealed_content_digest(&self) -> Result<Sha256Digest, SourceDbStageError> {
         let stats = self.stats()?;
         if stats.state != SourceDbStageState::Sealed {
             return Err(SourceDbStageError::StageNotSealed);
         }
         self.verify_integrity()?;
+        self.logical_digest(stats)
+    }
+
+    /// The digest of [`SourceDbStage::sealed_content_digest`] without the
+    /// integrity check: it authenticates a kept stage's rows against their
+    /// recorded digest, not its pages. A stage authenticated so is only
+    /// copied; the copy a publication reads gets the check (M08-T19).
+    pub(crate) fn sealed_logical_digest(&self) -> Result<Sha256Digest, SourceDbStageError> {
+        let stats = self.stats()?;
+        if stats.state != SourceDbStageState::Sealed {
+            return Err(SourceDbStageError::StageNotSealed);
+        }
+        self.logical_digest(stats)
+    }
+
+    fn logical_digest(&self, stats: SourceDbStageStats) -> Result<Sha256Digest, SourceDbStageError> {
         self.verify_accounting(stats)?;
 
         let mut digest = Sha256::new();
@@ -823,6 +854,12 @@ impl SourceDbStage {
         let values = statement
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(test)]
+        crate::hub_pack::record_verification(
+            "stage-integrity",
+            self.path.display(),
+            values.len() == 1 && values.first().is_some_and(|value| value == "ok"),
+        );
         if values.len() == 1 && values.first().is_some_and(|value| value == "ok") {
             return Ok(());
         }
@@ -1785,6 +1822,8 @@ pub(crate) use sealed_edit::StageChildTable;
 // A private copy of a sealed physical stage, kept for a handback (M03-T22).
 #[path = "stage/sealed_copy.rs"]
 mod sealed_copy;
+#[cfg(test)]
+pub(crate) use sealed_copy::AFTER_SEALED_COPY;
 
 #[cfg(test)]
 #[path = "stage/tests.rs"]

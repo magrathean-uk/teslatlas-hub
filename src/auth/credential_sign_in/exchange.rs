@@ -224,15 +224,29 @@ pub async fn sign_in_or_resume_owner_code_with_stub_for_test(entry: &CredentialV
     exchange_owner_code_with_stub_for_test(entry, code, code_verifier, redirect_uri, stub).await
 }
 
+struct CountingWriter(usize);
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
 /// The request body in one wiping buffer of its exact length.
 fn request_body(code: &str, code_verifier: &str) -> Result<Zeroizing<Vec<u8>>, CredentialCommandError> {
     let request = ExchangeRequest {
         grant_type: "authorization_code", client_id: OWNER_CLIENT_ID, code, code_verifier, redirect_uri: OWNER_REDIRECT_URI,
     };
-    // Sized in full before anything is written (M09-T19 ruling 8): a JSON
-    // escape at most doubles a checked code or verifier, so the buffer never
-    // grows and no freed block keeps a copy.
-    let mut body = Zeroizing::new(Vec::with_capacity(256 + 2 * (code.len() + code_verifier.len())));
+    // Measured before anything is copied (M09-T19 ruling 8, and main's own
+    // rule): the buffer is allocated at the body's exact length, so
+    // serialisation never grows it and no freed block keeps part of the code
+    // or verifier.
+    let mut counter = CountingWriter(0);
+    serde_json::to_writer(&mut counter, &request).map_err(|_| CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID))?;
+    let mut body = Zeroizing::new(Vec::with_capacity(counter.0));
     serde_json::to_writer(&mut *body, &request).map_err(|_| CredentialCommandError::new(SIGN_IN_MATERIAL_INVALID))?;
     Ok(body)
 }
@@ -243,6 +257,9 @@ enum Answer {
     TooLarge,
 }
 
+/// One token request. `body` is always a wiping buffer the request owns
+/// (`Bytes::from_owner`): the owner code body here, the Fleet form in
+/// [`fleet_request_body`]; it is wiped when the transport releases it.
 async fn send(client: &Client, endpoint: Url, body: reqwest::Body, content_type: &'static str) -> Result<Answer, reqwest::Error> {
     let request = client.post(endpoint)
         .header(USER_AGENT, EXCHANGE_USER_AGENT)
@@ -324,7 +341,7 @@ fn stub_endpoint(stub: &str) -> Result<Url, CredentialCommandError> {
 async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &str, redirect_uri: &str, endpoint: Url, loopback: bool) -> Result<OwnerSignIn, CredentialCommandError> {
     check_material(code, code_verifier, redirect_uri)?;
     spend_code(&CodeNamespace { slot: CredentialSlot::OwnerApi, issuer: endpoint.as_str(), client_id: OWNER_CLIENT_ID }, code)?;
-    let mut body = request_body(code, code_verifier)?;
+    let body = request_body(code, code_verifier)?;
     crate::crypto::install_default_provider();
     let client = crate::legacy_auth::build_auth_client(loopback).map_err(|_| failure(SignInError::Unavailable))?;
     // The gate is the last check before the send: a refusal opens no
@@ -332,7 +349,7 @@ async fn exchange_at(entry: &CredentialVaultEntry, code: &str, code_verifier: &s
     let permit = egress::ask(endpoint.as_str(), Provider::Legacy, PermitKind::TokenExchange)
         .map_err(|_| CredentialCommandError::new(WINDOW_CLOSED))?;
     let sent_at_s = now_s()?;
-    let answer = match permit.bound(send(&client, endpoint, reqwest::Body::from(std::mem::take(&mut *body)), "application/json")).await {
+    let answer = match permit.bound(send(&client, endpoint, reqwest::Body::from(axum::body::Bytes::from_owner(body)), "application/json")).await {
         Ok(Ok(answer)) => answer,
         Ok(Err(error)) if error.is_connect() || error.is_builder() => return Err(failure(SignInError::Unavailable)),
         // Sent and not answered in full, or cut at the window's deadline: the

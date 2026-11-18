@@ -77,7 +77,8 @@ impl UserLifetimeLock {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
             Err(_) => return Err(UserLifetimeLockError::Filesystem),
         };
-        fs::create_dir_all(data_dir).map_err(|_| UserLifetimeLockError::Filesystem)?;
+        crate::platform::private_directory::create_directory_all_durably(data_dir)
+            .map_err(|_| UserLifetimeLockError::Filesystem)?;
         if data_dir_was_absent {
             fs::set_permissions(data_dir, fs::Permissions::from_mode(DATA_DIRECTORY_MODE))
                 .map_err(|_| UserLifetimeLockError::Filesystem)?;

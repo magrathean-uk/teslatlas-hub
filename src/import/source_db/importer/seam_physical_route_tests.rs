@@ -32,15 +32,29 @@ fn unix_ms(pg_us: i64) -> i64 {
 /// the selected car's roots and its drives, positions, charging processes
 /// and charges in their physical form.
 pub(super) fn history_stage(root: &Path, name: &str, history: &SourceDbHistory) -> OwnedSourceDbStage {
-    let mut stage = SourceDbStage::create_physical_v3(
-        root.join(name),
+    let mut stage = history_stage_unsealed(
+        root,
+        name,
+        history,
         SourceDbStageLimits {
             max_rows: 4_096,
             max_stage_bytes: 8 * 1024 * 1024,
             minimum_free_bytes: 0,
         },
-    )
-    .expect("physical stage");
+    );
+    stage.seal().expect("seal");
+    OwnedSourceDbStage::new(stage)
+}
+
+/// The rows of [`history_stage`] in a stage with `limits`, still open.
+pub(super) fn history_stage_unsealed(
+    root: &Path,
+    name: &str,
+    history: &SourceDbHistory,
+    limits: SourceDbStageLimits,
+) -> SourceDbStage {
+    let mut stage = SourceDbStage::create_physical_v3(root.join(name), limits)
+        .expect("physical stage");
     crate::sync::physical_fragments::tests::seed_roots(&mut stage);
     for drive in &history.drives {
         let row = SourceDbDrivePhysicalV2_2 {
@@ -159,8 +173,7 @@ pub(super) fn history_stage(root: &Path, name: &str, history: &SourceDbHistory) 
         };
         stage.insert(SourceDbStageTable::Charges, sample.id, &row).expect("charge sample");
     }
-    stage.seal().expect("seal");
-    OwnedSourceDbStage::new(stage)
+    stage
 }
 
 /// The physical half of one import, as the importer publishes it after the

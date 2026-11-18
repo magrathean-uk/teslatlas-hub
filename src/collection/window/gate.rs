@@ -385,7 +385,7 @@ mod fleet_admission_tests {
     #[test]
     fn fleet_admission_window_gating_permits_fleet_inside_and_stops_at_the_deadline() {
         let (clock, gate) = gate();
-        gate.open(1_000 + 600, 1_000 + 600);
+        gate.open(1, 1_000 + 600, 1_000 + 600);
         let permit = gate.permit(Provider::Fleet, PermitKind::Request).expect("Fleet inside the window");
         assert_eq!(permit.provider(), Provider::Fleet);
         assert_eq!(permit.time_left(), Duration::from_secs(600));
@@ -401,7 +401,7 @@ mod fleet_admission_tests {
     #[test]
     fn fleet_admission_window_gating_cuts_fleet_at_close() {
         let (_, gate) = gate();
-        gate.open(1_000 + 600, 1_000 + 600);
+        gate.open(1, 1_000 + 600, 1_000 + 600);
         let permit = gate.permit(Provider::Fleet, PermitKind::Request).expect("Fleet inside the window");
         gate.close();
         assert!(permit.is_cancelled());

@@ -1470,7 +1470,7 @@ async fn ct67_data_handler(
         .lock()
         .expect("ledger")
         .push(authorisation.clone());
-    if authorisation == "Bearer fleet-next-access"
+    if authorisation == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access"
         && !wire.reject_every_token.load(Ordering::SeqCst)
     {
         (
@@ -1487,7 +1487,7 @@ async fn ct67_token_handler(State(wire): State<FleetWire>) -> axum::response::Re
     wire.token_requests.fetch_add(1, Ordering::SeqCst);
     (
         StatusCode::OK,
-        r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
+        r#"{"access_token":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
     )
         .into_response()
 }
@@ -1554,7 +1554,6 @@ async fn ct67_bed() -> Ct67Bed {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67_three_fleet_reads_with_an_expired_token_cause_one_refresh_and_no_failure() {
     let bed = ct67_bed().await;
     // One tick: its requests share one refresh latch (R47).
@@ -1587,11 +1586,11 @@ async fn ct67_three_fleet_reads_with_an_expired_token_cause_one_refresh_and_no_f
     let sent = bed.wire.data_authorisations.lock().expect("ledger").clone();
     let with_old = sent
         .iter()
-        .filter(|header| header.starts_with("Bearer e30."))
+        .filter(|header| header.as_str() == format!("Bearer {CT67_SCOPED_ACCESS}"))
         .count();
     let with_new = sent
         .iter()
-        .filter(|header| *header == "Bearer fleet-next-access")
+        .filter(|header| *header == "Bearer e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.fleet-next-access")
         .count();
     // The first read meets the expired token once and is resent once; the other
     // two wait for the manager's mutex and go out with the new token, so they
@@ -1602,7 +1601,6 @@ async fn ct67_three_fleet_reads_with_an_expired_token_cause_one_refresh_and_no_f
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67_an_observer_makes_no_refresh_and_no_resend() {
     let bed = ct67_bed().await;
     let error = fleet_vehicle_data_with_auth(
@@ -1640,7 +1638,6 @@ async fn ct67_an_observer_makes_no_refresh_and_no_resend() {
 }
 
 #[tokio::test]
-#[ignore = "M02-T02 parks Fleet: every Fleet pair is refused at load"]
 async fn ct67c_a_token_the_request_refreshed_for_itself_is_not_refreshed_again() {
     // At most one token refresh per tick (C3 R47): a request whose own start refreshed
     // the token (it was due) and still gets 401 carried the tick's refreshed token, so

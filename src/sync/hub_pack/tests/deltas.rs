@@ -685,3 +685,323 @@ fn write_delta_v2_fixtures() {
         write_fixture_set(Path::new(&client_root));
     }
 }
+
+/// Decoded SQLite contents of one golden pack: schema rows, every table's rows in
+/// storage order, and the header values that identify the image.
+#[cfg(target_os = "macos")]
+struct DecodedGoldenPack {
+    image: Vec<u8>,
+    schema: Vec<String>,
+    tables: Vec<(String, Vec<String>)>,
+    header: (i64, i64, i64),
+    parent_digest: Option<String>,
+}
+
+#[cfg(target_os = "macos")]
+fn golden_value_text(value: rusqlite::types::ValueRef<'_>) -> String {
+    use rusqlite::types::ValueRef;
+    match value {
+        ValueRef::Null => "null".into(),
+        ValueRef::Integer(number) => format!("i:{number}"),
+        ValueRef::Real(number) => format!("r:{:016x}", number.to_bits()),
+        ValueRef::Text(text) => format!("t:{}", String::from_utf8_lossy(text)),
+        ValueRef::Blob(blob) => {
+            let hex: String = blob.iter().map(|byte| format!("{byte:02x}")).collect();
+            format!("b:{hex}")
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn decode_golden_pack(compressed: &[u8], scratch: &Path, name: &str) -> DecodedGoldenPack {
+    let image = zstd::stream::decode_all(compressed).unwrap();
+    let path = scratch.join(format!("{name}.sqlite"));
+    fs::write(&path, &image).unwrap();
+    let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let mut statement = connection
+        .prepare("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master ORDER BY rowid")
+        .unwrap();
+    let schema = statement
+        .query_map([], |row| {
+            Ok((0..5)
+                .map(|index| golden_value_text(row.get_ref(index).unwrap()))
+                .collect::<Vec<_>>()
+                .join("|"))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let mut names = connection
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap();
+    let names = names
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let mut tables = Vec::new();
+    for table in names {
+        let mut rows = connection
+            .prepare(&format!("SELECT * FROM \"{table}\""))
+            .unwrap();
+        let width = rows.column_count();
+        let rows = rows
+            .query_map([], |row| {
+                Ok((0..width)
+                    .map(|index| golden_value_text(row.get_ref(index).unwrap()))
+                    .collect::<Vec<_>>()
+                    .join("|"))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        tables.push((table, rows));
+    }
+    let pragma = |name: &str| -> i64 {
+        connection
+            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .unwrap()
+    };
+    let header = (
+        pragma("application_id"),
+        pragma("user_version"),
+        pragma("page_size"),
+    );
+    let parent_digest = connection
+        .query_row(
+            "SELECT value FROM hub_pack_metadata WHERE key = 'parent_digest'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .unwrap();
+    DecodedGoldenPack {
+        image,
+        schema,
+        tables,
+        header,
+        parent_digest,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn golden_offset_ranges(offsets: &[usize]) -> String {
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for &offset in offsets {
+        match ranges.last_mut() {
+            Some((_, end)) if *end + 1 == offset => *end = offset,
+            _ => ranges.push((offset, offset)),
+        }
+    }
+    let parts: Vec<String> = ranges
+        .iter()
+        .map(|(start, end)| {
+            if start == end {
+                start.to_string()
+            } else {
+                format!("{start}-{end}")
+            }
+        })
+        .collect();
+    if parts.is_empty() {
+        "none".into()
+    } else {
+        parts.join(",")
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn golden_manifest_without_digests(value: &mut serde_json::Value) {
+    const DIGEST_AND_SIZE_KEYS: [&str; 8] = [
+        "digest",
+        "sha256",
+        "pack_digest",
+        "parent_chain_digest",
+        "chain_digest",
+        "head_digest",
+        "relative_path",
+        "compressed_bytes",
+    ];
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in DIGEST_AND_SIZE_KEYS {
+                if map.contains_key(key) {
+                    map.insert(key.into(), serde_json::Value::Null);
+                }
+            }
+            for nested in map.values_mut() {
+                golden_manifest_without_digests(nested);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(golden_manifest_without_digests),
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn golden_lineage_problems(manifest: &LineageManifestV2) -> Vec<String> {
+    let mut problems = Vec::new();
+    if manifest.validate().is_err() {
+        problems.push("manifest validation".to_owned());
+    }
+    if manifest.base.digest != manifest.base.packs[0].sha256 {
+        problems.push("base digest is not the base pack digest".to_owned());
+    }
+    let mut parent_chain = manifest.base.digest;
+    let mut sequence = manifest.base.sequence;
+    for (index, delta) in manifest.deltas.iter().enumerate() {
+        let chain = Sha256Digest::of_bytes(
+            format!("delta-v2/{}:{}", parent_chain, delta.pack_digest).as_bytes(),
+        );
+        if delta.parent_chain_digest != parent_chain
+            || delta.chain_digest != chain
+            || delta.pack_digest != delta.pack.sha256
+            || delta.from_sequence != sequence
+            || delta.pack.sequence.from_exclusive != delta.from_sequence
+            || delta.pack.sequence.to_inclusive != delta.to_sequence
+        {
+            problems.push(format!("delta {index} lineage"));
+        }
+        parent_chain = delta.chain_digest;
+        sequence = delta.to_sequence;
+    }
+    if manifest.head_digest != parent_chain || manifest.head_sequence != sequence {
+        problems.push("head".to_owned());
+    }
+    problems
+}
+
+/// Before a refresh of the golden set, decode every frozen pack and the pack the
+/// current SQLite and zstd libraries write for the same request, and print what
+/// differs. Digests of earlier packs are mapped from the frozen to the regenerated
+/// value before the comparison, because each delta records its parent's digest.
+/// `TESATLAS_FROZEN_DELTA_V2` selects another frozen directory.
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "fixture comparison; run explicitly before refreshing committed golden files"]
+fn compare_delta_v2_fixtures_with_regenerated_packs() {
+    let frozen_root = env::var("TESATLAS_FROZEN_DELTA_V2").map_or_else(
+        |_| Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/delta-v2"),
+        PathBuf::from,
+    );
+    let scratch = crate::private_tempdir().unwrap();
+    let (fresh, fresh_files) = fixture_lineage(&scratch.path().join("work"));
+    let frozen_bytes = fs::read(frozen_root.join("manifest.json")).unwrap();
+    let frozen: LineageManifestV2 = serde_json::from_slice(&frozen_bytes).unwrap();
+    let pack_of = |manifest: &LineageManifestV2, name: &str| match name {
+        "base" => manifest.base.packs[0].clone(),
+        "delta-0001" => manifest.deltas[0].pack.clone(),
+        _ => manifest.deltas[1].pack.clone(),
+    };
+    let mut renames = Vec::new();
+    let mut failures = Vec::new();
+    for name in ["base", "delta-0001", "delta-0002"] {
+        let old_pack = pack_of(&frozen, name);
+        let new_pack = pack_of(&fresh, name);
+        let old_compressed = fs::read(
+            frozen_root
+                .join("v1/packs/sha256")
+                .join(format!("{}.sqlite.zst", old_pack.sha256)),
+        )
+        .unwrap();
+        let new_compressed = &fresh_files
+            .iter()
+            .find(|(file, _)| file == name)
+            .unwrap()
+            .1;
+        let old = decode_golden_pack(&old_compressed, scratch.path(), &format!("old-{name}"));
+        let new = decode_golden_pack(new_compressed, scratch.path(), &format!("new-{name}"));
+        let map = |text: &str| {
+            renames
+                .iter()
+                .fold(text.to_owned(), |text, (from, to): &(String, String)| {
+                    text.replace(from.as_str(), to)
+                })
+        };
+        let schema_equal = old.schema == new.schema;
+        let rows_equal_raw = old.tables == new.tables;
+        let mapped_tables: Vec<(String, Vec<String>)> = old
+            .tables
+            .iter()
+            .map(|(table, rows)| (table.clone(), rows.iter().map(|row| map(row.as_str())).collect()))
+            .collect();
+        let rows_equal = mapped_tables == new.tables;
+        let header_equal = old.header == new.header;
+        let parent_ok = old.parent_digest.as_deref().map(map) == new.parent_digest;
+        let mut mapped_image = old.image.clone();
+        for (from, to) in &renames {
+            let (from, to) = (from.as_bytes(), to.as_bytes());
+            let mut index = 0;
+            while index + from.len() <= mapped_image.len() {
+                if &mapped_image[index..index + from.len()] == from {
+                    mapped_image[index..index + from.len()].copy_from_slice(to);
+                    index += from.len();
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        let differing = |left: &[u8]| -> Vec<usize> {
+            left.iter()
+                .zip(&new.image)
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(offset, _)| offset)
+                .collect()
+        };
+        let raw_offsets = differing(&old.image);
+        let mapped_offsets = differing(&mapped_image);
+        let allowed = |offset: &usize| matches!(offset, 24..=27 | 92..=99);
+        let header_bytes = |offsets: &[usize]| -> String {
+            offsets
+                .iter()
+                .filter(|offset| allowed(offset))
+                .map(|&offset| {
+                    format!(
+                        "{offset}:{:02x}>{:02x}",
+                        old.image[offset], new.image[offset]
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        println!(
+            "CMP|{name}|old={}|new={}|decoded_len_old={}|decoded_len_new={}|schema_equal={schema_equal}|rows_equal_raw={rows_equal_raw}|rows_equal_mapped={rows_equal}|app_user_page_old={:?}|app_user_page_new={:?}|parent_digest_mapped_equal={parent_ok}|raw_offsets={}|mapped_offsets={}|header_bytes={}",
+            old_pack.sha256,
+            new_pack.sha256,
+            old.image.len(),
+            new.image.len(),
+            old.header,
+            new.header,
+            golden_offset_ranges(&raw_offsets),
+            golden_offset_ranges(&mapped_offsets),
+            header_bytes(&mapped_offsets),
+        );
+        for (table, rows) in &new.tables {
+            println!("CMP|{name}|table={table}|rows={}", rows.len());
+        }
+        if !(schema_equal
+            && rows_equal
+            && header_equal
+            && parent_ok
+            && old.image.len() == new.image.len()
+            && mapped_offsets.iter().all(allowed))
+        {
+            failures.push(name);
+        }
+        renames.push((old_pack.sha256.to_string(), new_pack.sha256.to_string()));
+    }
+    let mut old_manifest: serde_json::Value = serde_json::from_slice(&frozen_bytes).unwrap();
+    let mut new_manifest = serde_json::to_value(&fresh).unwrap();
+    golden_manifest_without_digests(&mut old_manifest);
+    golden_manifest_without_digests(&mut new_manifest);
+    let manifest_equal = old_manifest == new_manifest;
+    let old_lineage = golden_lineage_problems(&frozen);
+    let new_lineage = golden_lineage_problems(&fresh);
+    println!(
+        "CMP|manifest|fields_equal_without_digests_and_compressed_sizes={manifest_equal}|lineage_problems_old={old_lineage:?}|lineage_problems_new={new_lineage:?}"
+    );
+    assert!(failures.is_empty(), "decoded packs differ: {failures:?}");
+    assert!(manifest_equal, "manifest fields differ");
+    assert!(old_lineage.is_empty() && new_lineage.is_empty());
+}

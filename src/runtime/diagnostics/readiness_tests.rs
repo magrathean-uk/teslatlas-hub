@@ -535,7 +535,6 @@ fn doctor_disabled_collection_suppresses_attention() {
 }
 
 #[test]
-#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -595,7 +594,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     assert!(!with_key.credentials.legacy.valid_for_collection);
     let connection = store.open().expect("fixture observer");
     let retained_envelope: Vec<u8> = connection.query_row("SELECT access_envelope FROM credential_pairs WHERE slot='owner_api'", [], |row| row.get(0)).expect("retained envelope");
-    connection.execute("UPDATE credential_pairs SET access_envelope=X'010203' WHERE slot='owner_api'", []).expect("damage retained slot");
+    connection.execute("UPDATE credential_pairs SET access_envelope=zeroblob(length(access_envelope)) WHERE slot='owner_api'", []).expect("damage retained slot");
     let without_key = inspect_hub(&store, &fleet_config).expect("report");
     assert_eq!(without_key.status, "ok", "{:?}", doctor_failed_checks(&without_key));
     let mut expected = serde_json::to_value(&with_key.credentials).expect("expected metadata");
@@ -620,7 +619,6 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
 }
 
 #[test]
-#[ignore = "G-DIAGNOSTIC-FLEET-WITNESS (DEC-068 item 3): the doctor has no recorded Fleet scope and integrity witness yet"]
 fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -675,6 +673,39 @@ fn fleet_unresolved_refresh_is_attention_not_service_failure() {
                 .ends_with("authState=not_applicable unresolvedRefresh=not_applicable")
         );
     }
+}
+
+/// M09-T11 B1: the Hub's own grant whose refresh comes back without
+/// `vehicle_location`. The successor is refused before the commit, so the
+/// stored generation is still the earlier grant (whose scopes were checked
+/// when it was stored) and its witness stays true; the refresh receipt stays
+/// unresolved, so the doctor reports the reconnect stop (sign in again),
+/// collection is not valid and the collector cannot start.
+#[tokio::test]
+async fn a_narrowed_fleet_refresh_leaves_the_doctor_reporting_the_reconnect_stop() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    doctor_seed_car(&store);
+    let generation = doctor_fleet_pair(temporary.path(), &store, DOCTOR_SCOPED_ACCESS);
+    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
+    doctor_fresh_lease(&store);
+    let ready = inspect_hub(&store, &config).expect("report");
+    assert!(ready.credentials.fleet.valid_for_collection && ready.collector.can_start, "{:?}", doctor_failed_checks(&ready));
+
+    let probe = crate::auth::credential_vault::fixtures::refresh_fleet_pair_answered_with(&store, temporary.path(), DOCTOR_UNSCOPED_ACCESS).await;
+    assert!(matches!(probe.first, Err(crate::fleet_credentials::FleetCredentialError::MissingCollectionScopes)), "{:?}", probe.first);
+    assert_eq!(probe.requests, 1);
+
+    let report = inspect_hub(&store, &config).expect("report");
+    assert_eq!(report.collector.collection_attention.as_deref(), Some("collector_fleet_refresh_outcome_unknown"));
+    assert!(!report.credentials.fleet.valid_for_collection);
+    assert!(!report.credentials.selected_credentials_present);
+    assert!(!report.collector.can_start);
+    assert_eq!(report.credentials.fleet.scope_status.as_deref(), Some("ready"), "the stored generation is the scoped grant");
+    let vault = crate::auth::credential_vault::fixtures::open_fixture_vault(store.clone(), temporary.path());
+    let slot = crate::auth::credential_envelope::CredentialSlot::FleetApi;
+    assert_eq!(vault.stored_generation(slot).expect("generation"), Some(generation), "nothing was committed");
+    assert!(vault.has_unresolved_refresh(slot).expect("receipt"));
 }
 
 #[test]
@@ -923,11 +954,25 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
         assert!(doctor_check(&missing, "collectorCadence").passed, "{provider}");
         assert!(missing.collector.cadence_error.is_some(), "{provider}");
     }
-    // Missing Fleet scopes remain a failure beside the cadence.
+    // A Fleet pair without the recorded scope witness (an unscoped pair an
+    // older Hub stored before the Hub's own Fleet grant) remains a failure
+    // beside the cadence.
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
     doctor_seed_car(&store);
-    doctor_fleet_pair(temporary.path(), &store, DOCTOR_UNSCOPED_ACCESS);
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::auth::credential_vault::fixtures::seed_blocked_fleet_setup_credentials(
+        temporary.path(),
+        &crate::fleet_credentials::FleetSetupCredentials::new(
+            DOCTOR_UNSCOPED_ACCESS.to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("fleet credentials"),
+        UNIX_EPOCH + std::time::Duration::from_secs(1_000),
+    );
     let config = doctor_config(
         temporary.path(),
         "provider = 'fleet'\ninterval_seconds = 300\noffline_drive_timeout_seconds = 20",
@@ -937,8 +982,35 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
     let scopes = inspect_hub(&store, &config).expect("report");
     assert_eq!(scopes.status, "failed");
     assert!(!doctor_check(&scopes, "fleetCollectionScopes").passed);
+    assert_eq!(scopes.credentials.fleet.scope_status.as_deref(), Some("unwitnessed"));
     assert!(doctor_check(&scopes, "collectorCadence").passed);
     assert!(scopes.collector.cadence_error.is_some());
+}
+
+/// M09-T11 B3, beside the older-row case above: a Fleet grant without
+/// `vehicle_location` is refused by the sign-in before anything is stored, so
+/// the doctor finds no login: the scope check and the selected credentials
+/// fail and the collector cannot start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_doctor_refuses_a_grant_without_the_collection_scopes() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    doctor_seed_car(&store);
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    assert!(
+        !crate::auth::credential_vault::fixtures::fleet_sign_in_answered_with(&store, temporary.path(), DOCTOR_UNSCOPED_ACCESS).await,
+        "the narrowed grant is refused"
+    );
+    let config = doctor_config(temporary.path(), DOCTOR_FLEET, "");
+    doctor_fresh_lease(&store);
+    let report = inspect_hub(&store, &config).expect("report");
+    assert_eq!(report.status, "failed");
+    assert!(!report.credentials.fleet.present);
+    assert!(!doctor_check(&report, "fleetCollectionScopes").passed);
+    assert_eq!(doctor_check(&report, "fleetCollectionScopes").detail, "unavailable");
+    assert!(!doctor_check(&report, "selectedProviderCredentials").passed);
+    assert!(!report.credentials.selected_credentials_present);
+    assert!(!report.collector.can_start);
 }
 
 #[test]

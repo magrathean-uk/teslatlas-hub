@@ -406,6 +406,8 @@ pub enum Command {
     /// (made on first use) as PEM for the domain's key file; `setup-fleet
     /// register` reads {"clientId","clientSecret","domain","region"} and
     /// registers the domain with Tesla inside an open collection window.
+    /// `setup-fleet figures` prints the Fleet figures in effect without the
+    /// service.
     #[cfg(unix)]
     #[command(name = "setup-fleet", args_conflicts_with_subcommands = true)]
     SetupFleet {
@@ -755,6 +757,10 @@ pub enum FleetSetupStep {
     /// interval when it is 0. Needs a stored Fleet login and a configured
     /// vehicle; sends nothing to Tesla.
     Activate,
+    /// Print the Fleet figures in effect (polling intervals, prices and the
+    /// monthly cap) as the service reads its configuration. Not forwarded:
+    /// opens no store, sends and writes nothing.
+    Figures,
 }
 
 /// Collection-window verbs (docs/operations/collection-windows.md).

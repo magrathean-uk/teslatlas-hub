@@ -5,6 +5,7 @@
 pub mod backup_schedule;
 pub mod config;
 pub mod diagnostics;
+pub mod fleet_figures;
 pub mod lifecycle;
 pub mod operator;
 

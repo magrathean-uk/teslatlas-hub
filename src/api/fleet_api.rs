@@ -296,9 +296,9 @@ impl FleetAuthApi {
             .post(self.endpoint.clone())
             .header(ACCEPT, ACCEPT_JSON.clone())
             .header(CONTENT_TYPE, CONTENT_TYPE_FORM.clone())
-            // KL7: the available request-body conversion owns a copy. The
-            // source allocation stays wiping-owned until the exchange ends.
-            .body(body.bytes.to_vec());
+            // KL7: the request owns the wiping buffer itself, with no copy;
+            // it is wiped when the transport releases it.
+            .body(axum::body::Bytes::from_owner(body));
         #[cfg(test)]
         crate::api::test_egress_guard::refuse_production_request(&request);
         let (client, request) = request.build_split();
@@ -1807,6 +1807,12 @@ impl FleetExchangeBuffer {
             #[cfg(test)]
             kind: _kind,
         }
+    }
+}
+
+impl AsRef<[u8]> for FleetExchangeBuffer {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
     }
 }
 

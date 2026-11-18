@@ -22,13 +22,16 @@ Local apps are ad-hoc signed and unnotarised.
 
 1. Record the installed version, platform, configuration location, and current
    service status. Save the previous app or Debian package.
-2. Stop the existing Hub service through the Mac app or
-   `sudo systemctl stop tesatlas-hub.service` on Debian. Prevent simultaneous
-   collectors from owning the same refresh credentials. Backup and credential
-   export require the same exclusive Hub instance lock as the service.
-3. Create a data backup and retain separately recoverable credentials using
-   [Backup and recovery](../operations/backup-and-recovery.md). Keep these
-   private. A data-only restore does not restore collector authority, TLS,
+2. While the existing Hub service is running, close the collection window,
+   wait for `window status` to report `closed`, and export recovery credentials
+   using [Backup and recovery](../operations/backup-and-recovery.md). Export is
+   forwarded to the service and refuses to run while it is stopped.
+3. Stop Hub through the Mac app or `sudo systemctl stop tesatlas-hub.service`
+   on Debian, then create, verify and retain an offline data backup. The
+   backup takes the exclusive Hub instance lock. Keep the data backup,
+   credential export and recovery key private and separately recoverable.
+   Prevent simultaneous collectors from owning the same refresh credentials.
+   A data-only restore does not restore collector authority, TLS,
    configuration or service state; retain and rehearse those inputs separately.
 4. Inspect your new app or Debian package and retain its checksum, source commit, toolchain
    versions and completed build/test results.

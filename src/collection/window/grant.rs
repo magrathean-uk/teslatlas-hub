@@ -60,7 +60,9 @@ impl GrantBody {
         if self.expires_at <= self.starts_at {
             return Err(Refusal::ExpiryInvalid);
         }
-        if self.expires_at - self.starts_at > WINDOW_CEILING_SECONDS {
+        if self.expires_at.checked_sub(self.starts_at)
+            .is_none_or(|length| length > WINDOW_CEILING_SECONDS)
+        {
             return Err(Refusal::LengthExceedsCeiling);
         }
         Ok(())

@@ -100,6 +100,8 @@ impl SourceDbStage {
         transaction
             .commit()
             .map_err(|error| map_write_error(error, stats.limits.max_stage_bytes))?;
+        #[cfg(test)]
+        crate::hub_pack::record_verification("stage-write", self.path.display(), true);
         Ok(())
     }
 }

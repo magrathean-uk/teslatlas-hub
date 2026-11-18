@@ -15,9 +15,15 @@ actually opened, so renaming a parent folder during the run cannot redirect it.
 Scheduled backups and `backup-now` keep their own rule: no other account may
 write to the folder.
 
-Stop the Hub service first: backup and credential export take the exclusive Hub
-instance lock and will refuse to run while Serve owns it. While the Hub runs,
-`backup-now` makes the same encrypted backup through the service instead.
+Offline backup takes the exclusive Hub instance lock and refuses to run while
+Serve owns it. Stop Hub before `backup` or `backup-plaintext-directory`.
+While Hub runs, `backup-now` makes the same encrypted backup through the service.
+
+Credential export and restore are forwarded to the running service and require
+a closed collection window. To retain both recovery artefacts, first
+[export recovery credentials](#export-recovery-credentials) while Hub is running,
+then stop Hub for the offline data backup. Keep the service running for
+`export-recovery-credentials` and `restore-recovery-credentials`.
 
 Backups are encrypted by default with a recovery password you keep (at least
 12 characters, at most 1 KiB). The password is never a command argument or an
@@ -215,6 +221,11 @@ How each source behaves:
 
 ## Export recovery credentials
 
+Keep Hub running. Close the collection window and wait for `window status`
+to report `closed` before exporting; resolve a close or handback failure
+before continuing. A stopped service refuses the export before reading its
+recovery key file.
+
 Create a private export directory, then create a random raw 32-byte key in a
 mode-0600 file and export a separately encrypted credential bundle:
 
@@ -233,8 +244,9 @@ Store the data backup, encrypted credential export, and raw recovery key in
 separate security domains after export. In particular, move the raw key off the
 Hub host; do not leave it beside the encrypted credential bundle.
 
-After the backup and credential export complete, restart the Debian service
-and verify that systemd kept it active. Inspect its recent log before treating
+After the credential export completes, stop the Debian service before creating
+an offline data backup. Once that backup is verified, restart the service and
+verify that systemd kept it active. Inspect its recent log before treating
 collection as resumed:
 
 ```sh
@@ -362,12 +374,13 @@ sudo -u tesatlas -- /usr/bin/tesatlas-hub \
 Pair devices again and prove a fresh observation before declaring recovery
 complete.
 
-On macOS, choose **Stop Hub** in the app before running backup and recovery
-commands. Run those commands as the signed-in user with the app-embedded binary
-and per-user configuration paths documented in
-[CLI reference](../guides/cli.md#platform-invocation). Restart the service only
-after the command has completed and the intended data and configuration have
-been checked.
+On macOS, keep Hub running with a closed collection window for credential
+export or restore. Choose **Stop Hub** in the app before offline data backup
+or data restore. Run those commands as the signed-in user with the app-embedded
+binary and per-user configuration paths documented in
+[CLI reference](../guides/cli.md#platform-invocation). After an offline operation,
+restart only once the command has completed and the intended data and
+configuration have been checked.
 
 ## Interrupted PhysicalV3 publication
 

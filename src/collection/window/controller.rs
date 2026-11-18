@@ -155,6 +155,7 @@ fn read_probe(result: Result<f64, ProbeFailure>) -> Reading {
 }
 
 fn parse_anchor(value: &str) -> Option<(u64, u64)> {
+    let value = value.strip_suffix(":open").or_else(|| value.strip_suffix(":closed")).unwrap_or(value);
     let (epoch, seq) = value.split_once(':')?;
     Some((epoch.parse().ok()?, seq.parse().ok()?))
 }
@@ -363,7 +364,7 @@ impl WindowController {
         self.store.reset(&record)?;
         let seq = previous.map_or(0, |(_, seq)| seq);
         self.anchor
-            .write(&name, &format!("{}:{seq}", document.trust_epoch))?;
+            .write(&name, &format!("{}:{seq}:closed", document.trust_epoch))?;
         *inner = Inner {
             state: WindowState::closed(),
             trust: Some(record),
@@ -535,7 +536,7 @@ impl WindowController {
         })?;
         if let Err(refusal) = self.anchor.write(
             &self.anchor_name(),
-            &format!("{}:{}", anchor_epoch, body.seq),
+            &format!("{}:{}:open", anchor_epoch, body.seq),
         ) {
             self.seal_orphan(body.seq, &digest, None, wall);
             return Err(refusal);
@@ -876,11 +877,45 @@ impl WindowController {
     /// Records an interval in which the collector was not running.
     pub fn record_gap(&self, start: i64, end: i64) -> Result<(), Refusal> {
         let mut inner = self.lock();
-        if end > start && matches!(inner.state.phase, Phase::Open | Phase::Closing) {
+        if matches!(inner.state.phase, Phase::Open | Phase::Closing) {
+            self.record_gap_locked(&mut inner, start, end)?;
+        }
+        Ok(())
+    }
+
+    /// Records a gap that was still in progress when the window closed.
+    pub(super) fn record_closing_gap(&self, start: i64) -> Result<(), Refusal> {
+        let mut inner = self.lock();
+        if inner.state.phase == Phase::Closing {
+            let end = self.handback_end(&inner.state)?;
+            self.record_gap_locked(&mut inner, start, end)?;
+        }
+        Ok(())
+    }
+
+    fn record_gap_locked(&self, inner: &mut Inner, start: i64, end: i64) -> Result<(), Refusal> {
+        if end > start {
             inner.state.gaps.push(Gap { start, end });
             self.store.write_state(&inner.state)?;
         }
         Ok(())
+    }
+
+    fn handback_end(&self, state: &WindowState) -> Result<i64, Refusal> {
+        let grant = state.grant.as_ref().ok_or(Refusal::StateUnverifiable)?;
+        let observed = state.closing_at.unwrap_or_else(|| self.clock.wall());
+        // A rollback makes the observed close time unreliable for coverage.
+        // Keep coverage through the last accepted reading, within the grant.
+        // Exchange grace still uses the observed close time.
+        if let Some(opened_at) = state.opened_at {
+            let last_accepted = state.watermark.max(opened_at);
+            if observed < last_accepted {
+                return Ok(last_accepted.min(grant.body.expires_at));
+            }
+        }
+        // A gate is never open past expiry, so no handback claims coverage after it
+        // (an expiry close, and a reboot or clock close observed after the deadline).
+        Ok(observed.min(grant.body.expires_at))
     }
 
     /// Completes a close: writes and syncs the handback, releases the host
@@ -906,16 +941,12 @@ impl WindowController {
             .as_ref()
             .map(|grant| grant.body.clone())
             .ok_or(Refusal::StateUnverifiable)?;
+        self.pin_closed(&grant)?;
         let reason = inner
             .state
             .close_reason
             .unwrap_or(CloseReason::StateUnverifiable);
-        let closing_at = inner.state.closing_at.unwrap_or_else(|| self.clock.wall());
-        let closed_at = if reason == CloseReason::Expired {
-            grant.expires_at.min(closing_at)
-        } else {
-            closing_at
-        };
+        let closed_at = self.handback_end(&inner.state)?;
         let (opened_at, gaps, coverage) = match inner.state.opened_at {
             Some(opened) => {
                 let gaps: Vec<Gap> = inner
@@ -1140,10 +1171,32 @@ impl WindowController {
             return Err(Refusal::AnchorMismatch);
         }
         match anchored_seq.cmp(&seq) {
-            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Equal if value.ends_with(":open") => Ok(()),
+            std::cmp::Ordering::Equal => Err(Refusal::GrantConsumed),
             std::cmp::Ordering::Greater => Err(Refusal::GrantConsumed),
             std::cmp::Ordering::Less => Err(Refusal::AnchorMismatch),
         }
+    }
+
+    /// Pin the close without ever lowering a newer epoch or consumption. A
+    /// restored Closing snapshot can finish its handback but cannot revoke or
+    /// revive a later grant. Legacy two-field anchors can be closed, but do
+    /// not authorise an active-state resume.
+    fn pin_closed(&self, grant: &super::grant::GrantBody) -> Result<(), Refusal> {
+        let name = self.anchor_name();
+        let value = self.anchor.read(&name)?.ok_or(Refusal::AnchorMissing)?;
+        let pinned = parse_anchor(&value).ok_or(Refusal::AnchorMismatch)?;
+        let expected = (grant.trust_epoch, grant.seq);
+        if pinned > expected {
+            return Ok(());
+        }
+        if pinned != expected {
+            return Err(Refusal::AnchorMismatch);
+        }
+        if value.ends_with(":closed") {
+            return Ok(());
+        }
+        self.anchor.write(&name, &format!("{}:{}:closed", grant.trust_epoch, grant.seq))
     }
 
     fn seal_from_ledger(&self, ledger: &[Line<HubEntry>], wall: i64) {

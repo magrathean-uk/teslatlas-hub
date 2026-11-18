@@ -338,18 +338,13 @@ fn after_gap_charge(
     class: ChargeEvidence,
 ) -> Option<AfterGapCharge> {
     let start_ms = snapshot.at_ms?;
-    let known = snapshot
-        .energy_added_kwh
-        .filter(|value| value.is_finite())?;
     let unmoved = movement_between(snapshot.odometer_km, parsed.odometer) == Movement::Unmoved;
     let class_fits = match class {
         ChargeEvidence::Hold | ChargeEvidence::Complete => true,
         ChargeEvidence::Disconnected => unmoved,
         ChargeEvidence::Active | ChargeEvidence::None => false,
     };
-    let counter_new = parsed.charge_energy_added.is_some_and(|now| {
-        now > 0.0 && (counter_restarted(now, known) || counter_restarted(known, now))
-    });
+    let counter_new = after_gap_counter_changed(snapshot, parsed);
     let level_higher = match (parsed.battery_level, snapshot.battery_level) {
         (Some(now), Some(before)) => now > before,
         _ => matches!(
@@ -358,6 +353,15 @@ fn after_gap_charge(
         ),
     };
     (class_fits && counter_new && level_higher).then_some(AfterGapCharge { start_ms, unmoved })
+}
+
+fn after_gap_counter_changed(snapshot: &ParkedSnapshot, parsed: &ParsedSample) -> bool {
+    let Some(known) = snapshot.energy_added_kwh.filter(|value| value.is_finite()) else {
+        return false;
+    };
+    parsed.charge_energy_added.is_some_and(|now| {
+        now > 0.0 && (counter_restarted(now, known) || counter_restarted(known, now))
+    })
 }
 
 /// The parked snapshot a charge leaves when it closes (C1 R69). `at_ms` and

@@ -675,6 +675,21 @@ impl FleetExchangeJob {
         if let Err(error) = self.assert_sensitive_access() {
             return failed(error, true);
         }
+        // M09-T11 B1: a refreshed pair is held to the check a new grant meets
+        // before it replaces a login (`check_fleet_grant_scopes`, M09-T19
+        // ruling 6), so the stored own-grant pair is the proof of the collection
+        // scopes at every generation. A successor without them is dropped before
+        // the encryption and the write, exactly as Tesla's refusal of a sent
+        // request: the input may have been consumed, so the receipt, its binding
+        // and the input fence stay, the failure is terminal and the owner signs
+        // in again.
+        if let Err(refusal) = check_fleet_grant_scopes(refreshed.access_token.expose()) {
+            let error = match refusal {
+                FleetGrantScopeRefusal::ClaimsInvalid => FleetCredentialError::InvalidAccessTokenClaims,
+                FleetGrantScopeRefusal::Missing { .. } => FleetCredentialError::MissingCollectionScopes,
+            };
+            return failed(error, true);
+        }
         #[cfg(test)]
         if let Some(entries) = &self.encryption_entries { entries.fetch_add(1, std::sync::atomic::Ordering::SeqCst); }
         let output_generation = Uuid::new_v4();

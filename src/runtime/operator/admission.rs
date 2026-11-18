@@ -236,6 +236,16 @@ pub fn admit_import_observed(
             _window: None,
         });
     };
+    // Reconciliation below writes the catalogue. It needs lifetime admission
+    // even before the command obtains its own longer-lived admission.
+    let _coverage_admission = crate::hub_user_process::AdmittedUserHub::admit(data_dir)
+        .map_err(|error| match error {
+            crate::hub_user_process::UserLifetimeLockError::AlreadyRunning => OperatorRefusal::new(
+                "service_running",
+                "the Hub data folder is in use; stop Hub and wait for other data commands to finish",
+            ),
+            other => OperatorRefusal::new("hub_admission_refused", other.to_string()),
+        })?;
     let store = WindowStore::new(&super::window_dir(data_dir));
     private_dir(store.dir())?;
     let window = stable_shared_lock(&store.lock_path())?
@@ -247,6 +257,12 @@ pub fn admit_import_observed(
     }
     if loaded.trust.is_some() && !ledger_synced(&loaded.ledger) {
         return Err(OperatorRefusal::window(Refusal::HandbackPending));
+    }
+    // The raw coverage connection does not perform the Hub schema admission.
+    // Reject a newer or unrelated catalogue before changing any of its rows.
+    if data_dir.join("hub.sqlite").is_file() {
+        crate::db::HubStore::open_existing(data_dir)
+            .map_err(|error| OperatorRefusal::new("store_unavailable", error.to_string()))?;
     }
     mirror_coverage(data_dir, &loaded.ledger).map_err(|_| OperatorRefusal::window(Refusal::StateUnverifiable))?;
     Ok(ImportAdmission {

@@ -16,7 +16,7 @@ fn current_vehicle_status_fields(
 ) -> Result<CurrentVehicleStatusFields, StoreError> {
     let observations = store.current_observations_for_vehicle(vehicle_id)?;
     let lifecycle = store.load_lifecycle_state(vehicle_id)?;
-    let mut summary = build_current_vehicle_summary(
+    let summary = build_current_vehicle_summary(
         vehicle_id,
         &observations,
         None,
@@ -25,9 +25,6 @@ fn current_vehicle_status_fields(
         now_ms,
         transient_max_age_ms,
     );
-    if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
-        summary.geofence_name = store.geofence_name_at(vehicle_id, latitude, longitude)?;
-    }
     Ok(CurrentVehicleStatusFields {
         // The summary's activity vocabulary is the one C6 R29 defines: it never
         // holds `unavailable`, so no text filter applies.
@@ -35,7 +32,8 @@ fn current_vehicle_status_fields(
             .activity_state
             .map(|state| state.as_str().to_owned()),
         battery_level: summary.battery_level,
-        location_name: summary.geofence_name,
+        // Status is a redacted diagnostic: a geofence label may be an address.
+        location_name: None,
         // Current observations are durable history. They prove cached telemetry,
         // not a live vehicle or provider connection.
         telemetry_status: if summary.observed_at_ms.is_some() {
@@ -1347,6 +1345,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "credential-relocation-fixture")]
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
+    // The Fleet figures in effect (M09-T21, DEC-225) are read through the
+    // service's own loader and answered here, not forwarded: no store, no
+    // channel, no input, nothing written (not even the rename hand-over).
+    #[cfg(unix)]
+    if let Command::SetupFleet { step: Some(operator::cli::FleetSetupStep::Figures), .. } = &cli.command {
+        let figures = tesatlas_hub::runtime::fleet_figures::load_fleet_figures(&config_path)?;
+        println!("{}", serde_json::to_string(&figures)?);
+        return Ok(());
+    }
     #[cfg(unix)]
     tesatlas_hub::platform::name_migration::prepare_config_path(&config_path)?; // rename hand-over backstop (DEC-160)
     // Admission (M02-T10, rulings R5 and R6): every command is routed before
@@ -1693,102 +1700,33 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
+            // The Mac app's Start: the whole check, with its set-up marker
+            // check and its reader, is the library's (M08-T25), compiled on
+            // every Unix platform (M08-T25-LINUX).
+            if !*history_only {
+                let answer = tesatlas_hub::platform::start_preflight::start_preflight(&config)?;
+                println!("{answer}");
+                return Ok(());
+            }
             // A Hub that was set up and lost its catalogue is refused, never
             // idle and never new (M02-T21, DEC-116).
             tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
-            if *history_only {
-                validate_history_only_config(&config)?;
-                let published = run_immutable_diagnostic(&config.data_dir, |store| {
-                    store
-                        .service_readiness_at(false, current_epoch_ms()?)
-                        .map_err(|error| {
-                            format!("published history is not ready: {:?}", error.code)
-                        })?;
-                    let published = store.published_vehicles()?;
-                    if published.is_empty() {
-                        return Err("no signed history is published".into());
-                    }
-                    Ok(published.len())
-                })?;
-                println!(
-                    "{}",
-                    serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
-                );
-                return Ok(());
-            }
-            // A Hub that was never configured starts idle (M02-T21, DEC-115):
-            // the store is neither opened nor created here, and the serve
-            // admission applies the same rule. Anything else is checked below.
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_is_never_configured(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "idle",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            // A configured Hub without the Hub's own login starts for the
-            // owner's sign-in, the serve admission's same rule (M09-T16, B2).
-            #[cfg(target_os = "macos")]
-            if tesatlas_hub::macos_launch_agent::hub_awaits_owner_sign_in(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": "awaiting_sign_in",
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            // An unfinished Fleet set-up starts for the owner's next step,
-            // the serve admission's same rule (M09-T19 ruling 3).
-            #[cfg(target_os = "macos")]
-            if let Some(pending) = tesatlas_hub::macos_launch_agent::hub_awaits_fleet_setup(&config)? {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "ready",
-                        "state": pending.state(),
-                        "version": tesatlas_hub::BUILD_VERSION,
-                        "provider": config.collector.provider,
-                        "collectorEnabled": false,
-                    })
-                );
-                return Ok(());
-            }
-            run_immutable_diagnostic(&config.data_dir, |store| {
-                store.catalogue_check()?;
-                let configured = store.configured_tesla_vehicles()?;
-                if configured.is_empty() {
-                    return Err("at least one configured vehicle is required".into());
+            validate_history_only_config(&config)?;
+            let published = run_immutable_diagnostic(&config.data_dir, |store| {
+                store
+                    .service_readiness_at(false, current_epoch_ms()?)
+                    .map_err(|error| {
+                        format!("published history is not ready: {:?}", error.code)
+                    })?;
+                let published = store.published_vehicles()?;
+                if published.is_empty() {
+                    return Err("no signed history is published".into());
                 }
-                let report = inspect_hub(store, &config)?;
-                let present = match config.collector.provider {
-                    CollectorProvider::Legacy => report.credentials.legacy.present,
-                    CollectorProvider::Fleet => report.credentials.fleet.present,
-                };
-                if !present || !report.checks.iter().any(|check| check.name == "selectedProviderCredentials" && check.passed) {
-                    let status = tesatlas_hub::auth::credential_sign_in::credential_status(store, &config.data_dir, current_epoch_ms()?)?;
-                    return Err(tesatlas_hub::auth::credential_sign_in::diagnostic_admission_error(&status, config.collector.provider == CollectorProvider::Fleet).into());
-                }
-                Ok(())
+                Ok(published.len())
             })?;
             println!(
                 "{}",
-                serde_json::json!({
-                    "status": "ready",
-                    "version": tesatlas_hub::BUILD_VERSION,
-                    "provider": config.collector.provider,
-                })
+                serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
             );
             return Ok(());
         }
@@ -2571,5 +2509,56 @@ mod backup_recovery_repair_tests {
     #[cfg(not(target_os = "macos"))]
     fn enforces_ownership(path: &Path) -> bool {
         path.is_dir()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod status_privacy_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use tesatlas_hub::db::{ObservationInput, SourceDescriptor, VehicleDescriptor};
+
+    #[test]
+    fn status_does_not_disclose_the_current_private_geofence() {
+        const PRIVATE_PLACE: &str = "123 Example Street, Synthetic Town";
+        let root = tempfile::tempdir().expect("synthetic Hub");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).expect("private Hub");
+        let store = HubStore::initialize(root.path()).expect("store");
+        let source = store.register_source(
+            &SourceDescriptor::new("tesla_owner_api", "synthetic-status"), 1_000,
+        ).expect("source");
+        let vehicle = store.register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "synthetic-car"), 1_001,
+        ).expect("vehicle");
+        store.upsert_geofences(vehicle.vehicle_id, &[
+            tesatlas_hub::source_db_projection::SourceDbGeofence {
+                id: 17,
+                name: PRIVATE_PLACE.into(),
+                latitude: Some(0.0),
+                longitude: Some(0.0),
+                radius_m: Some(150.0),
+                billing_type: None,
+                cost_per_unit: None,
+                session_fee: None,
+            },
+        ]).expect("private place");
+        store.accept_owner_observation_and_lifecycle(&ObservationInput {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            observed_at_ms: 2_000,
+            payload: serde_json::json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"latitude": 0.0, "longitude": 0.0},
+                    "charge_state": {"battery_level": 81}
+                }
+            }),
+        }, 2_001, 1).expect("current observation");
+
+        let status = current_vehicle_status_fields(&store, vehicle.vehicle_id, 2_001, 600_000)
+            .expect("diagnostic fields");
+        assert_eq!(status.location_name, None, "redacted status must not reveal the current address");
+        assert_eq!(status.battery_level, Some(81));
     }
 }
