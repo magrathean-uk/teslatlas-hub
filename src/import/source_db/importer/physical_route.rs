@@ -121,14 +121,51 @@ fn publish_physical_route(
     seam: Option<&crate::import::source_db::seam::SeamPackPlan>,
     keep: Option<(&[ProjectionDrive], &[ProjectionCharge])>,
 ) -> Result<Option<crate::physical_publication::PhysicalV3Publication>, SourceDbImportError> {
+    publish_planned_physical_route(
+        store,
+        cursor_key,
+        binding,
+        stage,
+        publication_gate,
+        seam,
+        keep,
+        None,
+    )
+}
+
+/// As [`publish_physical_route`]; `kept_stage` is the recorded digest of
+/// the kept stage `stage` is a copy of, when a handback publishes it. With
+/// it, or with `keep`, a planned head is recorded with the inputs its plan
+/// was a function of, so a later handback that would plan the same head
+/// serves it again without planning it (M08-T19).
+#[allow(clippy::too_many_arguments)]
+fn publish_planned_physical_route(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: ProjectionBinding,
+    stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
+    publication_gate: &PublicationGate,
+    seam: Option<&crate::import::source_db::seam::SeamPackPlan>,
+    keep: Option<(&[ProjectionDrive], &[ProjectionCharge])>,
+    kept_stage: Option<&str>,
+) -> Result<Option<crate::physical_publication::PhysicalV3Publication>, SourceDbImportError> {
     let Some(mut stage) = stage else {
         return Ok(None);
     };
     let vehicle_id = binding.vehicle_id;
-    if let Some((drives, charges)) = keep {
-        keep_physical_source(store, publication_gate, &binding, stage.stage_mut(), drives, charges);
-    }
+    let kept_stage = match keep {
+        Some((drives, charges)) => keep_physical_source(
+            store,
+            publication_gate,
+            &binding,
+            stage.stage_mut(),
+            drives,
+            charges,
+        ),
+        None => kept_stage.map(str::to_owned),
+    };
     let planned = store.import_seam_present(vehicle_id)?;
+    let mut facts = None;
     if planned {
         let outcome = match seam {
             Some(packs) => plan_physical_stage(store, &binding, stage.stage_mut(), packs),
@@ -137,7 +174,7 @@ fn publish_physical_route(
             )),
         };
         match outcome {
-            Ok(()) => {}
+            Ok(planned) => facts = Some(planned),
             Err(PhysicalPlanError::Unplannable(reason)) => {
                 drop(stage);
                 tracing::warn!(
@@ -172,17 +209,105 @@ fn publish_physical_route(
         ),
         _ => Ok(()),
     };
-    Ok(Some(
-        crate::physical_publication::publish_recorded_physical_v3_stage_with_gate_at(
-            store,
-            cursor_key,
-            binding,
-            stage.take(),
-            publication_gate,
-            now_ms,
-            &record,
-        )?,
-    ))
+    let inputs = match (seam, &facts, kept_stage.as_deref()) {
+        (Some(packs), Some(facts), Some(kept_stage)) => Some((
+            facts.span,
+            handback_plan_inputs(kept_stage, &binding, packs, facts.span, &facts.stored, now_ms),
+        )),
+        _ => None,
+    };
+    let (publication, prepared) = crate::physical_publication::publish_recorded_physical_v3_stage_reporting_month(
+        store,
+        cursor_key,
+        binding,
+        stage.take(),
+        publication_gate,
+        now_ms,
+        &record,
+    )?;
+    if let Some((span, inputs)) = inputs {
+        let recorded = crate::db::PhysicalV3HandbackPlan {
+            snapshot_id: publication.admission.snapshot_id.to_string(),
+            span,
+            inputs,
+            prepared,
+        };
+        if let Err(error) =
+            store.record_physical_v3_handback_plan(publication_gate, vehicle_id, Some(&recorded))
+        {
+            tracing::warn!(
+                %vehicle_id,
+                %error,
+                "the 1.4 head's plan inputs were not recorded; the next handback plans it again"
+            );
+        }
+    }
+    Ok(Some(publication))
+}
+
+/// What one plan of a physical stage read besides the stage, the seam and
+/// the binding (M08-T19): the instants its source children span, in Unix
+/// milliseconds as the seam decides them, and a digest of the store's kept
+/// Hub rows it wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PhysicalPlanFacts {
+    span: Option<(i64, i64)>,
+    stored: [u8; 32],
+}
+
+/// A digest of the store's kept Hub rows as [`plan_physical_stage`] reads
+/// them. Each row was read from its stored JSON, so its JSON form here
+/// reads back as the same row: equal digests mean equal rows.
+fn stored_rows_digest(
+    stored: &crate::db::ImportSeamStoredRows,
+) -> Result<[u8; 32], PhysicalPlanError> {
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub physical plan stored rows v1\n");
+    let mut part = |name: &str, json: serde_json::Result<Vec<u8>>| {
+        let json = json.map_err(|error| PhysicalPlanError::Unplannable(error.to_string()))?;
+        hash.update(format!("{name} {}\n", json.len()));
+        hash.update(&json);
+        Ok::<(), PhysicalPlanError>(())
+    };
+    part("drives", serde_json::to_vec(&stored.drives))?;
+    part("charges", serde_json::to_vec(&stored.charges))?;
+    part("positions", serde_json::to_vec(&stored.positions))?;
+    part("charge_samples", serde_json::to_vec(&stored.charge_samples))?;
+    Ok(hash.finalize().into())
+}
+
+/// The inputs a handback's plan of the kept stage is a function of
+/// (M08-T19), as one digest: the kept stage's recorded content digest, the
+/// binding, the seam within the span of the stage's source children, that
+/// span, the store's kept Hub rows, and the calendar month (UTC) whose
+/// previous month the optional prepared map covers.
+fn handback_plan_inputs(
+    kept_stage: &str,
+    binding: &ProjectionBinding,
+    packs: &crate::import::source_db::seam::SeamPackPlan,
+    span: Option<(i64, i64)>,
+    stored: &[u8; 32],
+    now_ms: i64,
+) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub handback plan inputs v1\n");
+    hash.update(format!("stage {kept_stage}\n"));
+    hash.update(binding.installation_id.as_bytes());
+    hash.update(binding.account_id.as_bytes());
+    hash.update(binding.vehicle_id.as_bytes());
+    hash.update(binding.generation.to_be_bytes());
+    hash.update(binding.selected_car_id.to_be_bytes());
+    hash.update(packs.digest_within(span));
+    match span {
+        Some((first, last)) => hash.update(format!("span {first} {last}\n")),
+        None => hash.update(b"span -\n"),
+    }
+    hash.update(stored);
+    let month = time::OffsetDateTime::from_unix_timestamp(now_ms.div_euclid(1_000))
+        .map(|at| format!("{:04}-{:02}", at.year(), u8::from(at.month())))
+        .unwrap_or_default();
+    hash.update(format!("month {month}\n"));
+    Sha256Digest::from_bytes(hash.finalize().into()).to_string()
 }
 
 /// Plans the sealed physical stage of one vehicle with the import seam, in
@@ -196,7 +321,7 @@ fn plan_physical_stage(
     binding: &ProjectionBinding,
     stage: &mut SourceDbStage,
     packs: &crate::import::source_db::seam::SeamPackPlan,
-) -> Result<(), PhysicalPlanError> {
+) -> Result<PhysicalPlanFacts, PhysicalPlanError> {
     use crate::import::source_db::seam::{ChildRow, PackedChild, PackedSession};
     use crate::source_db_projection::{
         SourceDbChargingProcessPhysicalV2_2, SourceDbDrivePhysicalV2_2,
@@ -205,6 +330,8 @@ fn plan_physical_stage(
     use crate::source_db_stage::StageChildTable;
 
     let stored = store.import_seam_stored_rows(binding.vehicle_id)?;
+    let stored_digest = stored_rows_digest(&stored)?;
+    let mut span: Option<(i64, i64)> = None;
     let car_id = i16::try_from(binding.selected_car_id)
         .map_err(|_| PhysicalPlanError::Unplannable("the selected car id is out of range".into()))?;
     let packed = |session: Option<PackedSession>| matches!(session, Some(PackedSession::Keep { .. }));
@@ -254,6 +381,9 @@ fn plan_physical_stage(
                     at_ms: unix_ms(at_pg_us),
                     parent,
                 };
+                span = Some(span.map_or((child.at_ms, child.at_ms), |(first, last)| {
+                    (first.min(child.at_ms), last.max(child.at_ms))
+                }));
                 let decided = match table {
                     StageChildTable::Positions => packs.position(child),
                     StageChildTable::Charges => packs.charge_sample(child),
@@ -384,7 +514,10 @@ fn plan_physical_stage(
              physical form and are left out of the 1.4 target"
         );
     }
-    Ok(())
+    Ok(PhysicalPlanFacts {
+        span,
+        stored: stored_digest,
+    })
 }
 
 fn pg_us(ms: i64) -> i64 {

@@ -312,6 +312,8 @@ impl HubStore {
             .packs_dir
             .join("sha256")
             .join(format!("{}.sqlite.zst", pack.sha256));
+        #[cfg(test)]
+        read_probe::pack_opened();
         let mut file = File::open(&path).map_err(StoreError::OpenLineagePack)?;
         let metadata = file.metadata().map_err(StoreError::OpenLineagePack)?;
         if !metadata.is_file() || metadata.len() != pack.compressed_bytes {
@@ -878,6 +880,8 @@ impl HubStore {
         // Verify and decode the exact same opened descriptor. Reopening the
         // content-addressed path after verification would leave a same-user
         // replacement window between the digest check and SQLite inspection.
+        #[cfg(test)]
+        read_probe::pack_opened();
         let mut file = File::open(&path).map_err(StoreError::OpenLineagePack)?;
         delta
             .pack

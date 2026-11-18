@@ -22,11 +22,21 @@ use super::{
 
 const COPY_BLOCK_BYTES: usize = 1024 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    /// Runs once on the next copy's file after its bytes are written and
+    /// before SQLite opens it (M08-T19 tests: damage only the copy).
+    pub(crate) static AFTER_SEALED_COPY: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 impl SourceDbStage {
     /// Copies this sealed physical stage into a new private stage under
     /// `<imports_dir>/.staging`, byte for byte, and opens the copy writable
     /// and still sealed, so [`SourceDbStage::edit_sealed`] can plan it. The
     /// copy needs the stage's own byte limit free on the target filesystem.
+    /// The copy's accounting is checked here, not its pages: a publication
+    /// checks the database it reads after its last write (M08-T19).
     pub(crate) fn copy_sealed_into(
         &self,
         imports_dir: impl AsRef<Path>,
@@ -98,6 +108,10 @@ impl SourceDbStage {
             let _ = std::fs::remove_file(&path);
             return Err(error);
         }
+        #[cfg(test)]
+        if let Some(damage) = AFTER_SEALED_COPY.with(|hook| hook.borrow_mut().take()) {
+            damage(&path);
+        }
         let opened = (|| -> Result<Self, SourceDbStageError> {
             let connection = Connection::open_with_flags(
                 &path,
@@ -129,7 +143,6 @@ impl SourceDbStage {
             if copied.state != SourceDbStageState::Sealed {
                 return Err(SourceDbStageError::StageNotSealed);
             }
-            copy.verify_integrity()?;
             copy.verify_accounting(copied)
         })();
         match checked {

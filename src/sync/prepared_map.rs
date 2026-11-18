@@ -971,6 +971,10 @@ fn publish_selected_month_with_policy(
     rdp_evaluation_limit: u64,
     sync_directory: &dyn Fn(&Path) -> io::Result<()>,
 ) -> PreparedResult<()> {
+    #[cfg(test)]
+    if crate::physical_publication::FAIL_NEXT_PREPARATION.with(|fail| fail.replace(false)) {
+        return Err(invalid("a test failed this preparation"));
+    }
     let Some(month) = previous_complete_month(now_ms)? else {
         return Ok(());
     };

@@ -965,6 +965,36 @@ impl SeamPackPlan {
             .digest_into(&mut hash, "charge", "charge-skip", "charge-held");
         hash.finalize().into()
     }
+
+    /// The part of [`Self::digest`] that decides a physical stage whose
+    /// source children (positions and charge samples) all lie in `span`,
+    /// inclusive milliseconds, `None` for a stage without any (M08-T19).
+    /// Children are decided only by [`Self::position`] and
+    /// [`Self::charge_sample`]: by the sessions, and by whether a covered
+    /// interval holds their instant. A covered interval holds an instant in
+    /// the span only when it meets the span, so the covered intervals that
+    /// do not are left out, and two plans with equal digests here decide
+    /// every session and every such child alike.
+    pub fn digest_within(&self, span: Option<(i64, i64)>) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"teslatlas-hub import seam pack plan within a span v1\n");
+        match span {
+            Some((first, last)) => {
+                hash.update(format!("span {first} {last}\n"));
+                for (start, end) in self.coverage.intervals() {
+                    if *start <= last && *end > first {
+                        hash.update(format!("coverage {start} {end}\n"));
+                    }
+                }
+            }
+            None => hash.update(b"span -\n"),
+        }
+        self.drives.digest_into(&mut hash, "drive", "skip", "held");
+        self.charges
+            .digest_into(&mut hash, "charge", "charge-skip", "charge-held");
+        hash.finalize().into()
+    }
 }
 
 /// Which source children (positions, charge samples) and charges a
