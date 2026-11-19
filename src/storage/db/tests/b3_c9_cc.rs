@@ -1252,7 +1252,7 @@ fn c9_r40_tidy_preserves_copied_drive_totals() {
                     concat!(
                         "INSERT INTO ",
                         crate::db::import_table_names::import_projection_state_rows_table!(),
-                        " VALUES (?1,'drive',1,9,1,zeroblob(32))"
+                        " VALUES (?1,1,9,1,zeroblob(32))"
                     ),
                     [v.to_string()],
                 )

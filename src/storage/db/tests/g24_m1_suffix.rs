@@ -92,7 +92,7 @@ fn floor_store_preserves_populated_tables() {
         super::tests::g2_4_m1::catalogue_floor_witnesses(&connection) > 0,
         "M1-T3: the floor witnesses are listed as imported rows for v80 (M03-T11)"
     );
-    let before = rows(&connection);
+    let before = super::tests::g2_4_m1::rows_after_import_state_compaction(&rows(&connection));
     migrate(&connection).unwrap();
     assert_eq!(
         schema_version(&connection).unwrap(),

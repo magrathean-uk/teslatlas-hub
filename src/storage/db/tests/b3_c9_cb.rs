@@ -1237,7 +1237,7 @@ fn assert_imported_closed_exclusion() {
                 concat!(
                     "INSERT INTO ",
                     crate::db::import_table_names::import_projection_state_rows_table!(),
-                    " VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                    " VALUES (?1, 1, 9, 1, zeroblob(32))"
                 ),
                 [vehicle.to_string()],
             )
@@ -1501,7 +1501,7 @@ fn c9_r40_relocated_retry_preserves_imported_closed_totals() {
                         "INSERT INTO ",
                         crate::db::import_table_names::import_projection_state_rows_table!(),
                         "
-                VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                VALUES (?1, 1, 9, 1, zeroblob(32))"
                     ),
                     [vehicle.to_string()],
                 )
