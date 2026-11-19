@@ -1687,6 +1687,7 @@ async fn two_stops_preserve_the_third_stream(seam: Arc<SupervisedCollectorTestSe
             events: receiver,
             _shutdown: Some(shutdown),
             task: Some(task),
+            held_frame: None,
         });
         // Every run keeps delivering a frame every 50 ms for as long as its queue
         // exists. Only a frame the queue accepted is counted (with its source time);
@@ -1935,6 +1936,7 @@ fn hung_stream_runtime(
             events: receiver,
             _shutdown: Some(shutdown),
             task: Some(task),
+            held_frame: None,
         },
         events,
     )

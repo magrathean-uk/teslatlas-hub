@@ -264,6 +264,25 @@ pub(crate) fn discovery_action(
     }
 }
 
+/// How long an unchanged discovery may go without advancing the car's durable
+/// current observation. A repeat inside this bound writes nothing (C3 R14,
+/// M04-T01); the first repeat after it is delivered, so successful discovery keeps
+/// the car's observation time current without a write per poll.
+pub(crate) const DISCOVERY_PRESENCE_REFRESH_MS: i64 = 15 * 60 * 1_000;
+
+/// Whether a discovery received at `received_at_ms`, which [`discovery_action`]
+/// would skip, is delivered instead to advance the car's durable observation
+/// time. `last_stored_obs_ms` is the newest receipt among the car's delivered
+/// current rows (C3 R40); with none, the repeat is delivered.
+pub(crate) fn discovery_presence_refresh_due(
+    last_stored_obs_ms: Option<i64>,
+    received_at_ms: i64,
+) -> bool {
+    last_stored_obs_ms.is_none_or(|stored| {
+        received_at_ms.saturating_sub(stored) >= DISCOVERY_PRESENCE_REFRESH_MS
+    })
+}
+
 fn collector_vehicle_uuid(value: &str) -> Result<Uuid, StoreError> {
     parse_stored_uuid("collector vehicle", value)
 }
@@ -1294,6 +1313,26 @@ impl HubStore {
             )
             .map_err(StoreError::Query)?;
         Ok(snapshot)
+    }
+
+    /// `observed_at_ms` of the car's current row of `record_type`, if it has one.
+    /// Storage discards a reply older than this row, so the collector reads it to
+    /// keep such a reply from moving the car's phase (issue #114).
+    pub(crate) fn current_observed_at_ms(
+        &self,
+        vehicle_id: Uuid,
+        record_type: &str,
+    ) -> Result<Option<i64>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT observed_at_ms FROM current_observations
+                  WHERE vehicle_id = ?1 AND record_type = ?2",
+                params![vehicle_id.to_string(), record_type],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
     }
 
     /// [`Self::collector_lifecycle_snapshot_in_transaction`] on a read-only

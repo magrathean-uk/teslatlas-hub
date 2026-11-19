@@ -735,19 +735,22 @@ where
                                             vehicle.as_ref().is_none_or(|vehicle| {
                                                 vehicle.settings.req_not_unlocked
                                             });
+                                        let received_at_ms = clock.wall_now_ms()?;
+                                        let (phase, eligible) = read_reply_phase(
+                                            run.commit.store,
+                                            run.scheduler,
+                                            run.commit.provider,
+                                            vehicle_id,
+                                            &snapshot,
+                                            received_at_ms,
+                                            req_not_unlocked,
+                                        );
                                         run.scheduler.probe_finished(
                                             vehicle_id,
-                                            ProbeOutcome::Read(
-                                                poll_phase(&snapshot),
-                                                sleep_eligible_with_policy(
-                                                    &snapshot,
-                                                    req_not_unlocked,
-                                                ),
-                                            ),
+                                            ProbeOutcome::Read(phase, eligible),
                                             now,
                                         );
                                         revoke_requested_gates(run.scheduler, &gates);
-                                        let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
                                             run.batch.admit_snapshot(
                                                 SnapshotItem {
@@ -773,15 +776,20 @@ where
                                             vehicle.as_ref().is_none_or(|vehicle| {
                                                 vehicle.settings.req_not_unlocked
                                             });
-                                        run.scheduler.vehicle_succeeded(
+                                        let received_at_ms = clock.wall_now_ms()?;
+                                        let (phase, eligible) = read_reply_phase(
+                                            run.commit.store,
+                                            run.scheduler,
+                                            run.commit.provider,
                                             vehicle_id,
-                                            poll_phase(&snapshot),
-                                            sleep_eligible_with_policy(&snapshot, req_not_unlocked),
-                                            now,
+                                            &snapshot,
+                                            received_at_ms,
+                                            req_not_unlocked,
                                         );
+                                        run.scheduler
+                                            .vehicle_succeeded(vehicle_id, phase, eligible, now);
                                         // Entering Suspended revokes the car's gate (R36).
                                         revoke_requested_gates(run.scheduler, &gates);
-                                        let received_at_ms = clock.wall_now_ms()?;
                                         if let Some(vehicle) = vehicle {
                                             run.batch.admit_snapshot(
                                                 SnapshotItem {

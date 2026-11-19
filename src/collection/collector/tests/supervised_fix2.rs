@@ -604,6 +604,7 @@ async fn b2_a_stop_whose_fence_is_set_before_its_queued_flush_writes_no_frame() 
                     events: receiver,
                     _shutdown: Some(shutdown),
                     task: Some(task),
+                    held_frame: None,
                 }];
                 let base_ms = current_epoch_millis().expect("clock") - 60_000;
                 events
@@ -742,6 +743,7 @@ async fn b2_a_fence_set_between_two_frame_commits_of_the_queued_flush_writes_no_
                     events: receiver,
                     _shutdown: Some(shutdown),
                     task: Some(task),
+                    held_frame: None,
                 }];
                 let mut cache = HashMap::new();
                 let mut pending = StreamDrainResult::default();
@@ -821,6 +823,7 @@ async fn b2_a_fence_set_between_two_frame_commits_of_a_finished_streams_tail_wri
                     events: receiver,
                     _shutdown: Some(shutdown),
                     task: Some(task),
+                    held_frame: None,
                 }];
                 let base_ms = current_epoch_millis().expect("clock") - 60_000;
                 let frame_ms = |ordinal: i64| base_ms + 1_000 * ordinal;

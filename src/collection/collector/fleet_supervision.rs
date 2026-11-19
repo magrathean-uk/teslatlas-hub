@@ -773,9 +773,14 @@ async fn run_fleet_tick(
                         else {
                             return Ok(ReadFlow::Continue);
                         };
-                        let phase = poll_phase(&snapshot);
-                        let eligible = sleep_eligible_with_policy(
+                        let received_at_ms = clock.wall_now_ms()?;
+                        let (phase, eligible) = read_reply_phase(
+                            run.commit.store,
+                            run.scheduler,
+                            run.commit.provider,
+                            vehicle_id,
                             &snapshot,
+                            received_at_ms,
                             vehicle.settings.req_not_unlocked,
                         );
                         if probe {
@@ -790,7 +795,6 @@ async fn run_fleet_tick(
                             run.scheduler
                                 .vehicle_succeeded(vehicle_id, phase, eligible, now);
                         }
-                        let received_at_ms = clock.wall_now_ms()?;
                         run.batch.snapshots.push(SnapshotItem {
                             vehicle,
                             snapshot,

@@ -355,6 +355,7 @@ async fn completed_stream_task_drains_final_events_and_is_reaped_once() {
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     while !streams[0]
         .task
@@ -1615,6 +1616,7 @@ async fn a_stream_rejection_is_no_lease_state_until_the_credential_unit_signs_th
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     let (state, receiver) = watch::channel(SupervisedCollectorState::Active);
 
@@ -1680,6 +1682,7 @@ async fn production_stream_queue_backpressures_and_drains_without_event_loss() {
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     let first_timestamp = current_epoch_millis().expect("clock")
         - i64::try_from((STREAM_EVENT_CHANNEL_CAPACITY + 2) * 200)
