@@ -48,7 +48,8 @@ impl CredentialVaultEntry {
     pub fn test_io_observer(observer: Box<dyn FnMut(&str, &Path)>) -> impl Drop {
         private_directory::observe_for_test(observer)
     }
-    #[cfg(debug_assertions)]
+    /// Library tests only (M09-T22): it writes a Fleet row without the scope check.
+    #[cfg(test)]
     #[doc(hidden)]
     pub fn seed_migration_for_test(data: &Path, candidate: u8, fleet: bool, missing_keyring: bool) -> Result<Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
         fixtures::seed_pending_for_binary(data, candidate, fleet, missing_keyring)

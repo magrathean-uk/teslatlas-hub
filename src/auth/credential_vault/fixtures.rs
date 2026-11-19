@@ -120,8 +120,10 @@ pub(crate) fn seed_own_fleet_pair(data: &Path, access: &str, refresh: &str) -> U
     seed_own_fleet_grant(&vault, access, refresh).expect("own Fleet grant")
 }
 /// Stores a Fleet pair as the Hub's own Fleet sign-in does (M09-T08): the
-/// only writer of an admitted Fleet pair besides its refresh successor.
-#[cfg(debug_assertions)]
+/// only writer of an admitted Fleet pair besides its refresh successor. Library
+/// tests only (M09-T22): a debug build of the library cannot store a Fleet
+/// grant without the scope check.
+#[cfg(test)]
 pub(crate) fn seed_own_fleet_grant(vault: &CredentialVault, access: &str, refresh: &str) -> Result<Uuid, CredentialStoreError> {
     let session = vault.begin_sign_in(CredentialSlot::FleetApi)?;
     let sent_at_s = (session.expires_at_ms - 600_000) / 1000;
@@ -444,7 +446,7 @@ fn wait_for_release(store: &HubStore) {
     drop(release);
 }
 
-#[cfg(debug_assertions)]
+#[cfg(test)]
 pub(super) fn seed_pending_for_binary(data: &Path, candidate: u8, fleet: bool, missing_keyring: bool) -> Result<Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
     use std::os::unix::fs::PermissionsExt;
     if missing_keyring {

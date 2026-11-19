@@ -331,6 +331,12 @@ impl<'a> SignInAttempt<'a> {
         }
     }
 
+    /// Redeems an answer line for any slot. Test builds only (M09-T22): the
+    /// service redeems through the Owner exchange and the Fleet exchange, which
+    /// check the scope; this generic path does not, so no release or plain debug
+    /// build of the library offers it.
+    #[cfg(any(test, feature = "journey-doubles"))]
+    #[doc(hidden)]
     pub async fn redeem(self, line: &[u8], mut publish: impl FnMut(&str) -> Result<(), CredentialCommandError>) -> Result<(), CredentialCommandError> {
         let code = self.redirect_code(line)?;
         let mut body = SecretBuffer::new("request_body", 1024);
