@@ -587,7 +587,9 @@ fn p05_f04_a_stopped_stream_keeps_its_refused_frames_for_the_shutdown_stop() {
         let (_temporary, bed) = GuardBed::new();
         let window = crate::fleet_api::egress::test_support::TestWindow::open(60);
         // A port of its own: a route is per host and port, and tests run in parallel.
-        let (endpoint, _reserved) = reserved_stream_endpoint();
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve a port");
+        let port = reserved.local_addr().expect("address").port();
+        let endpoint = format!("ws://127.0.0.1:{port}/p05-f04-final/streaming/");
         let _route = window.route(&endpoint);
         let permit = crate::fleet_api::egress::ask(
             &endpoint,
