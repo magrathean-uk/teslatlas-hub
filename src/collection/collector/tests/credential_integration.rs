@@ -27,6 +27,14 @@ struct AuthFake {
     owner_hold: Arc<AtomicBool>,
     /// The vehicle actions (wake-ups) the fake has been sent.
     actions: Arc<AtomicUsize>,
+    /// A wake-up answers with the bearer token it carried as its state (a
+    /// synthetic reflected credential).
+    reflect_bearer: Arc<AtomicBool>,
+    /// The bearer tokens a wake-up reflected, in order.
+    wake_bearers: Arc<Mutex<Vec<String>>>,
+    /// A vehicle action is counted and then answered with an unreadable body,
+    /// as if its answer were lost after the car acted.
+    lose_answer: Arc<AtomicBool>,
 }
 
 impl AuthFake {
@@ -68,9 +76,31 @@ async fn fake_products(
 }
 
 /// A vehicle action: counted, and answered as a wake-up is.
-async fn fake_wake(State(fake): State<AuthFake>) -> axum::response::Response {
+async fn fake_wake(State(fake): State<AuthFake>, headers: HeaderMap) -> axum::response::Response {
     fake.actions.fetch_add(1, Ordering::SeqCst);
+    if fake.lose_answer.load(Ordering::SeqCst) {
+        return (StatusCode::OK, "{\"response\":").into_response();
+    }
+    if fake.reflect_bearer.load(Ordering::SeqCst) {
+        let bearer = headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .unwrap_or_default()
+            .to_owned();
+        fake.wake_bearers.lock().unwrap().push(bearer.clone());
+        return (StatusCode::OK, json!({"response": {"state": bearer}}).to_string()).into_response();
+    }
     (StatusCode::OK, r#"{"response":{"state":"online"}}"#).into_response()
+}
+
+/// A vehicle command (DEC-246): counted with the wake-ups, and accepted.
+async fn fake_command(State(fake): State<AuthFake>) -> axum::response::Response {
+    fake.actions.fetch_add(1, Ordering::SeqCst);
+    if fake.lose_answer.load(Ordering::SeqCst) {
+        return (StatusCode::OK, "{\"response\":").into_response();
+    }
+    (StatusCode::OK, r#"{"response":{"result":true,"reason":""}}"#).into_response()
 }
 
 async fn fake_token(State(fake): State<AuthFake>) -> axum::response::Response {
@@ -103,6 +133,7 @@ async fn auth_fake() -> (AuthFake, url::Url, OwnerApi, tokio::task::JoinHandle<(
     let router = Router::new()
         .route("/api/1/products", get(fake_products))
         .route("/api/1/vehicles/{id}/wake_up", post(fake_wake))
+        .route("/api/1/vehicles/{id}/command/{command}", post(fake_command))
         .route("/oauth2/v3/token", post(fake_token))
         .with_state(fake.clone());
     let server = tokio::spawn(async move {
@@ -1619,15 +1650,6 @@ impl Drop for ResidentRig {
     }
 }
 
-/// M09-T19 ruling 1: with no other refusal standing, the executor and the
-/// control socket still refuse the command (`CommandsNotOffered`), and only
-/// the library's fused request, which no production path calls, succeeds.
-fn assert_commands_refused_by_the_service(outcomes: &[Result<(), String>; 3]) {
-    assert!(outcomes[0].as_ref().is_err_and(|error| error.contains("CommandsNotOffered")), "executor: {outcomes:?}");
-    assert!(outcomes[1].is_ok(), "fused library request: {outcomes:?}");
-    assert!(outcomes[2].as_ref().is_err_and(|error| error.contains("CommandsNotOffered")), "socket: {outcomes:?}");
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cs_p3_resident_action_respects_live_c3_refusal() {
     use crate::legacy_auth::AuthMode;
@@ -1679,12 +1701,9 @@ async fn cs_p3_resident_action_respects_live_c3_refusal() {
                     .expect("catalogue")
                     .execute("UPDATE collector_account_state SET state = 'collecting'", [])
                     .expect("retry");
-                // M09-T19 ruling 1: the executor and the socket refuse every
-                // vehicle command before anything is sent; only the bare
-                // library request (no production caller) still reaches the wire.
                 let outcomes = rig.try_each_path().await;
-                assert_commands_refused_by_the_service(&outcomes);
-                assert_eq!(rig.fake.action_requests(), 1, "{mode:?}: the library request only");
+                assert!(outcomes.iter().all(Result::is_ok), "{mode:?}: {outcomes:?}");
+                assert_eq!(rig.fake.action_requests(), 3, "{mode:?}: one per path");
             }
         })
         .await;
@@ -1745,16 +1764,16 @@ async fn cs_p3_resident_action_rechecks_after_external_pair_write() {
             assert!(started.refusal_reset);
             rig.manager.lock().await.apply_collector_start(&started.credential_view());
             let outcomes = rig.try_each_path().await;
-            assert_commands_refused_by_the_service(&outcomes);
-            assert_eq!(rig.fake.action_requests(), 1);
+            assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
+            assert_eq!(rig.fake.action_requests(), 3);
 
             // The control: a refusal C3 holds for another mode is not this unit's, so
             // the action goes out.
             let other = ResidentRig::new(AuthMode::Tesla).await;
             p3_seed_c3(&other.store, "provider", &"b".repeat(64), "provider_refused");
             let outcomes = other.try_each_path().await;
-            assert_commands_refused_by_the_service(&outcomes);
-            assert_eq!(other.fake.action_requests(), 1);
+            assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
+            assert_eq!(other.fake.action_requests(), 3);
         })
         .await;
 }

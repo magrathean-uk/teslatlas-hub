@@ -4,8 +4,9 @@
 //!
 //! This is not a polling loop or a Fleet implementation. It sends authenticated
 //! reads to the legacy-compatible product list and crate-local `vehicle_data`
-//! paths. Vehicle commands are available only through explicit one-shot calls;
-//! the collector never invokes them.
+//! paths. Vehicle commands are available only through explicit one-shot calls
+//! (DEC-246: the command line's confirmed action, inside an Open collection
+//! window); the collector never invokes them.
 //!
 //! Legacy authentication is supplied only through typed credential owners;
 //! raw bearer strings never enter the production API.
@@ -267,6 +268,19 @@ impl OwnerApi {
         self.legacy_auth_client.clone()
     }
 
+    /// Whether the collection window lets an explicit vehicle action go to this
+    /// Owner base now (DEC-246). Asked before the action's audit receipt starts,
+    /// so an action outside an Open window writes and sends nothing; the permit
+    /// is released at once and the send asks the gate again.
+    pub(crate) fn vehicle_action_window_open(&self) -> bool {
+        crate::fleet_api::egress::ask(
+            self.base_url.as_str(),
+            crate::fleet_api::egress::Provider::Legacy,
+            crate::fleet_api::egress::PermitKind::Request,
+        )
+        .is_ok()
+    }
+
     fn build(
         options: OwnerApiOptions,
         allow_insecure_test_base: bool,
@@ -379,11 +393,14 @@ impl OwnerApi {
                 if envelope.count.is_some() || envelope.response.is_empty() {
                     return Err(OwnerApiError::InvalidCommandResponse);
                 }
+                // The wake state reaches the command line's output, so only a
+                // known state is kept; anything else (a reflected credential
+                // among them) is dropped here, before it leaves the client.
                 let state = envelope
                     .response
                     .get("state")
                     .and_then(Value::as_str)
-                    .filter(|state| valid_state(state))
+                    .filter(|state| known_wake_state(state))
                     .map(str::to_owned);
                 Ok(LegacyVehicleActionResult { state })
             }
@@ -862,6 +879,14 @@ impl LegacyVehicleAction {
         }
     }
 
+    /// Whether the action may be sent to a car at all (DEC-248: Wake, Flash
+    /// Lights and Honk Horn only). Every other action is refused by the
+    /// command line, the control socket and the service's executor before
+    /// anything is written or sent.
+    pub const fn is_permitted(self) -> bool {
+        matches!(self, Self::Wake | Self::FlashLights | Self::HonkHorn)
+    }
+
     const fn endpoint_suffix(self) -> &'static str {
         match self {
             Self::Wake => "wake_up",
@@ -1217,6 +1242,11 @@ fn valid_vin(value: &str) -> bool {
         && !value
             .bytes()
             .any(|byte| matches!(byte, b'I' | b'O' | b'Q' | b'i' | b'o' | b'q'))
+}
+
+/// The vehicle states a wake answer may report on the command line.
+fn known_wake_state(value: &str) -> bool {
+    matches!(value, "online" | "asleep" | "offline" | "waking")
 }
 
 fn valid_state(value: &str) -> bool {
