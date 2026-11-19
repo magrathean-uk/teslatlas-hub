@@ -91,6 +91,409 @@ fn referenced_pack_rows_at(
     Ok(deduplicated)
 }
 
+/// Delete the retention rows that expired before `cutoff_ms`. Shared by repair
+/// and storage reclamation; each runs it after its file removal, so the rows
+/// stay retryable when a removal fails.
+fn delete_expired_pack_retention_rows(
+    transaction: &Transaction<'_>,
+    cutoff_ms: i64,
+) -> Result<(), StoreError> {
+    transaction
+        .execute(
+            "DELETE FROM sync_retired_lineages WHERE expires_at_ms <= ?1",
+            params![cutoff_ms],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    transaction
+        .execute(
+            "DELETE FROM prepared_map_months AS p
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM pending_physical_v3_admissions AS h
+                     WHERE h.vehicle_id = p.vehicle_id
+                       AND h.receipt_id = p.input_receipt_id
+                       AND h.serve_state = 'public_first'
+                 ) AND NOT EXISTS (
+                     SELECT 1 FROM retained_physical_v3_admissions AS r
+                     WHERE r.vehicle_id = p.vehicle_id
+                       AND r.receipt_id = p.input_receipt_id
+                       AND r.expires_at_ms > ?1
+                 )",
+            params![cutoff_ms],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    transaction
+        .execute(
+            "DELETE FROM retained_physical_v3_admissions WHERE expires_at_ms <= ?1",
+            params![cutoff_ms],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    Ok(())
+}
+
+/// One class of pack files in a storage census: how many files and bytes it
+/// holds, and how many of them no reference, download, recovery path or
+/// backup pin needs. Counts and sizes only, never a place or a name.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, PartialEq, Eq)]
+pub struct StorageCensusClass {
+    pub files: u64,
+    pub bytes: u64,
+    pub reclaimable_files: u64,
+    pub reclaimable_bytes: u64,
+}
+
+impl StorageCensusClass {
+    fn add(&mut self, bytes: u64, reclaimable: bool) {
+        self.files += 1;
+        self.bytes = self.bytes.saturating_add(bytes);
+        if reclaimable {
+            self.reclaimable_files += 1;
+            self.reclaimable_bytes = self.reclaimable_bytes.saturating_add(bytes);
+        }
+    }
+}
+
+/// The pack storage of a store by class (M08-T29): pack files under `packs`
+/// and `packs/sha256`, and the import stages kept under `packs/physical-kept`.
+/// A pack referenced by more than one class is counted once, in the first
+/// class of this order. The current heads are the served physical heads and
+/// the lineage head; the import bases are each vehicle's kept import stage
+/// and its source sessions, which every hand-back republishes from. A stage
+/// copy left in the kept stages' staging folder by an interrupted hand-back
+/// or keep is an orphan.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, PartialEq, Eq)]
+pub struct StorageCensus {
+    pub current_heads: StorageCensusClass,
+    pub import_bases: StorageCensusClass,
+    pub retained_prior_heads: StorageCensusClass,
+    pub deltas: StorageCensusClass,
+    pub prepared_maps: StorageCensusClass,
+    pub orphans: StorageCensusClass,
+    pub total: StorageCensusClass,
+}
+
+/// The receipt of one reclamation: the census before and after, and the bytes
+/// actually removed, measured at each removal.
+#[derive(Debug, Clone, Copy, serde::Serialize, PartialEq, Eq)]
+pub struct StorageReclaimReport {
+    pub before: StorageCensus,
+    pub reclaimed_files: u64,
+    pub reclaimed_bytes: u64,
+    pub after: StorageCensus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackStorageClass {
+    CurrentHead,
+    ImportBase,
+    RetainedPriorHead,
+    Delta,
+    PreparedMap,
+}
+
+/// A pack-tree file, held by the opened directory that holds it and its
+/// plain name there, so reclamation unlinks the entry it counted and never
+/// resolves the path again.
+struct PackStorageFile {
+    directory: std::rc::Rc<std::os::fd::OwnedFd>,
+    name: String,
+    path: PathBuf,
+    bytes: u64,
+    class: Option<PackStorageClass>,
+    needed: bool,
+}
+
+fn is_pack_object_name(digest: &str) -> bool {
+    digest.len() == 64 && digest.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Open one directory of the pack tree without following a link: `parent` is
+/// an already opened directory and `name` a plain entry of it, or with no
+/// parent `path` is the packs root. A missing directory is `None`; a link or
+/// any other non-directory is refused, so the census never reads, and
+/// reclamation never unlinks, outside the store.
+fn open_pack_tree_directory(
+    parent: Option<&std::os::fd::OwnedFd>,
+    name: &str,
+    path: &Path,
+) -> Result<Option<std::rc::Rc<std::os::fd::OwnedFd>>, StoreError> {
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let opened = match parent {
+        Some(parent) => openat(parent, name, flags, Mode::empty()),
+        None => open(path, flags, Mode::empty()),
+    };
+    match opened {
+        Ok(descriptor) => Ok(Some(std::rc::Rc::new(descriptor))),
+        Err(Errno::NOENT) => Ok(None),
+        Err(error) => Err(StoreError::InspectCatalogPack {
+            path: path.to_path_buf(),
+            source: error.into(),
+        }),
+    }
+}
+
+/// The regular files of an opened pack-tree directory, by UTF-8 name, with
+/// their sizes. Links and other entries are left out, as is an entry that
+/// vanished while it was read.
+fn pack_tree_regular_files(
+    directory: &std::os::fd::OwnedFd,
+    path: &Path,
+) -> Result<Vec<(String, u64)>, StoreError> {
+    let inspect = |source: Errno| StoreError::InspectCatalogPack {
+        path: path.to_path_buf(),
+        source: source.into(),
+    };
+    let mut files = Vec::new();
+    for entry in Dir::read_from(directory).map_err(inspect)? {
+        let entry = entry.map_err(inspect)?;
+        let Ok(name) = std::str::from_utf8(entry.file_name().to_bytes()) else {
+            continue;
+        };
+        if name == "." || name == ".." {
+            continue;
+        }
+        let stat = match statat(directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(Errno::NOENT) => continue,
+            Err(source) => return Err(inspect(source)),
+        };
+        if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
+            continue;
+        }
+        files.push((name.to_owned(), u64::try_from(stat.st_size).unwrap_or(0)));
+    }
+    Ok(files)
+}
+
+/// Every digest any catalogue row names, current or expired, by class.
+fn pack_storage_classes(
+    connection: &Connection,
+) -> Result<HashMap<String, PackStorageClass>, StoreError> {
+    let mut classes = HashMap::new();
+    for (class, sql) in [
+        (PackStorageClass::CurrentHead, "SELECT sha256 FROM pending_physical_v3_packs"),
+        (PackStorageClass::CurrentHead, "SELECT sha256 FROM sync_packs"),
+        (PackStorageClass::RetainedPriorHead, "SELECT sha256 FROM retained_physical_v3_packs"),
+        (PackStorageClass::RetainedPriorHead, "SELECT pack_digest FROM sync_retired_lineage_packs"),
+        (PackStorageClass::Delta, "SELECT sha256 FROM physical_v3_delta_packs"),
+        (PackStorageClass::PreparedMap, "SELECT pack_sha256 FROM prepared_map_months"),
+    ] {
+        let digests = connection
+            .prepare(sql)
+            .map_err(StoreError::Query)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        for digest in digests {
+            classes.entry(digest).or_insert(class);
+        }
+    }
+    Ok(classes)
+}
+
+/// The pack files under the two pack directories, with what the catalogue
+/// says of each. A file is needed when repair's reference set holds it (the
+/// current heads, import bases, unexpired retention plus the delete grace that
+/// covers a download in progress, and a blocked rotation's predecessor) or a
+/// live backup pins it. Only regular files with a content-addressed name are
+/// counted; the packs' own staging files are repair's.
+fn pack_storage_files(
+    connection: &Connection,
+    packs_dir: &Path,
+    now_ms: i64,
+) -> Result<Vec<PackStorageFile>, StoreError> {
+    if now_ms < 0 {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let cutoff_ms = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
+    let mut needed = referenced_pack_rows_at(connection, cutoff_ms)?
+        .into_iter()
+        .map(|(digest, _, _)| digest)
+        .collect::<HashSet<_>>();
+    needed.extend(crate::data_recovery::live_backup_pack_pins(connection, now_ms)?);
+    let classes = pack_storage_classes(connection)?;
+    let mut files = Vec::new();
+    let Some(root) = open_pack_tree_directory(None, "", packs_dir)? else {
+        return Ok(files);
+    };
+    let objects = packs_dir.join("sha256");
+    let directories = [
+        Some((root.clone(), packs_dir.to_path_buf())),
+        open_pack_tree_directory(Some(&root), "sha256", &objects)?
+            .map(|directory| (directory, objects)),
+    ];
+    for (directory, path) in directories.into_iter().flatten() {
+        for (name, bytes) in pack_tree_regular_files(&directory, &path)? {
+            let Some(digest) = name
+                .strip_suffix(".sqlite.zst")
+                .filter(|digest| is_pack_object_name(digest))
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            files.push(PackStorageFile {
+                directory: directory.clone(),
+                path: path.join(&name),
+                name,
+                bytes,
+                class: classes.get(&digest).copied(),
+                needed: needed.contains(&digest),
+            });
+        }
+    }
+    files.extend(kept_stage_files(connection, &root, packs_dir)?);
+    Ok(files)
+}
+
+/// The folder under the packs directory that holds the kept import stages
+/// (the importer's `PHYSICAL_KEPT_DIRECTORY`).
+const KEPT_STAGES_DIRECTORY: &str = "physical-kept";
+
+/// The kept import stages (`.staging/<vehicle>.sqlite`) and their source
+/// sessions (`<vehicle>.source.json`). A file named for a vehicle of this
+/// store is an import base and needed; any other stage file with a
+/// content-free UUID name is a copy no record names, which only a run that
+/// holds the publication gate writes, so it is an orphan once the gate is
+/// held. Files of any other shape are not counted.
+fn kept_stage_files(
+    connection: &Connection,
+    root: &std::os::fd::OwnedFd,
+    packs_dir: &Path,
+) -> Result<Vec<PackStorageFile>, StoreError> {
+    let vehicles = connection
+        .prepare("SELECT vehicle_id FROM vehicles")
+        .map_err(StoreError::Query)?
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(StoreError::Query)?
+        .collect::<Result<HashSet<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let mut files = Vec::new();
+    let kept_path = packs_dir.join(KEPT_STAGES_DIRECTORY);
+    let Some(kept) = open_pack_tree_directory(Some(root), KEPT_STAGES_DIRECTORY, &kept_path)?
+    else {
+        return Ok(files);
+    };
+    let staging_path = kept_path.join(".staging");
+    let directories = [
+        open_pack_tree_directory(Some(&kept), ".staging", &staging_path)?
+            .map(|directory| (directory, staging_path, ".sqlite")),
+        Some((kept, kept_path, ".source.json")),
+    ];
+    for (directory, path, suffix) in directories.into_iter().flatten() {
+        for (name, bytes) in pack_tree_regular_files(&directory, &path)? {
+            let Some(stem) = name
+                .strip_suffix(suffix)
+                .filter(|stem| stem.len() == 36 && Uuid::parse_str(stem).is_ok())
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            let base = vehicles.contains(&stem);
+            files.push(PackStorageFile {
+                directory: directory.clone(),
+                path: path.join(&name),
+                name,
+                bytes,
+                class: base.then_some(PackStorageClass::ImportBase),
+                needed: base,
+            });
+        }
+    }
+    Ok(files)
+}
+
+fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
+    let mut census = StorageCensus::default();
+    for file in files {
+        let reclaimable = !file.needed;
+        let class = match file.class {
+            Some(PackStorageClass::CurrentHead) => &mut census.current_heads,
+            Some(PackStorageClass::ImportBase) => &mut census.import_bases,
+            Some(PackStorageClass::RetainedPriorHead) => &mut census.retained_prior_heads,
+            Some(PackStorageClass::Delta) => &mut census.deltas,
+            Some(PackStorageClass::PreparedMap) => &mut census.prepared_maps,
+            None => &mut census.orphans,
+        };
+        class.add(file.bytes, reclaimable);
+        census.total.add(file.bytes, reclaimable);
+    }
+    census
+}
+
+impl HubStore {
+    /// Count the pack files by class, and the bytes no reference, download,
+    /// recovery path or backup pin needs. Read-only; it verifies no pack body.
+    pub fn storage_census(&self) -> Result<StorageCensus, StoreError> {
+        self.storage_census_at(retired_lineage_clock_ms()?)
+    }
+
+    fn storage_census_at(&self, now_ms: i64) -> Result<StorageCensus, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        Ok(storage_census_of(&pack_storage_files(
+            &connection,
+            self.packs_dir(),
+            now_ms,
+        )?))
+    }
+
+    /// Remove exactly the pack files the census counts as reclaimable, then
+    /// the expired retention rows. It runs under the publication gate, never
+    /// at start, and verifies no pack body: what it keeps is decided by the
+    /// catalogue's references alone. Each removal stands on its own and the
+    /// rows go last, so a run that stops part way is finished by the next.
+    pub fn reclaim_storage(&self) -> Result<StorageReclaimReport, StoreError> {
+        self.reclaim_storage_at(retired_lineage_clock_ms()?)
+    }
+
+    fn reclaim_storage_at(&self, now_ms: i64) -> Result<StorageReclaimReport, StoreError> {
+        let _publication_gate = self.try_acquire_publication_gate()?;
+        let mut connection = self.open()?;
+        let files = pack_storage_files(&connection, self.packs_dir(), now_ms)?;
+        let before = storage_census_of(&files);
+        let (mut reclaimed_files, mut reclaimed_bytes) = (0_u64, 0_u64);
+        for file in files.iter().filter(|file| !file.needed) {
+            let bytes = match statat(&*file.directory, file.name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile => {
+                    u64::try_from(stat.st_size).unwrap_or(0)
+                }
+                Ok(_) | Err(Errno::NOENT) => continue,
+                Err(source) => {
+                    return Err(StoreError::InspectCatalogPack {
+                        path: file.path.clone(),
+                        source: source.into(),
+                    });
+                }
+            };
+            match unlinkat(&*file.directory, file.name.as_str(), AtFlags::empty()) {
+                Ok(()) => {
+                    reclaimed_files += 1;
+                    reclaimed_bytes = reclaimed_bytes.saturating_add(bytes);
+                }
+                Err(Errno::NOENT) => {}
+                Err(source) => {
+                    return Err(StoreError::CleanupUnpublishedPack {
+                        path: file.path.clone(),
+                        source: source.into(),
+                    });
+                }
+            }
+        }
+        let transaction = connection.transaction().map_err(StoreError::Query)?;
+        delete_expired_pack_retention_rows(
+            &transaction,
+            now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS),
+        )?;
+        transaction.commit().map_err(StoreError::LineageCatalog)?;
+        let after = storage_census_of(&pack_storage_files(&connection, self.packs_dir(), now_ms)?);
+        Ok(StorageReclaimReport {
+            before,
+            reclaimed_files,
+            reclaimed_bytes,
+            after,
+        })
+    }
+}
+
 fn physical_delta_pack_rows(
     connection: &Connection,
     expiry_cutoff_ms: i64,

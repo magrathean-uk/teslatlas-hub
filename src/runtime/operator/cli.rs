@@ -598,6 +598,15 @@ pub enum Command {
     },
     /// Validate database integrity, report quarantined sessions, and clean orphaned packs.
     Repair,
+    /// Count the pack files by class and the bytes no reference, download,
+    /// recovery path or backup pin needs; counts and sizes only. With
+    /// `--reclaim`, remove exactly those files and print the measured saving.
+    #[command(name = "storage-census")]
+    StorageCensus {
+        /// Remove the reclaimable files after counting them.
+        #[arg(long)]
+        reclaim: bool,
+    },
     /// Create one encrypted backup generation (the default format). The
     /// recovery password is typed at a prompt with echo off, or read from
     /// standard input when that is not a terminal; it is never an argument.
