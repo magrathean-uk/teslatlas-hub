@@ -1922,13 +1922,28 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // reference, so its cost grows with the store: it runs on a
                 // blocking task once the operator channel is bound and the
                 // listener is open, and can never delay serving (M08-T22).
+                // Issue #51: after the listener is bound, one tracked worker
+                // logs the inventory and then reconciles the pack store in
+                // the background (orphan final names, missing or damaged
+                // objects). Starting it never waits for it, and the service
+                // stop cancels and joins it within the shutdown budget.
+                let diagnostics_worker = std::sync::Arc::new(
+                    tesatlas_hub::runtime::shutdown::TrackedWorker::new("pack reconciliation"),
+                );
                 let log_inventory: server::ListeningHook = {
                     let store = store.clone();
                     let config = config.clone();
+                    let worker = std::sync::Arc::clone(&diagnostics_worker);
                     Box::new(move || {
-                        drop(tokio::task::spawn_blocking(move || {
+                        let started = worker.start(move |cancelled| {
                             log_runtime_inventory(&store, &config);
-                        }));
+                            if !cancelled() {
+                                log_pack_reconciliation(&store, cancelled);
+                            }
+                        });
+                        if let Err(error) = started {
+                            tracing::warn!(%error, "pack reconciliation did not start");
+                        }
                     })
                 };
                 if collector_ready {
@@ -2067,19 +2082,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // stop together, each within what is left of the budget.
                 shutdown_budget.begin();
                 backup_schedule.request_stop();
+                diagnostics_worker.request_stop();
                 let backup_budget = std::sync::Arc::clone(&shutdown_budget);
                 let supervisor_budget = std::sync::Arc::clone(&shutdown_budget);
-                let (channel_stop, backup_stop, supervisor_stop) = tokio::join!(
+                let diagnostics_budget = std::sync::Arc::clone(&shutdown_budget);
+                let (channel_stop, backup_stop, supervisor_stop, diagnostics_stop) = tokio::join!(
                     tokio::task::spawn_blocking(move || drop(channel)),
                     tokio::task::spawn_blocking(move || backup_schedule.stop_within(&backup_budget)),
                     tokio::task::spawn_blocking(move || supervisor.stop_within(&supervisor_budget)),
+                    tokio::task::spawn_blocking(move || diagnostics_worker.stop_within(&diagnostics_budget)),
                 );
                 drop(authority);
                 let mut cleanup_errors = Vec::new();
                 if let Err(error) = channel_stop {
                     cleanup_errors.push(format!("operator channel stop failed: {error}"));
                 }
-                for stop in [backup_stop, supervisor_stop] {
+                for stop in [backup_stop, supervisor_stop, diagnostics_stop] {
                     match stop {
                         Ok(Ok(())) => {}
                         Ok(Err(timeout)) => cleanup_errors.push(timeout.to_string()),
@@ -2608,5 +2626,51 @@ mod status_privacy_tests {
             .expect("diagnostic fields");
         assert_eq!(status.location_name, None, "redacted status must not reveal the current address");
         assert_eq!(status.battery_level, Some(81));
+    }
+}
+
+/// Issue #51: the background pack reconciliation of one service run. Logs
+/// its status and counts with diagnostic codes, never a digest or a path.
+#[cfg(unix)]
+fn log_pack_reconciliation(store: &HubStore, cancelled: &dyn Fn() -> bool) {
+    use tesatlas_hub::db::PackReconciliationStatus as Status;
+    tracing::info!(status = "running", "Hub pack reconciliation");
+    let status = match store.reconcile_packs(cancelled) {
+        Ok(report) if report.complete => Status::Completed(report),
+        Ok(report) => Status::Incomplete(report),
+        Err(error) => Status::Failed(error.to_string()),
+    };
+    match status {
+        Status::Completed(report) | Status::Incomplete(report) => {
+            let codes = report.codes().join(",");
+            let fields = (
+                report.final_names,
+                report.unreferenced_finals,
+                report.unclassified_finals,
+                report.referenced_checked,
+                report.missing_objects + report.not_regular_objects,
+                report.size_mismatches,
+                report.digest_mismatches,
+            );
+            let status = if report.complete { "completed" } else { "incomplete" };
+            if codes.is_empty() {
+                tracing::info!(status, final_names = fields.0, checked = fields.3, "Hub pack reconciliation");
+            } else {
+                tracing::warn!(
+                    status,
+                    codes = %codes,
+                    final_names = fields.0,
+                    unreferenced = fields.1,
+                    unclassified = fields.2,
+                    checked = fields.3,
+                    missing = fields.4,
+                    size_mismatches = fields.5,
+                    digest_mismatches = fields.6,
+                    "Hub pack reconciliation"
+                );
+            }
+        }
+        Status::Failed(error) => tracing::warn!(status = "failed", %error, "Hub pack reconciliation"),
+        Status::Pending | Status::Running => {}
     }
 }

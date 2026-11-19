@@ -1079,3 +1079,97 @@ fn corrupt_referenced_pack_refuses_and_cleans_backup_root() {
     ));
     assert!(!backup_root.exists());
 }
+
+fn design_later_51_store_with_one_pack() -> (tempfile::TempDir, HubStore, std::path::PathBuf) {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let manifest = test_manifest();
+    let path = store
+        .packs_dir()
+        .join("sha256")
+        .join(format!("{}.sqlite.zst", manifest.chunks[0].sha256));
+    fs::create_dir_all(path.parent().expect("pack parent")).expect("pack parent");
+    fs::write(&path, vec![7_u8; 100]).expect("pack file");
+    (temporary, store, path)
+}
+
+/// Issue #51: the background scan reports a final name nothing references
+/// and same-size damage to a referenced object, and changes neither.
+#[test]
+fn design_later_51_scan_reports_an_orphan_final_and_same_size_damage() {
+    let (_temporary, store, path) = design_later_51_store_with_one_pack();
+    let manifest = test_manifest();
+    store.publish_manifest(&manifest).expect("published manifest");
+    let clean = store.reconcile_packs(&|| false).expect("clean scan");
+    assert!(clean.complete);
+    assert_eq!((clean.final_names, clean.referenced_checked), (1, 1));
+    assert!(clean.codes().is_empty(), "{:?}", clean.codes());
+
+    let orphan = path.with_file_name(format!("{}.sqlite.zst", "ab".repeat(32)));
+    fs::write(&orphan, b"left by an interrupted installation").expect("orphan final");
+    fs::write(&path, vec![8_u8; 100]).expect("same-size damage");
+    let report = store.reconcile_packs(&|| false).expect("scan");
+    assert!(report.complete);
+    assert_eq!(report.final_names, 2);
+    assert_eq!(report.unreferenced_finals, 1);
+    assert_eq!(report.digest_mismatches, 1);
+    assert_eq!(
+        report.codes(),
+        vec!["pack_unreferenced_final", "pack_object_digest_mismatch"]
+    );
+    // Reported only: the orphan stays, the damaged object keeps its bytes.
+    assert!(orphan.exists());
+    assert_eq!(fs::read(&path).expect("damaged pack"), vec![8_u8; 100]);
+
+    fs::remove_file(&path).expect("remove referenced pack");
+    let missing = store.reconcile_packs(&|| false).expect("scan");
+    assert_eq!(missing.missing_objects, 1);
+    assert!(missing.codes().contains(&"pack_object_missing"));
+}
+
+/// Issue #51: a cancelled scan says it is incomplete instead of reporting
+/// the store clean.
+#[test]
+fn design_later_51_an_interrupted_scan_reports_incomplete() {
+    let (_temporary, store, path) = design_later_51_store_with_one_pack();
+    let manifest = test_manifest();
+    store.publish_manifest(&manifest).expect("published manifest");
+    fs::write(&path, vec![8_u8; 100]).expect("same-size damage");
+    for allowed in 0..3 {
+        let asked = std::cell::Cell::new(0);
+        let report = store
+            .reconcile_packs(&|| {
+                asked.set(asked.get() + 1);
+                asked.get() > allowed
+            })
+            .expect("interrupted scan");
+        assert!(!report.complete, "cancelled after {allowed} checks");
+        assert_eq!(report.codes()[0], "pack_reconciliation_incomplete");
+        assert_eq!(report.digest_mismatches, 0, "the damage was not reached");
+    }
+}
+
+/// Issue #51: a final name whose installation commits during the scan, or
+/// is still being installed under the publication gate, is not reported as
+/// an orphan.
+#[test]
+fn design_later_51_a_concurrent_installation_is_not_an_orphan() {
+    let (_temporary, store, _path) = design_later_51_store_with_one_pack();
+    let manifest = test_manifest();
+    // The installation holds the gate: the name stays unclassified.
+    let gate = store.try_acquire_publication_gate().expect("installer's gate");
+    let held = store.reconcile_packs(&|| false).expect("scan");
+    assert_eq!((held.unreferenced_finals, held.unclassified_finals), (0, 1));
+    assert!(!held.complete);
+    assert!(held.codes().contains(&"pack_final_unclassified"));
+    drop(gate);
+    // The installation commits its catalogue row between the listing and
+    // the recheck: the name is referenced by then.
+    let committed = store
+        .reconcile_packs_with(&|| false, &|| {
+            store.publish_manifest(&manifest).expect("published manifest");
+        })
+        .expect("scan");
+    assert_eq!(committed.unreferenced_finals, 0);
+    assert!(committed.complete);
+}

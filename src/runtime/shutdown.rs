@@ -207,6 +207,87 @@ pub fn join_within<T>(
     }
 }
 
+/// A background worker the service owns for its whole run (issue #51): it
+/// starts after the listener is bound, is asked to stop when the service
+/// stops and is joined within the shutdown budget, never left detached.
+/// Once a stop was accepted it starts no new work.
+pub struct TrackedWorker {
+    name: &'static str,
+    cancel: Arc<AtomicBool>,
+    thread: std::sync::Mutex<Option<JoinHandle<()>>>,
+}
+
+impl TrackedWorker {
+    pub fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            cancel: Arc::new(AtomicBool::new(false)),
+            thread: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Starts `job` on its own thread and returns at once. The job receives
+    /// its cancellation check and must ask it between bounded steps. A
+    /// worker that was asked to stop, or already runs, starts nothing.
+    pub fn start<F>(&self, job: F) -> std::io::Result<bool>
+    where
+        F: FnOnce(&dyn Fn() -> bool) + Send + 'static,
+    {
+        let mut thread = self.lock();
+        if self.cancel.load(Ordering::SeqCst) || thread.is_some() {
+            return Ok(false);
+        }
+        let cancel = Arc::clone(&self.cancel);
+        *thread = Some(
+            std::thread::Builder::new()
+                .name(format!("hub-{}", self.name))
+                .spawn(move || job(&|| cancel.load(Ordering::SeqCst)))?,
+        );
+        Ok(true)
+    }
+
+    /// Asks the job to stop at its next check; does not wait.
+    pub fn request_stop(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+    }
+
+    /// Asks the job to stop and joins it within what is left of the budget.
+    /// A job still running when the budget ends stays owned here.
+    pub fn stop_within(&self, budget: &ShutdownBudget) -> Result<(), ShutdownTimedOut> {
+        self.request_stop();
+        let Some(handle) = self.lock().take() else {
+            return Ok(());
+        };
+        match join_within(handle, budget, self.name) {
+            Ok(_) => Ok(()),
+            Err((handle, timeout)) => {
+                *self.lock() = Some(handle);
+                Err(timeout)
+            }
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<JoinHandle<()>>> {
+        self.thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Drop for TrackedWorker {
+    fn drop(&mut self) {
+        self.request_stop();
+        if let Some(handle) = self.lock().take() {
+            let budget = ShutdownBudget::process();
+            if budget.is_stopping() {
+                let _ = join_within(handle, &budget, self.name);
+            } else {
+                let _ = handle.join();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::{
@@ -329,5 +410,53 @@ mod tests {
         let joined = join_within(worker, &budget, "supervisor").expect("joined");
         assert_eq!(joined.unwrap(), "done");
         assert!(budget.is_stopping(), "waiting for a stage accepts the stop");
+    }
+
+    #[test]
+    fn design_later_51_starting_the_background_scan_never_waits_for_it() {
+        let worker = TrackedWorker::new("pack reconciliation");
+        let (entered, entered_rx) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let began = Instant::now();
+        assert!(worker
+            .start(move |cancelled| {
+                entered.send(()).unwrap();
+                // A long scan: one bounded step at a time until released or
+                // cancelled.
+                while !cancelled() && released.recv_timeout(Duration::from_millis(5)).is_err() {}
+            })
+            .expect("started"));
+        // `start` returned while the job still runs: the listener hook that
+        // calls it never awaits the scan.
+        entered_rx.recv_timeout(Duration::from_secs(5)).expect("the job runs");
+        assert!(began.elapsed() < Duration::from_secs(5));
+        assert!(worker.lock().as_ref().is_some_and(|handle| !handle.is_finished()));
+        assert!(!worker.start(|_| {}).expect("second start"), "one scan per run");
+        // The service stop cancels it between steps and joins it in budget.
+        let clock = Arc::new(ManualClock::default());
+        worker.stop_within(&budget(&clock)).expect("joined within the budget");
+        assert!(worker.lock().is_none());
+        assert!(!worker.start(|_| {}).expect("start after stop"), "no new work once stopping");
+        drop(release);
+    }
+
+    #[test]
+    fn design_later_51_a_scan_that_ignores_cancellation_stays_owned_past_the_budget() {
+        let worker = TrackedWorker::new("pack reconciliation");
+        let (release, released) = mpsc::channel::<()>();
+        worker
+            .start(move |_| {
+                let _ = released.recv();
+            })
+            .expect("started");
+        let clock = Arc::new(ManualClock::default());
+        let budget = budget(&clock);
+        budget.begin();
+        clock.advance(Duration::from_secs(40));
+        let timeout = worker.stop_within(&budget).expect_err("budget spent");
+        assert_eq!(timeout.stage, "pack reconciliation");
+        assert!(worker.lock().is_some(), "still owned");
+        release.send(()).unwrap();
+        drop(worker);
     }
 }
