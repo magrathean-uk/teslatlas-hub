@@ -673,6 +673,7 @@ fn data_recovery_m06_t15_cancellation_reaches_the_publication_read_back() {
         keep: NonZeroUsize::new(1),
         retry_ms: 60_000,
         startup_delay_ms: 0,
+        scratch: Default::default(),
     };
     let schedule = Arc::new(
         BackupScheduler::start(

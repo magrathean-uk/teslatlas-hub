@@ -164,6 +164,16 @@ pub enum DataRecoveryError {
         required: u64,
         available: u64,
     },
+    /// An encrypted backup whose scratch need exceeds the configured budget
+    /// (M06-T21), refused before any scratch is attached or anything copied.
+    #[error(
+        "scratch_budget_exceeded: the encrypted backup of a {catalogue}-byte catalogue needs {required} bytes of scratch, above the scratch budget of {budget} bytes; nothing was attached or copied"
+    )]
+    ScratchBudgetExceeded {
+        catalogue: u64,
+        required: u64,
+        budget: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2535,8 +2545,9 @@ pub use recovery_password::{
 };
 pub(crate) use encrypted_backup::live_backup_pack_pins;
 pub use encrypted_backup::{
-    EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,
-    restore_encrypted_backup, verify_encrypted_backup,
+    EncryptedBackupReport, EncryptedBackupRequest, EncryptedBackupSpaceNeeds,
+    create_encrypted_backup, encrypted_backup_space_needs, restore_encrypted_backup,
+    verify_encrypted_backup,
 };
 
 #[cfg(test)]

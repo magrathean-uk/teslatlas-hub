@@ -613,6 +613,8 @@
 
 "hub.backup.detail" = "Encrypted copies of the Hub's history. The recovery password stays in an owner-only file on this Mac.";
 
+"hub.backup.spaceNeeds" = "Each backup needs room in three places, checked separately before it starts: the catalogue; scratch for its encrypted copy, about 2.6 times the catalogue plus 277 MiB, in the temporary folder or backup.scratch_directory; and this folder, which holds every pack. A backup whose scratch need is above backup.scratch_budget_bytes stops before it copies anything, and the last good backup stays.";
+
 "hub.backup.backUpNow" = "Back up now";
 
 "hub.backup.onSchedule" = "Back up on a schedule";

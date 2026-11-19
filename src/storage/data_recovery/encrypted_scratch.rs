@@ -59,10 +59,16 @@ pub(super) struct EncryptedScratch {
 impl EncryptedScratch {
     /// Create and attach a scratch volume that can hold `capacity_bytes`.
     /// Stale scratch volumes of killed runs are removed first.
+    #[cfg(test)]
     pub(super) fn create(capacity_bytes: u64) -> Result<Self, DataRecoveryError> {
-        let parent = std::env::temp_dir();
-        sweep_stale(&parent);
-        create(&parent, capacity_bytes)
+        Self::create_in(&std::env::temp_dir(), capacity_bytes)
+    }
+
+    /// [`Self::create`] in `parent`, the run's approved scratch location
+    /// (M06-T21); stale scratch volumes of killed runs there go first.
+    pub(super) fn create_in(parent: &Path, capacity_bytes: u64) -> Result<Self, DataRecoveryError> {
+        sweep_stale(parent);
+        create(parent, capacity_bytes)
     }
 
     /// A path inside the attached volume.
