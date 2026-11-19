@@ -102,6 +102,9 @@ struct AccountView {
     since_ms: i64,
     rate_limited_until: Option<Instant>,
     next_probe: Option<Instant>,
+    /// The end of the transport back-off, kept across a restart (P04-F07).
+    unreachable_until: Option<Instant>,
+    consecutive_unreachable: u32,
 }
 
 /// The persisted shape of one vehicle (C3 R4): the fields of
@@ -558,12 +561,17 @@ impl VehicleScheduler {
             let next_probe = row
                 .next_probe_ms
                 .map(|ms| deadline_from_wall(now, wall, ms, K_BILLING_PROBE));
+            let unreachable_until = row
+                .unreachable_until_ms
+                .map(|ms| deadline_from_wall(now, wall, ms, self.timing.max_backoff));
             self.persisted_account = AccountView {
                 state,
                 reason,
                 since_ms: row.since_ms,
                 rate_limited_until,
                 next_probe,
+                unreachable_until,
+                consecutive_unreachable: row.consecutive_unreachable,
             };
             let same_configuration = row.mode == self.mode.code()
                 && row.config_fingerprint == snapshot.config_fingerprint;
@@ -572,6 +580,8 @@ impl VehicleScheduler {
                 self.account.state_reason = reason;
                 self.account.state_since_ms = row.since_ms;
                 self.account.provider_until = rate_limited_until.filter(|until| *until > now);
+                self.account.transport_until = unreachable_until.filter(|until| *until > now);
+                self.account.consecutive_unreachable = row.consecutive_unreachable;
                 self.account.wait = self.retained_wait(now);
                 self.account.next_billing_probe = next_probe;
             } else if state != AccountState::Collecting {
@@ -887,6 +897,8 @@ impl VehicleScheduler {
             since_ms: self.account.state_since_ms,
             rate_limited_until: self.provider_deadline(),
             next_probe: self.account.next_billing_probe,
+            unreachable_until: self.transport_deadline(),
+            consecutive_unreachable: self.account.consecutive_unreachable,
         }
     }
 
@@ -935,6 +947,10 @@ impl VehicleScheduler {
                     next_probe_ms: account_view
                         .next_probe
                         .map(|probe| wall_of_instant(now, wall, probe)),
+                    unreachable_until_ms: account_view
+                        .unreachable_until
+                        .map(|until| wall_of_instant(now, wall, until)),
+                    consecutive_unreachable: account_view.consecutive_unreachable,
                 },
             });
         }

@@ -1275,6 +1275,8 @@ fn p3_seed_c3(store: &HubStore, mode: &str, fingerprint: &str, state: &str) {
                             since_ms: 1_700_000_000_000,
                             rate_limited_until_ms: None,
                             next_probe_ms: None,
+                            unreachable_until_ms: None,
+                            consecutive_unreachable: 0,
                         }),
                         ..crate::db::CollectorRowsWrite::default()
                     },

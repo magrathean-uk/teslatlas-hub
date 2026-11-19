@@ -3032,3 +3032,47 @@ async fn a_longer_authentication_wait_ending_early_leaves_the_providers_retry_af
         })
         .await;
 }
+
+#[tokio::test]
+async fn a_restart_keeps_the_transport_back_off_deadline_and_step_until_recovery() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            let mut delays = Vec::new();
+            for _ in 0..3 {
+                let now = bed.now();
+                bed.scheduler.begin_tick();
+                let delay = bed.scheduler.unreachable(now);
+                delays.push(delay);
+                bed.commit(TickBatch::default()).await;
+                bed.advance(delay);
+            }
+            assert_eq!(
+                delays,
+                [5, 10, 20].map(Duration::from_secs),
+                "the back-off steps with the failures"
+            );
+            // The third wait ended at w0 + 35 s; restart a second before it.
+            let hub = retry_stored_hub_id(&bed);
+            let (mut scheduler, _clock, t) =
+                restarted_scheduler(crate::config::CollectorMode::Legacy, CORE_W0 + 34_000);
+            scheduler.load(&snapshot_of(&bed.store, hub, DS_FP_A), t);
+            assert_eq!(scheduler.account.consecutive_unreachable, 3);
+            assert!(!scheduler.discovery_due(t));
+            assert!(scheduler.discovery_due(t + Duration::from_secs(1)));
+            // A further transport failure continues the mature back-off.
+            let after = t + Duration::from_secs(1);
+            assert_eq!(scheduler.unreachable(after), Duration::from_secs(40));
+            // Recovery clears the retained state.
+            let now = bed.now();
+            bed.scheduler.begin_tick();
+            bed.scheduler.note_answered(now);
+            bed.commit(TickBatch::default()).await;
+            let account = bed.store.load_collector_state_rows().unwrap().account.unwrap();
+            assert_eq!(account.unreachable_until_ms, None);
+            assert_eq!(account.consecutive_unreachable, 0);
+        })
+        .await;
+}

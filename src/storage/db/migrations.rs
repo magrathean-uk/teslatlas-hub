@@ -34,6 +34,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     }
     credential_schema_rung(connection, credential_fresh)?;
     seam_schema_rung(connection)?;
+    collector_retry_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
         backup_pack_pins_table(connection)
@@ -48,6 +49,57 @@ const _: () = assert!(
     SEAM_SCHEMA_VERSION == CREDENTIAL_FORMAT_SCHEMA_VERSION + 1
         && SEAM_SCHEMA_VERSION <= SCHEMA_VERSION
 );
+
+/// The version whose rung keeps the collector's retry pacing in the account row.
+const COLLECTOR_RETRY_SCHEMA_VERSION: i32 = 81;
+const _: () = assert!(
+    COLLECTOR_RETRY_SCHEMA_VERSION == SEAM_SCHEMA_VERSION + 1
+        && COLLECTOR_RETRY_SCHEMA_VERSION == SCHEMA_VERSION
+);
+
+/// Schema v81 (P04-F07): the account row keeps the end and the step of the
+/// transport back-off. The columns are added only where absent, in one transaction
+/// with the version, so a rung that stops part way runs again on the next open.
+fn collector_retry_schema_rung(connection: &Connection) -> Result<(), StoreError> {
+    if schema_version(connection)? != SEAM_SCHEMA_VERSION {
+        return Ok(());
+    }
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(StoreError::Migrate)?;
+    admit_writable_catalogue(&transaction)?;
+    if schema_version(&transaction)? == SEAM_SCHEMA_VERSION {
+        for (column, definition) in [
+            (
+                "unreachable_until_ms",
+                "INTEGER CHECK(unreachable_until_ms IS NULL OR unreachable_until_ms >= 0)",
+            ),
+            (
+                "consecutive_unreachable",
+                "INTEGER NOT NULL DEFAULT 0 CHECK(consecutive_unreachable >= 0)",
+            ),
+        ] {
+            let present: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('collector_account_state')
+                                    WHERE name = ?1)",
+                    [column],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::Migrate)?;
+            if !present {
+                transaction
+                    .execute_batch(&format!(
+                        "ALTER TABLE collector_account_state ADD COLUMN {column} {definition}"
+                    ))
+                    .map_err(StoreError::Migrate)?;
+            }
+        }
+        transaction
+            .pragma_update(None, "user_version", COLLECTOR_RETRY_SCHEMA_VERSION)
+            .map_err(StoreError::Migrate)?;
+    }
+    transaction.commit().map_err(StoreError::Migrate)
+}
 
 /// The materialised tables whose ids the import seam owns, with each one's
 /// entity name in the import catalogues and its id column.

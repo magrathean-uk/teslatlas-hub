@@ -363,6 +363,19 @@ impl VehicleScheduler {
         }
     }
 
+    /// The transport back-off's deadline as the account row stores it.
+    fn transport_deadline(&self) -> Option<Instant> {
+        let running = self
+            .account
+            .wait
+            .filter(|(_, reason)| *reason == WaitReason::TeslaUnreachable)
+            .map(|(until, _)| until);
+        match (self.account.transport_until, running) {
+            (Some(held), Some(running)) => Some(held.max(running)),
+            (held, running) => held.or(running),
+        }
+    }
+
     /// What is left of the account's wait at `now`.
     fn wait_remaining(&self, now: Instant) -> Duration {
         self.account.wait.map_or(Duration::ZERO, |(until, _)| {

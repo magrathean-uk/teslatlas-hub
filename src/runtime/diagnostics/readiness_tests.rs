@@ -185,6 +185,8 @@ fn doctor_account(store: &HubStore, mode: &str, state: &str) {
                             since_ms: doctor_now_ms(),
                             rate_limited_until_ms: None,
                             next_probe_ms: None,
+                            unreachable_until_ms: None,
+                            consecutive_unreachable: 0,
                         }),
                         ..crate::db::CollectorRowsWrite::default()
                     },

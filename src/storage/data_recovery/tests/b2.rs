@@ -56,6 +56,8 @@ fn b2_account_row(state: &str) -> CollectorAccountRow {
         since_ms: B2_ACQUIRED_MS,
         rate_limited_until_ms: None,
         next_probe_ms: None,
+        unreachable_until_ms: None,
+        consecutive_unreachable: 0,
     }
 }
 

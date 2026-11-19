@@ -190,6 +190,8 @@ fn cadence_wait_prepare_state(store: &HubStore) {
                             since_ms: WAIT_WALL0 - 600_000,
                             rate_limited_until_ms: None,
                             next_probe_ms: None,
+                            unreachable_until_ms: None,
+                            consecutive_unreachable: 0,
                         }),
                         vehicles: vec![crate::db::CollectorVehicleRow {
                             vehicle_id: vehicle,

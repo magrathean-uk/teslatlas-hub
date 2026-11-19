@@ -1107,6 +1107,8 @@ impl AccountRecord {
             since_ms: self.state_since_ms,
             rate_limited_until: None,
             next_probe: self.next_billing_probe,
+            unreachable_until: None,
+            consecutive_unreachable: 0,
         }
     }
 
