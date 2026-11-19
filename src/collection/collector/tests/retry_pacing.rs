@@ -128,9 +128,15 @@ async fn repeated_list_failures_mark_the_inventory_unavailable_until_a_list_is_a
                 bed.scheduler.begin_tick();
                 bed.scheduler.discovery_failed(now);
                 bed.commit(TickBatch::default()).await;
-                let account = bed.store.load_collector_state_rows().unwrap().account.unwrap();
+                // The row is written only once the account's stored shape changes.
+                let marked = bed
+                    .store
+                    .load_collector_state_rows()
+                    .unwrap()
+                    .account
+                    .is_some_and(|row| row.inventory_unavailable);
                 assert_eq!(
-                    account.inventory_unavailable,
+                    marked,
                     failure >= K_INVENTORY_FAILURES,
                     "after failure {failure}"
                 );
