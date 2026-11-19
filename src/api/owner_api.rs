@@ -393,11 +393,14 @@ impl OwnerApi {
                 if envelope.count.is_some() || envelope.response.is_empty() {
                     return Err(OwnerApiError::InvalidCommandResponse);
                 }
+                // The wake state reaches the command line's output, so only a
+                // known state is kept; anything else (a reflected credential
+                // among them) is dropped here, before it leaves the client.
                 let state = envelope
                     .response
                     .get("state")
                     .and_then(Value::as_str)
-                    .filter(|state| valid_state(state))
+                    .filter(|state| known_wake_state(state))
                     .map(str::to_owned);
                 Ok(LegacyVehicleActionResult { state })
             }
@@ -876,6 +879,14 @@ impl LegacyVehicleAction {
         }
     }
 
+    /// Whether the action may be sent to a car at all (DEC-248: Wake, Flash
+    /// Lights and Honk Horn only). Every other action is refused by the
+    /// command line, the control socket and the service's executor before
+    /// anything is written or sent.
+    pub const fn is_permitted(self) -> bool {
+        matches!(self, Self::Wake | Self::FlashLights | Self::HonkHorn)
+    }
+
     const fn endpoint_suffix(self) -> &'static str {
         match self {
             Self::Wake => "wake_up",
@@ -1231,6 +1242,11 @@ fn valid_vin(value: &str) -> bool {
         && !value
             .bytes()
             .any(|byte| matches!(byte, b'I' | b'O' | b'Q' | b'i' | b'o' | b'q'))
+}
+
+/// The vehicle states a wake answer may report on the command line.
+fn known_wake_state(value: &str) -> bool {
+    matches!(value, "online" | "asleep" | "offline" | "waking")
 }
 
 fn valid_state(value: &str) -> bool {

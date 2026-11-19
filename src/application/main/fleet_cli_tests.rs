@@ -36,9 +36,10 @@ fn fleet_rejects_enabling_legacy_streaming() {
 }
 
 /// DEC-246: the command line's lines for what the running service answers. A
-/// missing service and a closed window share the window line; the Fleet route
-/// and an unknown action carry their own codes; anything else keeps the
-/// service's text (an ambiguous outcome says not to repeat it).
+/// missing service and a closed window share the window line; the Fleet route,
+/// an action outside the permitted set and an unknown action carry their own
+/// codes; anything else keeps the service's text (an unknown outcome says the
+/// action may have been sent and not to repeat it).
 #[test]
 fn dec246_vehicle_action_refusal_lines_carry_their_codes() {
     use tesatlas_hub::collector::ResidentVehicleActionError as Refusal;
@@ -54,8 +55,18 @@ fn dec246_vehicle_action_refusal_lines_carry_their_codes() {
         format!("vehicle_action_unknown: {}", tesatlas_hub::collector::VEHICLE_ACTION_UNKNOWN)
     );
     assert_eq!(
-        crate::vehicle_action_refusal_line(&Refusal::OutcomeAmbiguous),
-        "vehicle command outcome is ambiguous; do not repeat it"
+        crate::vehicle_action_refusal_line(&Refusal::NotPermitted),
+        format!("vehicle_action_not_permitted: {}", tesatlas_hub::collector::VEHICLE_ACTION_NOT_PERMITTED)
+    );
+    // A send whose answer was lost is reported as possibly sent, with its
+    // receipt, and never as a rejection.
+    assert_eq!(
+        crate::vehicle_action_refusal_line(&Refusal::OutcomeAmbiguous { audit_receipt_id: Some(42) }),
+        "vehicle command outcome is unknown: it may have been sent (audit receipt 42); do not repeat it"
+    );
+    assert_eq!(
+        crate::vehicle_action_refusal_line(&Refusal::OutcomeAmbiguous { audit_receipt_id: None }),
+        "vehicle command outcome is unknown: it may have been sent; do not repeat it"
     );
 }
 

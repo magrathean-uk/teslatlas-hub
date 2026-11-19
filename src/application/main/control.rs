@@ -124,6 +124,8 @@ fn paired_devices_json(store: &HubStore) -> Result<String, Box<dyn std::error::E
 
 /// The vehicle action `command` asks for (wake, climate, charge, lock and the
 /// rest) and whether it carries `--confirm`; `None` for every other control.
+/// Only Wake, Flash Lights and Honk Horn are ever sent (DEC-248); the others
+/// parse so that they meet a fixed refusal.
 fn vehicle_action(
     command: &ControlCommand,
 ) -> Option<(tesatlas_hub::owner_api::LegacyVehicleAction, bool)> {
@@ -153,10 +155,12 @@ const VEHICLE_ACTION_UNCONFIRMED: &str =
     "a vehicle action is sent only with --confirm; nothing was sent";
 const COLLECTION_WINDOW_CLOSED_CODE: &str = "collection_window_closed";
 const VEHICLE_ACTION_UNKNOWN_CODE: &str = "vehicle_action_unknown";
+const VEHICLE_ACTION_NOT_PERMITTED_CODE: &str = "vehicle_action_not_permitted";
 
 /// The line a vehicle action ends with when the running service does not send
-/// it. The window, the Fleet route and an unknown action carry their contracted
-/// codes; a refused or ambiguous send keeps the service's own text.
+/// it. The window, the Fleet route, an action outside the permitted set and an
+/// unknown action carry their contracted codes; a refused send or one whose
+/// outcome is unknown keeps the service's own text.
 fn vehicle_action_refusal_line(error: &collector::ResidentVehicleActionError) -> String {
     use collector::ResidentVehicleActionError as Refusal;
     match error {
@@ -166,14 +170,16 @@ fn vehicle_action_refusal_line(error: &collector::ResidentVehicleActionError) ->
             collector::VEHICLE_ACTION_WINDOW_CLOSED
         ),
         Refusal::UnknownAction => format!("{VEHICLE_ACTION_UNKNOWN_CODE}: {error}"),
+        Refusal::NotPermitted => format!("{VEHICLE_ACTION_NOT_PERMITTED_CODE}: {error}"),
         _ => error.to_string(),
     }
 }
 
-/// `control <action> --confirm` (DEC-246). The Mac app never calls it. A Fleet
-/// Hub refuses every action (polling only), with or without `--confirm`, before
-/// the catalogue is opened. A Legacy Hub refuses an action without `--confirm`,
-/// then one with no running service collecting inside an Open window, both
+/// `control <action> --confirm` (DEC-246, DEC-248). The Mac app never calls it.
+/// A Fleet Hub refuses every action (polling only), with or without `--confirm`,
+/// before the catalogue is opened. A Legacy Hub refuses every action other than
+/// Wake, Flash Lights and Honk Horn, then one without `--confirm`,
+/// then one with no running service collecting inside an Open window, all
 /// before the catalogue is opened; otherwise the selected car's action goes to
 /// the running service, which checks the window again, writes the outbound
 /// audit receipt as an explicit vehicle command and sends it once through the
@@ -188,6 +194,13 @@ async fn run_vehicle_action(
         return Err(format!(
             "{VEHICLE_COMMANDS_NOT_OFFERED_CODE}: {}",
             collector::VEHICLE_COMMANDS_NOT_OFFERED
+        )
+        .into());
+    }
+    if !action.is_permitted() {
+        return Err(format!(
+            "{VEHICLE_ACTION_NOT_PERMITTED_CODE}: {}",
+            collector::VEHICLE_ACTION_NOT_PERMITTED
         )
         .into());
     }

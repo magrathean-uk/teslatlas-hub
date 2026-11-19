@@ -1950,12 +1950,42 @@ fn dec246_receipt_rows(store: &HubStore) -> Vec<(String, String, String, String)
         .expect("receipt rows")
 }
 
-/// DEC-246, Legacy: the service's control socket, with the Hub's own Owner
-/// login inside an Open window, sends each confirmed action once through the
-/// Owner route (a loopback double here; nothing reaches Tesla) and writes each
-/// to the outbound audit as an explicit vehicle command.
+/// DEC-248: the only actions ever sent.
+const DEC248_PERMITTED_ACTIONS: [LegacyVehicleAction; 3] = [
+    LegacyVehicleAction::Wake,
+    LegacyVehicleAction::FlashLights,
+    LegacyVehicleAction::HonkHorn,
+];
+
+/// A Legacy rig inside an Open window with its control socket serving.
+async fn dec246_serving_rig() -> (
+    ResidentRig,
+    crate::fleet_api::egress::test_support::TestWindow,
+    crate::fleet_api::egress::test_support::Route,
+    tokio::task::JoinHandle<Result<(), CollectorError>>,
+) {
+    let rig = ResidentRig::new(crate::legacy_auth::AuthMode::Tesla).await;
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(600);
+    let route = window.route(rig.token_url.as_str());
+    let socket = ResidentControlSocket::bind(&rig.dir).expect("control socket");
+    let serving = tokio::spawn(socket.serve(
+        rig.store.clone(),
+        rig.client.clone(),
+        Arc::clone(&rig.manager),
+        Arc::clone(&rig.fuse),
+        Arc::clone(&rig.refresh),
+    ));
+    (rig, window, route, serving)
+}
+
+/// DEC-246, DEC-248, Legacy: the service's control socket, with the Hub's own
+/// Owner login inside an Open window, sends each confirmed Wake, Flash Lights
+/// and Honk Horn once through the Owner route (a loopback double here; nothing
+/// reaches Tesla) and writes each to the outbound audit as an explicit vehicle
+/// command. Every other action is refused with the fixed line, by the socket
+/// and by the executor itself, before a receipt or a send.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn dec246_the_legacy_service_sends_every_action_inside_an_open_window() {
+async fn dec246_the_legacy_service_sends_only_wake_flash_and_honk_inside_an_open_window() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
     SUPERVISED_COLLECTOR_TEST_SEAM
         .scope(seam, async {
@@ -1971,7 +2001,30 @@ async fn dec246_the_legacy_service_sends_every_action_inside_an_open_window() {
                 Arc::clone(&rig.fuse),
                 Arc::clone(&rig.refresh),
             ));
-            for (sent, action) in M09_T19_EVERY_ACTION.into_iter().enumerate() {
+            for action in M09_T19_EVERY_ACTION.into_iter().filter(|action| !action.is_permitted()) {
+                let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                    .await
+                    .expect_err("refused");
+                assert!(matches!(error, ResidentVehicleActionError::NotPermitted), "{action:?}: {error:?}");
+                assert_eq!(error.to_string(), VEHICLE_ACTION_NOT_PERMITTED);
+                let executed = execute_resident_legacy_vehicle_action(
+                    &rig.store,
+                    &rig.client,
+                    &rig.manager,
+                    &rig.fuse,
+                    &rig.refresh,
+                    rig.hub_vehicle,
+                    action,
+                )
+                .await;
+                assert!(
+                    matches!(executed, Err(ResidentActionExecutionError::NotPermitted)),
+                    "executor {action:?}: {executed:?}"
+                );
+            }
+            assert_eq!(rig.fake.action_requests(), 0, "no refused action was sent");
+            assert_eq!(dec246_receipt_rows(&rig.store).len(), before, "no receipt for a refused action");
+            for (sent, action) in DEC248_PERMITTED_ACTIONS.into_iter().enumerate() {
                 let report = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
                     .await
                     .unwrap_or_else(|error| panic!("{action:?}: {error:?}"));
@@ -1984,9 +2037,9 @@ async fn dec246_the_legacy_service_sends_every_action_inside_an_open_window() {
             serving.abort();
             let _ = serving.await;
             let rows = dec246_receipt_rows(&rig.store);
-            assert_eq!(rows.len() - before, M09_T19_EVERY_ACTION.len(), "one receipt per send");
+            assert_eq!(rows.len() - before, DEC248_PERMITTED_ACTIONS.len(), "one receipt per send");
             for ((operation, safety_class, transport, outcome), action) in
-                rows[before..].iter().zip(M09_T19_EVERY_ACTION)
+                rows[before..].iter().zip(DEC248_PERMITTED_ACTIONS)
             {
                 let expected = if action == LegacyVehicleAction::Wake {
                     ("vehicle_wake", "direct_wake_command")
@@ -2003,8 +2056,8 @@ async fn dec246_the_legacy_service_sends_every_action_inside_an_open_window() {
 }
 
 /// DEC-246, Legacy: outside an Open window (none opened, or the one held has
-/// closed) the service refuses every action before its receipt, a token use
-/// or a send.
+/// closed) the service refuses every permitted action before its receipt, a
+/// token use or a send.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dec246_the_legacy_service_refuses_every_action_outside_an_open_window() {
     let seam = Arc::new(SupervisedCollectorTestSeam::default());
@@ -2029,7 +2082,7 @@ async fn dec246_the_legacy_service_refuses_every_action_outside_an_open_window()
                     Arc::clone(&rig.fuse),
                     Arc::clone(&rig.refresh),
                 ));
-                for action in M09_T19_EVERY_ACTION {
+                for action in DEC248_PERMITTED_ACTIONS {
                     let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
                         .await
                         .expect_err("refused");
@@ -2094,6 +2147,102 @@ async fn dec246_the_legacy_service_refuses_an_unknown_action() {
             assert_eq!(rig.receipts(), receipts, "no audit receipt started");
         })
         .await;
+}
+
+/// Review finding 2: a wake answer whose state reflects a credential (here the
+/// bearer token the fake was sent, a synthetic one) never reaches the report the
+/// command line prints; only a known vehicle state is kept.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dec246_a_reflected_token_in_a_wake_answer_never_reaches_the_output() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let (rig, _window, _route, serving) = dec246_serving_rig().await;
+            rig.fake.reflect_bearer.store(true, Ordering::SeqCst);
+            let report = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, LegacyVehicleAction::Wake)
+                .await
+                .expect("the wake is sent");
+            serving.abort();
+            let _ = serving.await;
+            assert_eq!(rig.fake.action_requests(), 1, "sent once");
+            let reflected = rig.fake.wake_bearers.lock().unwrap().clone();
+            assert_eq!(reflected.len(), 1, "the fake reflected one bearer");
+            assert!(!reflected[0].is_empty(), "a bearer was carried");
+            assert_eq!(report.result.state, None, "an unknown state is dropped");
+            let printed = serde_json::to_string(&report).expect("the printed line");
+            assert!(!printed.contains(&reflected[0]), "the credential reached the output: {printed}");
+        })
+        .await;
+}
+
+/// Review finding 3: a send whose answer is lost after the car may have acted
+/// is reported as possibly sent, naming its audit receipt, and never as a
+/// rejection. The receipt records the unreadable answer, not an HTTP refusal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dec246_a_lost_answer_is_reported_as_possibly_sent() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let (rig, _window, _route, serving) = dec246_serving_rig().await;
+            rig.fake.lose_answer.store(true, Ordering::SeqCst);
+            let before = dec246_receipt_rows(&rig.store).len();
+            for (sent, action) in [LegacyVehicleAction::FlashLights, LegacyVehicleAction::Wake].into_iter().enumerate() {
+                let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, action)
+                    .await
+                    .expect_err("no definite answer");
+                let ResidentVehicleActionError::OutcomeAmbiguous { audit_receipt_id: Some(receipt) } = error else {
+                    panic!("{action:?}: {error:?}");
+                };
+                assert_eq!(rig.fake.action_requests(), sent + 1, "{action:?}: sent once, never repeated");
+                let text = error.to_string();
+                assert!(text.contains("may have been sent"), "{text}");
+                assert!(text.contains(&format!("audit receipt {receipt}")), "{text}");
+                assert!(!text.contains("rejected"), "{text}");
+                let outcome: String = rig
+                    .store
+                    .open()
+                    .expect("catalogue")
+                    .query_row("SELECT outcome FROM outbound_request_receipts WHERE id = ?1", [receipt], |row| row.get(0))
+                    .expect("the action's receipt");
+                assert_eq!(outcome, "protocol_error", "{action:?}");
+            }
+            serving.abort();
+            let _ = serving.await;
+            assert_eq!(dec246_receipt_rows(&rig.store).len() - before, 2, "one receipt per send");
+        })
+        .await;
+}
+
+/// Review finding 3: which failed sends are possibly sent. No answer, or an
+/// unreadable one, may follow the car's action; an HTTP status or an explicit
+/// `result: false` is a definite rejection.
+#[test]
+fn dec246_only_a_lost_answer_is_possibly_sent() {
+    for error in [
+        OwnerApiError::RequestTimeout,
+        OwnerApiError::Transport,
+        OwnerApiError::ResponseRead,
+        OwnerApiError::ResponseTooLarge,
+        OwnerApiError::InvalidResponseEnvelope,
+        OwnerApiError::InvalidCommandResponse,
+        OwnerApiError::SensitiveDataInResponse,
+    ] {
+        let error = OwnerApiAuthError::Owner(error);
+        assert!(legacy_action_answer_lost(&error), "{error:?}");
+    }
+    assert_eq!(
+        classify_resident_action_error(&ResidentActionExecutionError::OutcomeUnknown { audit_receipt_id: 7 }),
+        ResidentVehicleActionFailure::OutcomeAmbiguous
+    );
+    for error in [
+        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(500)),
+        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(408)),
+        OwnerApiAuthError::Owner(OwnerApiError::CommandRejected),
+        OwnerApiAuthError::Owner(OwnerApiError::VehicleNotFound),
+        OwnerApiAuthError::NotSignedIn,
+    ] {
+        assert!(!legacy_action_answer_lost(&error), "{error:?}");
+    }
 }
 
 /// M09-T19 ruling 2: a configuration that carries `[collector.fleet_telemetry]`

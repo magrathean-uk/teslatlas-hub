@@ -287,9 +287,11 @@ fn fleet_sign_in_telemetry_push_is_refused_before_the_configuration_is_read() {
     assert_eq!(hub.endpoint.connections(), 0);
 }
 
-/// Every vehicle action the command line offers, with its arguments.
+/// Every vehicle action the command line parses, with its arguments.
 const VEHICLE_ACTIONS: [&[&str]; 10] = [
     &["wake"],
+    &["flash-lights"],
+    &["honk-horn"],
     &["climate-start"],
     &["climate-stop"],
     &["charge-start"],
@@ -297,19 +299,22 @@ const VEHICLE_ACTIONS: [&[&str]; 10] = [
     &["set-charge-limit", "--percent", "80"],
     &["lock"],
     &["unlock"],
-    &["flash-lights"],
-    &["honk-horn"],
 ];
+
+/// DEC-248: the first three of [`VEHICLE_ACTIONS`] (Wake, Flash Lights and
+/// Honk Horn) are the only actions ever sent.
+const PERMITTED_ACTIONS: usize = 3;
 
 const FLEET_REFUSAL: &str = "vehicle_commands_not_offered: vehicle commands are not offered on the Fleet route: a Fleet Hub only reads vehicle data and never sends a command to a car";
 const WINDOW_REFUSAL: &str = "collection_window_closed: no collection window is open: a vehicle action is sent only while the running Hub collects inside an open window";
 const UNCONFIRMED_REFUSAL: &str = "vehicle_action_unconfirmed: a vehicle action is sent only with --confirm; nothing was sent";
+const NOT_PERMITTED_REFUSAL: &str = "vehicle_action_not_permitted: only wake, flash-lights and honk-horn are sent to a car; this action is refused and nothing was sent";
 
-/// `control [--vehicle-id X] <action> [--confirm]` for every action and both
-/// targets.
-fn vehicle_action_arguments(confirm: bool) -> Vec<Vec<&'static str>> {
+/// `control [--vehicle-id X] <action> [--confirm]` for each of `actions` and
+/// both targets.
+fn vehicle_action_arguments(actions: &[&'static [&'static str]], confirm: bool) -> Vec<Vec<&'static str>> {
     let mut all = Vec::new();
-    for action in VEHICLE_ACTIONS {
+    for &action in actions {
         for target in [&[][..], &["--vehicle-id", "00000000-0000-4000-8000-000000000007"][..]] {
             let mut arguments = vec!["control"];
             arguments.extend_from_slice(target);
@@ -336,7 +341,7 @@ fn fleet_hub_refuses_every_vehicle_action_with_or_without_confirm() {
     fs::write(hub.path("config.toml"), config).expect("config");
     // No data folder: a refusal that opened the catalogue would fail otherwise.
     for confirm in [true, false] {
-        for arguments in vehicle_action_arguments(confirm) {
+        for arguments in vehicle_action_arguments(&VEHICLE_ACTIONS, confirm) {
             let output = hub.run(&arguments, b"");
             assert_refused(&output, "vehicle_commands_not_offered", &arguments);
             assert_eq!(stderr(&output).trim_end(), format!("tesatlas-hub: {FLEET_REFUSAL}"), "{arguments:?}");
@@ -971,22 +976,32 @@ mod source_takeover {
     }
 }
 
-/// DEC-246: a Legacy Hub's command line refuses an action without `--confirm`,
-/// and a confirmed one when no running Hub collects inside an open window
-/// (no control socket, or a stale file in its place), each with its fixed
-/// line, before the catalogue is opened; nothing is sent. An action the
-/// command line does not know is a usage error.
+/// DEC-246, DEC-248: a Legacy Hub's command line refuses every action other
+/// than Wake, Flash Lights and Honk Horn, confirmed or not; then a permitted
+/// action without `--confirm`, and a confirmed one when no running Hub
+/// collects inside an open window (no control socket, or a stale file in its
+/// place), each with its fixed line, before the catalogue is opened; nothing
+/// is sent. An action the command line does not know is a usage error.
 #[test]
 fn legacy_hub_refuses_an_unconfirmed_action_and_one_outside_a_window() {
     let hub = Hub::new();
-    // No data folder yet: neither refusal opens the catalogue.
-    for arguments in vehicle_action_arguments(false) {
+    let (permitted, refused) = VEHICLE_ACTIONS.split_at(PERMITTED_ACTIONS);
+    // No data folder yet: no refusal opens the catalogue.
+    for confirm in [false, true] {
+        for arguments in vehicle_action_arguments(refused, confirm) {
+            let output = hub.run(&arguments, b"");
+            assert_refused(&output, "vehicle_action_not_permitted", &arguments);
+            assert_eq!(stderr(&output).trim_end(), format!("tesatlas-hub: {NOT_PERMITTED_REFUSAL}"), "{arguments:?}");
+            assert!(stdout(&output).is_empty(), "{arguments:?}: nothing reported");
+        }
+    }
+    for arguments in vehicle_action_arguments(permitted, false) {
         let output = hub.run(&arguments, b"");
         assert_refused(&output, "vehicle_action_unconfirmed", &arguments);
         assert_eq!(stderr(&output).trim_end(), format!("tesatlas-hub: {UNCONFIRMED_REFUSAL}"), "{arguments:?}");
         assert!(stdout(&output).is_empty(), "{arguments:?}: nothing reported");
     }
-    for arguments in vehicle_action_arguments(true) {
+    for arguments in vehicle_action_arguments(permitted, true) {
         let output = hub.run(&arguments, b"");
         assert_refused(&output, "collection_window_closed", &arguments);
         assert_eq!(stderr(&output).trim_end(), format!("tesatlas-hub: {WINDOW_REFUSAL}"), "{arguments:?}");
@@ -999,6 +1014,8 @@ fn legacy_hub_refuses_an_unconfirmed_action_and_one_outside_a_window() {
     fs::write(hub.data().join(".vehicle-control.sock"), b"").expect("stale file");
     let output = hub.run(&["control", "honk-horn", "--confirm"], b"");
     assert_refused(&output, "collection_window_closed", &["control", "honk-horn", "--confirm"]);
+    let output = hub.run(&["control", "unlock", "--confirm"], b"");
+    assert_refused(&output, "vehicle_action_not_permitted", &["control", "unlock", "--confirm"]);
     // An unknown action is refused by the parser, confirmed or not.
     for arguments in [&["control", "open-frunk", "--confirm"][..], &["control", "open-frunk"][..]] {
         let output = hub.run(arguments, b"");

@@ -27,6 +27,14 @@ struct AuthFake {
     owner_hold: Arc<AtomicBool>,
     /// The vehicle actions (wake-ups) the fake has been sent.
     actions: Arc<AtomicUsize>,
+    /// A wake-up answers with the bearer token it carried as its state (a
+    /// synthetic reflected credential).
+    reflect_bearer: Arc<AtomicBool>,
+    /// The bearer tokens a wake-up reflected, in order.
+    wake_bearers: Arc<Mutex<Vec<String>>>,
+    /// A vehicle action is counted and then answered with an unreadable body,
+    /// as if its answer were lost after the car acted.
+    lose_answer: Arc<AtomicBool>,
 }
 
 impl AuthFake {
@@ -68,14 +76,30 @@ async fn fake_products(
 }
 
 /// A vehicle action: counted, and answered as a wake-up is.
-async fn fake_wake(State(fake): State<AuthFake>) -> axum::response::Response {
+async fn fake_wake(State(fake): State<AuthFake>, headers: HeaderMap) -> axum::response::Response {
     fake.actions.fetch_add(1, Ordering::SeqCst);
+    if fake.lose_answer.load(Ordering::SeqCst) {
+        return (StatusCode::OK, "{\"response\":").into_response();
+    }
+    if fake.reflect_bearer.load(Ordering::SeqCst) {
+        let bearer = headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .unwrap_or_default()
+            .to_owned();
+        fake.wake_bearers.lock().unwrap().push(bearer.clone());
+        return (StatusCode::OK, json!({"response": {"state": bearer}}).to_string()).into_response();
+    }
     (StatusCode::OK, r#"{"response":{"state":"online"}}"#).into_response()
 }
 
 /// A vehicle command (DEC-246): counted with the wake-ups, and accepted.
 async fn fake_command(State(fake): State<AuthFake>) -> axum::response::Response {
     fake.actions.fetch_add(1, Ordering::SeqCst);
+    if fake.lose_answer.load(Ordering::SeqCst) {
+        return (StatusCode::OK, "{\"response\":").into_response();
+    }
     (StatusCode::OK, r#"{"response":{"result":true,"reason":""}}"#).into_response()
 }
 
