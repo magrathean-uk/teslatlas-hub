@@ -311,7 +311,7 @@ async fn run_macos_migration_prepared(
         import_source_key,
         new_import_source,
         limits,
-        MigrationCaptureScope::SettledWithoutCredentials,
+        final_migration_capture_scope(online_snapshot),
         progress.clone(),
     )
     .await?;
@@ -381,10 +381,22 @@ async fn run_macos_migration_prepared(
 }
 
 #[cfg(unix)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MigrationCaptureScope {
     HistorySnapshot,
     SettledWithoutCredentials,
+}
+
+/// The final copy of an online snapshot reads a source that is still
+/// recording, so it accepts one coherent snapshot of an advancing source. Only
+/// the stopped-source cutover requires a settled source.
+#[cfg(unix)]
+fn final_migration_capture_scope(online_snapshot: bool) -> MigrationCaptureScope {
+    if online_snapshot {
+        MigrationCaptureScope::HistorySnapshot
+    } else {
+        MigrationCaptureScope::SettledWithoutCredentials
+    }
 }
 
 #[cfg(unix)]
@@ -661,3 +673,25 @@ fn migration_source_key<'a>(explicit: Option<&'a str>, configured: Option<&'a st
         .or(configured)
         .unwrap_or(tesatlas_hub::db::DEFAULT_IMPORT_SOURCE_KEY)
 }
+
+#[cfg(all(unix, test))]
+mod final_capture_scope_tests {
+    use super::*;
+
+    #[test]
+    fn online_snapshot_final_copy_accepts_an_advancing_source() {
+        assert_eq!(
+            final_migration_capture_scope(true),
+            MigrationCaptureScope::HistorySnapshot
+        );
+    }
+
+    #[test]
+    fn stopped_source_final_copy_still_requires_a_settled_source() {
+        assert_eq!(
+            final_migration_capture_scope(false),
+            MigrationCaptureScope::SettledWithoutCredentials
+        );
+    }
+}
+
