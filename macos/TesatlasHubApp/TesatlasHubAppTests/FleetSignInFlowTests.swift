@@ -5,7 +5,7 @@ import XCTest
 @testable import Tesatlas_Hub
 
 /// M09-T12: the Mac app's Fleet onboarding against the repaired service's contract
-/// (`.plan/work/M09-T19a/interface.md`, sections 1 to 7, 10 and 11), through a fake runner:
+/// (the M09-T19a interface, sections 1 to 7, 10 and 11), through a fake runner:
 /// prerequisites, details, public key, registration, the Tesla sign-in with its binding and
 /// `state` check, finding the car, the consent page and only then `setup-fleet activate`.
 /// No Hub binary, Tesla page, network, Keychain or pasteboard is used; no window is shown.
