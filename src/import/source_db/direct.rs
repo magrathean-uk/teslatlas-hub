@@ -9,11 +9,9 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::Path,
-    pin::pin,
     time::Instant,
 };
 
-use futures_util::TryStreamExt;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -47,9 +45,10 @@ use crate::{
         project_charge_sample, project_drive, project_position, project_state, project_update,
     },
     source_db_reader::{
-        SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo, binary_copy_sql,
-        charge_copy_types, decode_binary_charge, decode_binary_position,
-        open_exported_snapshot_lease, open_snapshot_capture_lane, position_copy_types,
+        SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo, SourceReadBudget,
+        binary_copy_sql, charge_copy_types, decode_binary_charge, decode_binary_position,
+        open_bounded_copy, open_exported_snapshot_lease, open_snapshot_capture_lane,
+        position_copy_types,
         query_bounded, read_addresses, read_car_and_car_settings_v2_2, read_cars,
         read_charging_processes, read_drives, read_geofences, read_open_session,
         read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
@@ -1923,6 +1922,12 @@ fn append_direct_position(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The budget of a direct COPY stream. Every row passes the shared per-row
+/// byte guard before it is decoded. The streams count rows against their own
+/// caps and fold them into bounded fragments, so neither the row count nor the
+/// cumulative bytes of a whole table is capped here.
+const DIRECT_COPY_ROW_BUDGET: SourceReadBudget = SourceReadBudget::new(usize::MAX, usize::MAX);
+
 async fn write_positions(
     client: &Client,
     selected_car_id: i64,
@@ -1955,21 +1960,19 @@ async fn write_positions(
         selected_car_id,
         "starting source database position history capture"
     );
-    let stream = client
-        .copy_out(&binary_copy_sql(
-            SourceTable::Positions,
-            selected_car_id_i16,
-        ))
-        .await?;
+    let mut rows = open_bounded_copy(
+        client,
+        &binary_copy_sql(SourceTable::Positions, selected_car_id_i16),
+        position_copy_types(),
+        "positions",
+        DIRECT_COPY_ROW_BUDGET,
+    )
+    .await?;
     tracing::info!(
         selected_car_id,
         "Source database position history stream opened"
     );
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        position_copy_types()
-    ));
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         source_position_rows = source_position_rows.checked_add(1).ok_or(
             SourceDbDirectError::MaximumRowsExceeded {
                 maximum: read_limits.maximum_rows,
@@ -2134,14 +2137,15 @@ async fn write_charges(
     }
     let mut facts = HashMap::<i64, ChargeProjectionFacts>::with_capacity(processes.len());
     let mut sample_counts = HashMap::<i64, u64>::with_capacity(processes.len());
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Charges, selected_car_id_i16))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        charge_copy_types()
-    ));
-    while let Some(row) = rows.as_mut().try_next().await? {
+    let mut rows = open_bounded_copy(
+        client,
+        &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
+        charge_copy_types(),
+        "charges",
+        DIRECT_COPY_ROW_BUDGET,
+    )
+    .await?;
+    while let Some(row) = rows.next_row().await? {
         *retained_rows =
             retained_rows
                 .checked_add(1)
@@ -2222,14 +2226,15 @@ async fn write_charges(
 
     let mut samples = FragmentAccumulator::new(car.clone(), limits)?;
     let mut second_pass_rows = 0_usize;
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Charges, selected_car_id_i16))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        charge_copy_types()
-    ));
-    while let Some(row) = rows.as_mut().try_next().await? {
+    let mut rows = open_bounded_copy(
+        client,
+        &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
+        charge_copy_types(),
+        "charges",
+        DIRECT_COPY_ROW_BUDGET,
+    )
+    .await?;
+    while let Some(row) = rows.next_row().await? {
         second_pass_rows =
             second_pass_rows
                 .checked_add(1)
@@ -2359,12 +2364,15 @@ async fn fetch_related_position_batch(
     maximum: usize,
 ) -> Result<(), SourceDbDirectError> {
     let sql = related_positions_binary_copy_sql(selected_car_id, ids);
-    let stream = client.copy_out(&sql).await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        position_copy_types()
-    ));
-    while let Some(row) = rows.as_mut().try_next().await? {
+    let mut rows = open_bounded_copy(
+        client,
+        &sql,
+        position_copy_types(),
+        "positions",
+        DIRECT_COPY_ROW_BUDGET,
+    )
+    .await?;
+    while let Some(row) = rows.next_row().await? {
         let position = decode_binary_position(&row)?;
         if cache.contains_key(&position.id) {
             continue;
@@ -2618,5 +2626,93 @@ mod n1_src_import_source_db_direct_rs_display_tests {
         check_source_db_direct_error(SourceDbDirectError::Fragment(example()));
         check_source_db_direct_error(SourceDbDirectError::ProjectionState(example()));
         check_source_db_direct_error(SourceDbDirectError::Store(example()));
+    }
+}
+
+#[cfg(test)]
+mod direct_copy_row_guard_tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use super::*;
+    use crate::source_db_reader::{
+        BoundedRows, MAX_SOURCE_ROW_BYTES, SourceBudgetLimit, SourceCancel, SourceRow,
+    };
+
+    struct SyntheticRow(usize);
+
+    impl SourceRow for SyntheticRow {
+        fn source_bytes(&self) -> usize {
+            self.0
+        }
+    }
+
+    struct CountingCancel(Rc<Cell<usize>>);
+
+    impl SourceCancel for CountingCancel {
+        async fn cancel(&self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    fn direct_rows(
+        sizes: Vec<usize>,
+        table: &'static str,
+        cancelled: &Rc<Cell<usize>>,
+    ) -> BoundedRows<
+        impl futures_util::Stream<Item = Result<SyntheticRow, SourceDbReaderError>>,
+        CountingCancel,
+    > {
+        BoundedRows::new(
+            futures_util::stream::iter(sizes.into_iter().map(|size| Ok(SyntheticRow(size)))),
+            table,
+            DIRECT_COPY_ROW_BUDGET,
+            CountingCancel(Rc::clone(cancelled)),
+        )
+    }
+
+    #[tokio::test]
+    async fn an_oversized_direct_copy_row_is_refused_before_it_is_decoded() {
+        let cancelled = Rc::new(Cell::new(0));
+        let mut rows = direct_rows(
+            vec![1024, MAX_SOURCE_ROW_BYTES + 1, 1024],
+            "positions",
+            &cancelled,
+        );
+        let mut decoded = 0;
+        let error = loop {
+            match rows.next_row().await {
+                Ok(Some(_)) => decoded += 1,
+                Ok(None) => panic!("the oversized row reached the decoder"),
+                Err(error) => break error,
+            }
+        };
+        assert_eq!(decoded, 1);
+        assert!(
+            matches!(
+                error,
+                SourceDbReaderError::SourceReadBudgetExceeded {
+                    table: "positions",
+                    limit: SourceBudgetLimit::RowBytes,
+                    maximum: MAX_SOURCE_ROW_BYTES,
+                }
+            ),
+            "{error}"
+        );
+        assert_eq!(cancelled.get(), 1, "the server is asked to stop");
+    }
+
+    #[tokio::test]
+    async fn direct_copy_streams_have_no_cumulative_table_byte_cap() {
+        let cancelled = Rc::new(Cell::new(0));
+        // 512 MiB in all, far above the 64 MiB ceiling of a collecting read.
+        let mut sizes = vec![1024 * 1024; 511];
+        sizes.push(MAX_SOURCE_ROW_BYTES);
+        let mut rows = direct_rows(sizes, "charges", &cancelled);
+        let mut decoded = 0;
+        while rows.next_row().await.expect("every row is admitted").is_some() {
+            decoded += 1;
+        }
+        assert_eq!(decoded, 512);
+        assert_eq!(cancelled.get(), 0);
     }
 }
