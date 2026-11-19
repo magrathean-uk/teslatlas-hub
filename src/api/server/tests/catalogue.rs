@@ -234,6 +234,86 @@ async fn serves_catalogued_manifest_and_immutable_pack_stream() {
 }
 
 #[tokio::test]
+async fn legacy_catalogued_pack_with_same_size_damage_is_refused_for_full_and_range_reads() {
+    assert_eq!(
+        MAX_CATALOGUED_PACK_BYTES,
+        crate::protocol::ProtocolLimits::default().max_compressed_pack_bytes
+    );
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([74; 32]);
+    let (built, snapshot) =
+        write_updates_schema_22_pack(store.packs_dir(), Vec::new()).expect("schema 2.2 pack");
+    let request = updates_pack_request(&snapshot);
+    let manifest = sign_updates_schema_22_manifest(&request, &built, &cursor_key)
+        .expect("schema 2.2 manifest");
+    let noop = sign_updates_schema_22_noop(
+        &request.binding,
+        request.snapshot_id,
+        request.sequence.to_inclusive,
+        &built.metadata.sha256.to_string(),
+        &cursor_key,
+    )
+    .expect("schema 2.2 no-op");
+    seed_active_vehicle_identity(
+        &store,
+        request.binding.account_id,
+        request.binding.vehicle_id,
+    );
+    publish_updates_schema_22(&store, &manifest, &noop).expect("publish pair");
+    let stored = store
+        .pack_for_digest_in_scope(built.metadata.sha256, VehicleScope::Unrestricted)
+        .expect("catalogue lookup")
+        .expect("legacy catalogued pack");
+    let original = fs::read(&stored.path).expect("pack bytes");
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("legacy pack test", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "test client", now_ms)
+        .expect("paired access");
+    let bearer = format!("Bearer {}", access.access_token.as_bearer());
+    let app = paired_router(store, &cursor_key);
+    let read = |range: Option<&'static str>| {
+        let app = app.clone();
+        let mut request = Request::builder()
+            .uri(format!("/v1/packs/sha256/{}.sqlite.zst", built.metadata.sha256))
+            .header(header::AUTHORIZATION, bearer.clone());
+        if let Some(range) = range {
+            request = request.header(header::RANGE, range);
+        }
+        async move {
+            let response = app
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .expect("pack response");
+            let status = response.status();
+            let body = response.into_body().collect().await.expect("body").to_bytes();
+            (status, body)
+        }
+    };
+
+    let mut damaged = original.clone();
+    let last = damaged.len() - 1;
+    damaged[last] ^= 0xff;
+    fs::write(&stored.path, &damaged).expect("same-size damage");
+    for range in [None, Some("bytes=0-3")] {
+        let (status, body) = read(range).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{range:?}");
+        assert!(body.is_empty(), "no damaged byte is sent for {range:?}");
+    }
+
+    fs::write(&stored.path, &original).expect("restore pack");
+    let (status, body) = read(None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_ref(), original.as_slice());
+    let (status, body) = read(Some("bytes=0-3")).await;
+    assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(body.as_ref(), &original[..4]);
+}
+
+#[tokio::test]
 async fn trusted_local_schema_22_uses_the_active_cursor_key() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");

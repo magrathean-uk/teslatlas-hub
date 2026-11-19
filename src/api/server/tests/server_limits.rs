@@ -19,6 +19,7 @@ async fn physical_pack_verification_buffers_immutable_bytes_from_same_open_descr
         &mut opened,
         u64::try_from(original.len()).expect("bounded pack"),
         Sha256Digest::of_bytes(original),
+        MAX_ADMITTED_PHYSICAL_PACK_BYTES,
     )
     .await
     .expect("verify held pack");
