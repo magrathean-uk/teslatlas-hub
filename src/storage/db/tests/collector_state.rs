@@ -51,6 +51,7 @@ fn cs_account(state: &str, reason: &str) -> CollectorAccountRow {
         next_probe_ms: None,
         unreachable_until_ms: None,
         consecutive_unreachable: 0,
+        inventory_unavailable: false,
     }
 }
 
@@ -581,6 +582,30 @@ fn owner_actions_load_oldest_first_until_applied() {
     let rows = store.load_collector_state_rows().unwrap();
     assert_eq!(rows.actions.len(), 1);
     assert_eq!(rows.actions[0].action_id, resume);
+}
+
+#[test]
+fn repeated_inventory_failures_show_as_healthy_detail_until_a_list_is_accepted() {
+    let (_temporary, store) = cs_store();
+    store.acquire_supervised_collector_lease(CS_W0).unwrap();
+    let view = || store.collector_readiness_view(&ReadinessContext::context_free(true, CS_W0 + 1));
+    let account = |failing: bool| CollectorRowsWrite {
+        now_ms: CS_W0,
+        account: Some(CollectorAccountRow {
+            inventory_unavailable: failing,
+            ..cs_account("collecting", "collecting")
+        }),
+        ..CollectorRowsWrite::default()
+    };
+    cs_write(&store, &account(true));
+    let failing = view();
+    assert_eq!(failing.attention, None);
+    assert_eq!(failing.service, Ok(()));
+    assert_eq!(failing.detail, ["collector_inventory_unavailable"]);
+    let rows = store.load_collector_state_rows().unwrap();
+    assert!(rows.account.is_some_and(|row| row.inventory_unavailable));
+    cs_write(&store, &account(false));
+    assert!(view().detail.is_empty(), "one accepted list clears it");
 }
 
 #[test]

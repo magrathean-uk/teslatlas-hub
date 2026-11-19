@@ -88,6 +88,10 @@ const K_RETRY_AFTER_MAX: Duration = Duration::from_secs(3_600);
 /// list requests a day.
 const K_BILLING_PROBE: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// Lists in a row that failed before the account row says the inventory is
+/// unavailable (P04-F01); one list that is accepted clears it.
+const K_INVENTORY_FAILURES: u32 = 3;
+
 /// The longest a persisted pause probe deadline loads as (C3 R2, R51,
 /// `K_PAUSE_PROBE`): an hour is at most 24 requests a day, and only while the
 /// car is listed online.
@@ -1109,6 +1113,7 @@ impl AccountRecord {
             next_probe: self.next_billing_probe,
             unreachable_until: None,
             consecutive_unreachable: 0,
+            inventory_unavailable: false,
         }
     }
 

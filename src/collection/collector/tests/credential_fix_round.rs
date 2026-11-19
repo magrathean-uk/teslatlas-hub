@@ -1172,6 +1172,7 @@ async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
                                         .then_some(now_ms - 1_000),
                                     unreachable_until_ms: None,
                                     consecutive_unreachable: 0,
+                                    inventory_unavailable: false,
                                 }),
                                 vehicles: vec![crate::db::CollectorVehicleRow {
                                     vehicle_id: vehicle,

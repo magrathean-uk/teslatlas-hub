@@ -422,6 +422,7 @@ async fn ct55b_the_counters_exempt_stamp_sees_every_other_scheduler_write() {
                                 next_probe_ms: None,
                                 unreachable_until_ms: None,
                                 consecutive_unreachable: 0,
+                                inventory_unavailable: false,
                             }),
                             vehicles: if car {
                                 vec![crate::db::CollectorVehicleRow {

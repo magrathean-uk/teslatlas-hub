@@ -192,6 +192,7 @@ fn cadence_wait_prepare_state(store: &HubStore) {
                             next_probe_ms: None,
                             unreachable_until_ms: None,
                             consecutive_unreachable: 0,
+                            inventory_unavailable: false,
                         }),
                         vehicles: vec![crate::db::CollectorVehicleRow {
                             vehicle_id: vehicle,

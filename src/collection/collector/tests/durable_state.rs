@@ -1271,6 +1271,7 @@ fn ct58_a_persisted_refusal_survives_a_restart_until_the_configuration_changes()
                 next_probe_ms: None,
                 unreachable_until_ms: None,
                 consecutive_unreachable: 0,
+                inventory_unavailable: false,
             }),
             gap_inserts: vec![crate::db::CollectorGapInsert {
                 vehicle_id: None,
@@ -2279,6 +2280,7 @@ fn r7_a_new_fleet_application_or_region_changes_the_fingerprint_and_resets_a_sto
                 next_probe_ms: None,
                 unreachable_until_ms: None,
                 consecutive_unreachable: 0,
+                inventory_unavailable: false,
             }),
             ..Default::default()
         },
@@ -3073,6 +3075,41 @@ async fn a_restart_keeps_the_transport_back_off_deadline_and_step_until_recovery
             let account = bed.store.load_collector_state_rows().unwrap().account.unwrap();
             assert_eq!(account.unreachable_until_ms, None);
             assert_eq!(account.consecutive_unreachable, 0);
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn repeated_list_failures_mark_the_inventory_unavailable_until_a_list_is_accepted() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            for failure in 1..=3u32 {
+                bed.advance(Duration::from_secs(600));
+                let now = bed.now();
+                bed.scheduler.begin_tick();
+                bed.scheduler.discovery_failed(now);
+                bed.commit(TickBatch::default()).await;
+                let account = bed.store.load_collector_state_rows().unwrap().account.unwrap();
+                assert_eq!(
+                    account.inventory_unavailable,
+                    failure >= K_INVENTORY_FAILURES,
+                    "after failure {failure}"
+                );
+            }
+            // A restart in the outage keeps the account marked and its back-off step.
+            let hub = retry_stored_hub_id(&bed);
+            let (mut scheduler, _clock, t) =
+                restarted_scheduler(crate::config::CollectorMode::Legacy, bed.wall());
+            scheduler.load(&snapshot_of(&bed.store, hub, DS_FP_A), t);
+            assert_eq!(scheduler.account.discovery_failures, K_INVENTORY_FAILURES);
+            assert_eq!(scheduler.account_view(), scheduler.persisted_account);
+            bed.advance(Duration::from_secs(600));
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            let account = bed.store.load_collector_state_rows().unwrap().account.unwrap();
+            assert!(!account.inventory_unavailable, "one accepted list clears it");
         })
         .await;
 }

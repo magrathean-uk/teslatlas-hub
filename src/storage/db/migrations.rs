@@ -57,8 +57,9 @@ const _: () = assert!(
         && COLLECTOR_RETRY_SCHEMA_VERSION == SCHEMA_VERSION
 );
 
-/// Schema v81 (P04-F07): the account row keeps the end and the step of the
-/// transport back-off. The columns are added only where absent, in one transaction
+/// Schema v81 (P04-F07, P04-F01): the account row keeps the end and the step of
+/// the transport back-off and whether repeated list failures keep the inventory
+/// from loading. The columns are added only where absent, in one transaction
 /// with the version, so a rung that stops part way runs again on the next open.
 fn collector_retry_schema_rung(connection: &Connection) -> Result<(), StoreError> {
     if schema_version(connection)? != SEAM_SCHEMA_VERSION {
@@ -76,6 +77,10 @@ fn collector_retry_schema_rung(connection: &Connection) -> Result<(), StoreError
             (
                 "consecutive_unreachable",
                 "INTEGER NOT NULL DEFAULT 0 CHECK(consecutive_unreachable >= 0)",
+            ),
+            (
+                "inventory_unavailable",
+                "INTEGER NOT NULL DEFAULT 0 CHECK(inventory_unavailable IN (0, 1))",
             ),
         ] {
             let present: bool = transaction

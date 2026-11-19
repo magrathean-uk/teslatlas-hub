@@ -34,6 +34,8 @@ pub(crate) struct CollectorAccountRow {
     pub unreachable_until_ms: Option<i64>,
     /// Requests in a row that got no HTTP status; the step of that back-off.
     pub consecutive_unreachable: u32,
+    /// Repeated list failures keep the inventory from loading (P04-F01).
+    pub inventory_unavailable: bool,
 }
 
 /// One row of `collector_vehicle_state` (C3 R4).
@@ -325,7 +327,7 @@ impl HubStore {
             .query_row(
                 "SELECT mode, config_fingerprint, state, reason_code, since_ms,
                         rate_limited_until_ms, next_probe_ms, unreachable_until_ms,
-                        consecutive_unreachable
+                        consecutive_unreachable, inventory_unavailable
                    FROM collector_account_state WHERE singleton_id = 1",
                 [],
                 |row| {
@@ -339,6 +341,7 @@ impl HubStore {
                         next_probe_ms: row.get(6)?,
                         unreachable_until_ms: row.get(7)?,
                         consecutive_unreachable: row.get(8)?,
+                        inventory_unavailable: row.get(9)?,
                     })
                 },
             )
@@ -564,8 +567,8 @@ impl HubStore {
                     "INSERT INTO collector_account_state(
                         singleton_id, mode, config_fingerprint, state, reason_code,
                         since_ms, rate_limited_until_ms, next_probe_ms, updated_at_ms,
-                        unreachable_until_ms, consecutive_unreachable)
-                     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                        unreachable_until_ms, consecutive_unreachable, inventory_unavailable)
+                     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                      ON CONFLICT(singleton_id) DO UPDATE SET
                         mode = excluded.mode,
                         config_fingerprint = excluded.config_fingerprint,
@@ -576,7 +579,8 @@ impl HubStore {
                         next_probe_ms = excluded.next_probe_ms,
                         updated_at_ms = excluded.updated_at_ms,
                         unreachable_until_ms = excluded.unreachable_until_ms,
-                        consecutive_unreachable = excluded.consecutive_unreachable",
+                        consecutive_unreachable = excluded.consecutive_unreachable,
+                        inventory_unavailable = excluded.inventory_unavailable",
                     params![
                         account.mode,
                         account.config_fingerprint,
@@ -588,6 +592,7 @@ impl HubStore {
                         write.now_ms,
                         account.unreachable_until_ms,
                         account.consecutive_unreachable,
+                        account.inventory_unavailable,
                     ],
                 )
                 .map_err(StoreError::Query)?;
@@ -904,7 +909,8 @@ impl HubStore {
                                 since_ms = ?1, rate_limited_until_ms = NULL,
                                 next_probe_ms = NULL, updated_at_ms = ?1,
                                 unreachable_until_ms = NULL,
-                                consecutive_unreachable = 0
+                                consecutive_unreachable = 0,
+                                inventory_unavailable = 0
                           WHERE singleton_id = 1",
                         params![request.start_ms],
                     )
