@@ -7,7 +7,7 @@ import XCTest
 final class SourceDiscoveryHarnessTests: XCTestCase {
     private let full = ["DATABASE_USER": "chosen-user", "DATABASE_PASS": "chosen-password",
                         "DATABASE_NAME": "sourcedb", "ENCRYPTION_KEY": "chosen-key"]
-    private func scenario(version: String? = "4.4.0", uid: Int = 501,
+    private func scenario(version: String? = "4.5.0", uid: Int = 501,
                           candidateCount: Int = 1, databases: [String] = ["database-a"]) -> [String: Any] {
         var containers: [String: Any] = [
             "database-a": ["project": "arbitrary-project", "env": ["POSTGRES_PASSWORD": "unselected-db-secret"]],
@@ -68,7 +68,7 @@ final class SourceDiscoveryHarnessTests: XCTestCase {
         XCTAssertEqual(result.status, 0)
         XCTAssertEqual(result.values?["password"], "chosen-password")
         XCTAssertEqual(result.values?["car"], "42")
-        XCTAssertEqual(result.classification, .supported("4.4.0"))
+        XCTAssertEqual(result.classification, .supported("4.5.0"))
         XCTAssertTrue(result.versionAdmitted)
     }
     func testDiscoveryReportsNoCandidate() throws {

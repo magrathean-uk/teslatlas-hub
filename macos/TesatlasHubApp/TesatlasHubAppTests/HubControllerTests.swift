@@ -2017,7 +2017,7 @@ final class HubControllerTests: XCTestCase {
     func testImportSheetExplainsManualSourceHandover() {
         XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("without stopping"))
         XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("yourself"))
-        for fragment in ["back up the source application", "update it to release 4.4.0 or later", "start it once",
+        for fragment in ["back up the source application", "update it to release 4.5.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
             XCTAssertTrue(ImportSheetController.sourceVersionRequirement.contains(fragment))
         }
@@ -2029,7 +2029,7 @@ final class HubControllerTests: XCTestCase {
         let visibleGuidance = labels(in: sheet.window?.contentView)
             .map(\.stringValue)
             .joined(separator: " ")
-        for fragment in ["back up the source application", "update it to release 4.4.0 or later", "start it once",
+        for fragment in ["back up the source application", "update it to release 4.5.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
             XCTAssertTrue(visibleGuidance.contains(fragment))
         }
@@ -2049,7 +2049,7 @@ final class HubControllerTests: XCTestCase {
                 return XCTFail("missing acknowledgement was accepted")
             }
             XCTAssertEqual(error.localizedDescription,
-                           "Confirm the source application's release is 4.4.0 or later before checking compatibility.")
+                           "Confirm the source application's release is 4.5.0 or later before checking compatibility.")
             rejected.fulfill()
         }
 
@@ -2071,7 +2071,7 @@ final class HubControllerTests: XCTestCase {
                 return XCTFail("missing acknowledgement was accepted")
             }
             XCTAssertEqual(error.localizedDescription,
-                           "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.")
+                           "Confirm the source application's release is 4.5.0 or later before importing from a direct PostgreSQL source.")
             rejected.fulfill()
         }
 
@@ -2083,7 +2083,7 @@ final class HubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let runner = RecordingCommandRunner(result: .success(
-            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.4.0","guidance":"Check the source application first."}"#
+            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.5.0","guidance":"Check the source application first."}"#
         ))
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
@@ -4335,7 +4335,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(text.contains("collection windows is kept"))
         XCTAssertTrue(text.contains("nothing is replaced"))
         XCTAssertTrue(text.contains("Hub stops while it imports and starts again afterwards"))
-        XCTAssertTrue(text.contains("update it to release 4.4.0 or later"))
+        XCTAssertTrue(text.contains("update it to release 4.5.0 or later"))
     }
 
     func testHistoryOnlyImportConfigTurnsEveryCollectorPathOffAndKeepsTheRest() throws {
@@ -5209,7 +5209,7 @@ private final class MutatingFailureRunner: HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         if arguments.contains("source-check") {
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -5274,7 +5274,7 @@ private final class ScriptedRunner: HubCommandRunning {
         if arguments.contains("source-check") {
             events.append("check")
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -5460,8 +5460,8 @@ private final class ScriptedService: HubServiceControlling {
 extension HubControllerTests {
     /// Every `service` action a site issues, in order, plus the sites' own commands.
     private final class SiteRunner: HubCommandRunning {
-        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
-        static let compatibility = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+        static let compatibility = #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
         static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
         private(set) var commands: [String] = []
         var historyPreflightFails = false
@@ -6624,7 +6624,7 @@ private final class AfterWindowsRunner: HubCommandRunning {
         if arguments.contains("source-check") {
             events.append("check")
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
             ))
             return
         }
