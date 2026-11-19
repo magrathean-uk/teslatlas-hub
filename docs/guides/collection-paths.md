@@ -43,6 +43,9 @@ The app can find a deployment that is already stopped. Stop its application
 containers and disconnect its dashboards and other database clients, leaving
 PostgreSQL running. Disable automatic restart and keep the application stopped;
 closing its web page or pausing collection is insufficient.
+Guided import reads the source application's own database user and password from
+its container and uses that same pair to identify the car and read the history;
+it does not ask for a separate read-only account. The import itself only reads.
 The history import sets up the selected car first. With no car, take-over
 refuses with `history_import_required` and asks you to import history first.
 Hub then takes over its stored Tesla login using the encryption key
