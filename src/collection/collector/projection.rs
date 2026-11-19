@@ -1296,13 +1296,24 @@ fn observation_vehicle_state(payload: &Value) -> String {
         .to_owned()
 }
 
+/// The time that orders a polling reply: the latest plausible time of its
+/// groups and of the reply itself. A reply whose drive group is older than the
+/// stored one can still carry newer charge, climate or vehicle facts, and is
+/// ordered by them so the store does not discard it whole (P06-F07); each group
+/// is still judged by its own time in the lifecycle projection.
 fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
     let fields = snapshot.fields();
-    let candidates = [
+    let group_time = |group: &str| {
         fields
-            .get("drive_state")
+            .get(group)
             .and_then(Value::as_object)
-            .and_then(|drive_state| drive_state.get("timestamp")),
+            .and_then(|group| group.get("timestamp"))
+    };
+    let candidates = [
+        group_time("drive_state"),
+        group_time("charge_state"),
+        group_time("climate_state"),
+        group_time("vehicle_state"),
         fields.get("timestamp"),
     ];
     let maximum = received_at_ms.saturating_add(K_SKEW_MS);
@@ -1310,7 +1321,8 @@ fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
         .into_iter()
         .flatten()
         .filter_map(Value::as_i64)
-        .find(|timestamp| (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum))
+        .filter(|timestamp| (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum))
+        .max()
         .unwrap_or(received_at_ms)
 }
 
@@ -1330,4 +1342,66 @@ fn assert_runtime_sensitive_access(
     admission
         .assert_sensitive_access()
         .map_err(|_| CollectorError::SensitiveAccessUnavailable)
+}
+
+#[cfg(test)]
+mod astra_p06_f07_tests {
+    use super::*;
+
+    fn poll(drive_ms: i64, charge_ms: i64, battery_level: i64) -> ManualCollection {
+        ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA0KF000009", "online")],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                serde_json::json!({
+                    "drive_state": {"timestamp": drive_ms, "shift_state": null},
+                    "charge_state": {"timestamp": charge_ms, "battery_level": battery_level}
+                }),
+            )],
+            failures: vec![],
+        }
+    }
+
+    #[test]
+    fn astra_p06_issue_late_drive_keeps_newer_battery_facts() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t0 = 1_800_000_000_000_i64;
+        let first = persist_collection_atomic_for_provider(
+            &store,
+            &poll(t0, t0, 50),
+            t0 + 1_000,
+            CollectorProvider::Legacy,
+        )
+        .expect("first poll");
+        assert_eq!(first.observations_inserted, 1);
+        // The drive group is one second older than the stored reply's; the
+        // charge group and its battery reading are newer.
+        let second = persist_collection_atomic_for_provider(
+            &store,
+            &poll(t0 - 1_000, t0 + 60_000, 51),
+            t0 + 61_000,
+            CollectorProvider::Legacy,
+        )
+        .expect("second poll");
+        assert_eq!(second.observations_inserted, 1, "the newer battery reading is stored");
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let lifecycle = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("lifecycle query")
+            .expect("lifecycle state");
+        let state = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
+        assert_eq!(state.last_battery_fact_ms, Some(t0 + 60_000));
+        assert!(
+            state.last_drive_timestamp_ms.is_none_or(|ms| ms <= t0),
+            "the older drive group stays stale"
+        );
+    }
 }
