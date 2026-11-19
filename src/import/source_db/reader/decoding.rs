@@ -412,6 +412,8 @@ pub enum SourceDbReaderError {
     NativeTrustStoreUnavailable,
     #[error("Source database PostgreSQL connection timed out")]
     ConnectTimedOut,
+    #[error("Source database PostgreSQL did not reply within the client deadline")]
+    SourceReplyTimedOut,
     #[error(
         "Source database PostgreSQL COPY statement timeout must be between 60 seconds and 24 hours"
     )]
@@ -597,6 +599,7 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
                 SourceDbReaderError::InvalidParallelCopyLanes => (),
                 SourceDbReaderError::NativeTrustStoreUnavailable => (),
                 SourceDbReaderError::ConnectTimedOut => (),
+                SourceDbReaderError::SourceReplyTimedOut => (),
                 SourceDbReaderError::InvalidCopyStatementTimeout => (),
                 SourceDbReaderError::SnapshotRollbackTimedOut => (),
                 SourceDbReaderError::SnapshotConnectionShutdownTimedOut => (),
@@ -666,6 +669,7 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
         check_source_db_reader_error(SourceDbReaderError::InvalidParallelCopyLanes);
         check_source_db_reader_error(SourceDbReaderError::NativeTrustStoreUnavailable);
         check_source_db_reader_error(SourceDbReaderError::ConnectTimedOut);
+        check_source_db_reader_error(SourceDbReaderError::SourceReplyTimedOut);
         check_source_db_reader_error(SourceDbReaderError::InvalidCopyStatementTimeout);
         check_source_db_reader_error(SourceDbReaderError::SnapshotRollbackTimedOut);
         check_source_db_reader_error(SourceDbReaderError::SnapshotConnectionShutdownTimedOut);

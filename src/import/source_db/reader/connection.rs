@@ -165,6 +165,7 @@ pub(crate) async fn connect_source(
         .user(user)
         .password(password.as_str())
         .dbname(source.database_name());
+    configure_source_keepalives(&mut configuration);
     if matches!(source_transport(source), SourceTransport::PlaintextLoopback) {
         configuration.ssl_mode(SslMode::Disable);
         let (client, connection) = timeout(limits.connect_timeout, configuration.connect(NoTls))
@@ -190,6 +191,48 @@ pub(crate) async fn connect_source(
         .map_err(|_| SourceDbReaderError::ConnectTimedOut)??;
     let connection_task = tokio::spawn(drive_source_connection(connection));
     Ok((client, connection_task))
+}
+
+/// Grace beyond the source's statement timeout for one reply. The source ends
+/// a slow statement first; this bounds a peer that keeps the transport open
+/// but has stopped replying.
+const SOURCE_REPLY_GRACE: Duration = Duration::from_secs(5 * 60);
+/// TCP keepalive probes find a source host that went away without closing the
+/// connection.
+const SOURCE_KEEPALIVE_IDLE: Duration = Duration::from_secs(60);
+const SOURCE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+const SOURCE_KEEPALIVE_RETRIES: u32 = 4;
+
+fn configure_source_keepalives(configuration: &mut Config) {
+    configuration
+        .keepalives(true)
+        .keepalives_idle(SOURCE_KEEPALIVE_IDLE)
+        .keepalives_interval(SOURCE_KEEPALIVE_INTERVAL)
+        .keepalives_retries(SOURCE_KEEPALIVE_RETRIES);
+}
+
+/// The client-side deadline for one reply of the source under `limits`.
+pub(crate) fn source_reply_deadline(limits: SourceDbReadLimits) -> Duration {
+    limits
+        .copy_statement_timeout
+        .saturating_add(SOURCE_REPLY_GRACE)
+}
+
+/// Await one reply of the source, such as the next COPY row, for at most
+/// `deadline`. A stalled peer ends the read with the typed
+/// [`SourceDbReaderError::SourceReplyTimedOut`]; the caller then drops its
+/// session, which releases the connection task.
+pub(crate) async fn within_source_reply_deadline<T, E>(
+    deadline: Duration,
+    reply: impl std::future::Future<Output = Result<T, E>>,
+) -> Result<T, SourceDbReaderError>
+where
+    SourceDbReaderError: From<E>,
+{
+    match timeout(deadline, reply).await {
+        Ok(result) => result.map_err(SourceDbReaderError::from),
+        Err(_) => Err(SourceDbReaderError::SourceReplyTimedOut),
+    }
 }
 
 /// Drive a source connection until it ends. The driver's own `Future` writes
@@ -352,5 +395,64 @@ mod source_wire_tests {
         }
         drop(client);
         driver.await.expect("the driver ends with the connection");
+    }
+
+    /// A peer that authenticates, then keeps the transport open without
+    /// replying, ends the wait with the typed deadline error, and dropping the
+    /// session releases the connection task.
+    #[tokio::test(start_paused = true)]
+    async fn a_stalled_source_reply_ends_with_a_typed_error_and_releases_the_connection() {
+        let (client, connection) = connect_in_memory(|mut server| async move {
+            accept(&mut server).await;
+            read_request(&mut server).await;
+            std::future::pending::<()>().await;
+        })
+        .await;
+        let (released, connection_released) = tokio::sync::oneshot::channel::<()>();
+        let connection_task = tokio::spawn(async move {
+            let _released = released;
+            drive_source_connection(connection).await;
+        });
+        let session = SourceDbSnapshotSession::new(client, connection_task);
+        let error = within_source_reply_deadline(
+            Duration::from_secs(60),
+            session.client().batch_execute("SELECT 1"),
+        )
+        .await
+        .expect_err("the source never replies");
+        assert!(
+            matches!(error, SourceDbReaderError::SourceReplyTimedOut),
+            "{error}"
+        );
+        drop(session);
+        assert!(
+            connection_released.await.is_err(),
+            "the connection task ended without completing"
+        );
+    }
+
+    #[test]
+    fn the_reply_deadline_outlasts_the_source_statement_timeout() {
+        let limits = SourceDbReadLimits::default();
+        assert_eq!(
+            source_reply_deadline(limits),
+            limits.copy_statement_timeout + SOURCE_REPLY_GRACE
+        );
+    }
+
+    #[test]
+    fn source_connections_probe_a_peer_that_went_away() {
+        let mut configuration = Config::new();
+        configure_source_keepalives(&mut configuration);
+        assert!(configuration.get_keepalives());
+        assert_eq!(configuration.get_keepalives_idle(), SOURCE_KEEPALIVE_IDLE);
+        assert_eq!(
+            configuration.get_keepalives_interval(),
+            Some(SOURCE_KEEPALIVE_INTERVAL)
+        );
+        assert_eq!(
+            configuration.get_keepalives_retries(),
+            Some(SOURCE_KEEPALIVE_RETRIES)
+        );
     }
 }

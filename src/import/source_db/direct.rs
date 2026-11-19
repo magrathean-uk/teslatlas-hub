@@ -9,7 +9,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::Path,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -48,7 +48,8 @@ use crate::{
         SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo, SourceReadBudget,
         binary_copy_sql, charge_copy_types, decode_binary_charge, decode_binary_position,
         PostgresFailure, open_bounded_copy, open_exported_snapshot_lease,
-        open_snapshot_capture_lane, position_copy_types,
+        open_snapshot_capture_lane, position_copy_types, source_reply_deadline,
+        within_source_reply_deadline,
         query_bounded, read_addresses, read_car_and_car_settings_v2_2, read_cars,
         read_charging_processes, read_drives, read_geofences, read_open_session,
         read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
@@ -1225,6 +1226,7 @@ async fn write_from_session(
         &processes,
         &mut related_positions,
         retention.related_position_cache_ids,
+        source_reply_deadline(read_limits),
     )
     .await?;
     tracing::info!(
@@ -1960,19 +1962,23 @@ async fn write_positions(
         selected_car_id,
         "starting source database position history capture"
     );
-    let mut rows = open_bounded_copy(
-        client,
-        &binary_copy_sql(SourceTable::Positions, selected_car_id_i16),
-        position_copy_types(),
-        "positions",
-        DIRECT_COPY_ROW_BUDGET,
+    let reply_deadline = source_reply_deadline(read_limits);
+    let mut rows = within_source_reply_deadline(
+        reply_deadline,
+        open_bounded_copy(
+            client,
+            &binary_copy_sql(SourceTable::Positions, selected_car_id_i16),
+            position_copy_types(),
+            "positions",
+            DIRECT_COPY_ROW_BUDGET,
+        ),
     )
     .await?;
     tracing::info!(
         selected_car_id,
         "Source database position history stream opened"
     );
-    while let Some(row) = rows.next_row().await? {
+    while let Some(row) = within_source_reply_deadline(reply_deadline, rows.next_row()).await? {
         source_position_rows = source_position_rows.checked_add(1).ok_or(
             SourceDbDirectError::MaximumRowsExceeded {
                 maximum: read_limits.maximum_rows,
@@ -2135,17 +2141,21 @@ async fn write_charges(
             });
         }
     }
+    let reply_deadline = source_reply_deadline(read_limits);
     let mut facts = HashMap::<i64, ChargeProjectionFacts>::with_capacity(processes.len());
     let mut sample_counts = HashMap::<i64, u64>::with_capacity(processes.len());
-    let mut rows = open_bounded_copy(
-        client,
-        &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
-        charge_copy_types(),
-        "charges",
-        DIRECT_COPY_ROW_BUDGET,
+    let mut rows = within_source_reply_deadline(
+        reply_deadline,
+        open_bounded_copy(
+            client,
+            &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
+            charge_copy_types(),
+            "charges",
+            DIRECT_COPY_ROW_BUDGET,
+        ),
     )
     .await?;
-    while let Some(row) = rows.next_row().await? {
+    while let Some(row) = within_source_reply_deadline(reply_deadline, rows.next_row()).await? {
         *retained_rows =
             retained_rows
                 .checked_add(1)
@@ -2226,15 +2236,18 @@ async fn write_charges(
 
     let mut samples = FragmentAccumulator::new(car.clone(), limits)?;
     let mut second_pass_rows = 0_usize;
-    let mut rows = open_bounded_copy(
-        client,
-        &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
-        charge_copy_types(),
-        "charges",
-        DIRECT_COPY_ROW_BUDGET,
+    let mut rows = within_source_reply_deadline(
+        reply_deadline,
+        open_bounded_copy(
+            client,
+            &binary_copy_sql(SourceTable::Charges, selected_car_id_i16),
+            charge_copy_types(),
+            "charges",
+            DIRECT_COPY_ROW_BUDGET,
+        ),
     )
     .await?;
-    while let Some(row) = rows.next_row().await? {
+    while let Some(row) = within_source_reply_deadline(reply_deadline, rows.next_row()).await? {
         second_pass_rows =
             second_pass_rows
                 .checked_add(1)
@@ -2315,6 +2328,7 @@ async fn prefetch_related_positions(
     processes: &[SourceDbChargingProcess],
     cache: &mut HashMap<i64, SourceDbPosition>,
     maximum: usize,
+    reply_deadline: Duration,
 ) -> Result<(), SourceDbDirectError> {
     if cache.len() > maximum {
         return Err(SourceDbDirectError::RelatedPositionCacheLimitExceeded { maximum });
@@ -2346,12 +2360,28 @@ async fn prefetch_related_positions(
     for id in ids {
         batch.push(id);
         if batch.len() == RELATED_POSITION_BATCH_SIZE {
-            fetch_related_position_batch(client, selected_car_id, &batch, cache, maximum).await?;
+            fetch_related_position_batch(
+                client,
+                selected_car_id,
+                &batch,
+                cache,
+                maximum,
+                reply_deadline,
+            )
+            .await?;
             batch.clear();
         }
     }
     if !batch.is_empty() {
-        fetch_related_position_batch(client, selected_car_id, &batch, cache, maximum).await?;
+        fetch_related_position_batch(
+            client,
+            selected_car_id,
+            &batch,
+            cache,
+            maximum,
+            reply_deadline,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -2362,17 +2392,21 @@ async fn fetch_related_position_batch(
     ids: &[i32],
     cache: &mut HashMap<i64, SourceDbPosition>,
     maximum: usize,
+    reply_deadline: Duration,
 ) -> Result<(), SourceDbDirectError> {
     let sql = related_positions_binary_copy_sql(selected_car_id, ids);
-    let mut rows = open_bounded_copy(
-        client,
-        &sql,
-        position_copy_types(),
-        "positions",
-        DIRECT_COPY_ROW_BUDGET,
+    let mut rows = within_source_reply_deadline(
+        reply_deadline,
+        open_bounded_copy(
+            client,
+            &sql,
+            position_copy_types(),
+            "positions",
+            DIRECT_COPY_ROW_BUDGET,
+        ),
     )
     .await?;
-    while let Some(row) = rows.next_row().await? {
+    while let Some(row) = within_source_reply_deadline(reply_deadline, rows.next_row()).await? {
         let position = decode_binary_position(&row)?;
         if cache.contains_key(&position.id) {
             continue;
