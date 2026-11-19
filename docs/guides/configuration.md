@@ -208,8 +208,9 @@ only the first.
 
 `status` adds `collectionAttention`, `readinessDetail` (healthy states worth showing:
 `collector_cap_warning`, `collector_rate_limited`, `collector_vehicle_paused`,
-`collector_tesla_unreachable` and `collector_gap_unnotified`, which never repeat the
-attention), `collectorRunning` and, with the redacted lease timing in `collector`, a
+`collector_tesla_unreachable`, `collector_gap_unnotified` and
+`collector_inventory_unavailable` (the vehicle list failed three times in a row; one
+accepted list clears it), which never repeat the attention), `collectorRunning` and, with the redacted lease timing in `collector`, a
 `collectorCadenceError` only while a cadence rule is broken. `collectorRunning` is true
 while the collector holds an unexpired lease, including a terminal one; lease times do not
 show when a process really stopped. `doctor` reports the same under `collector`
