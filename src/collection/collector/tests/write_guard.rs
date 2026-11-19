@@ -519,6 +519,7 @@ fn p05_f04_a_dequeued_frame_survives_the_window_close() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     }];
@@ -607,6 +608,7 @@ fn p05_f04_a_stopped_stream_keeps_its_refused_frames_for_the_shutdown_stop() {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: None,
             held_frame: None,
         }];
@@ -731,6 +733,7 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     };
