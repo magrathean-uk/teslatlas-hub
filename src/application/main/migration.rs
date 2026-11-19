@@ -189,6 +189,10 @@ async fn run_macos_migration_prepared(
         &config.data_dir,
     )?;
     limits.parallel_copy_lanes = profile.parallel_copy_lanes;
+    // Admit the source and the selected car before any Hub target state
+    // exists: a refused source leaves no store, credential vault or cursor
+    // key behind. The capture admits the source again in its own snapshot.
+    check_source_history_compatibility(&source, &postgres_password, car_id, limits).await?;
     if history_only {
         let store = HubStore::initialize(&config.data_dir)?;
         let _entry = tesatlas_hub::open_credential_vault_for_entry(store.clone(), std::sync::Arc::clone(admission), &config.data_dir)
@@ -695,3 +699,67 @@ mod final_capture_scope_tests {
     }
 }
 
+#[cfg(all(unix, test))]
+mod source_admission_order_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn listing(directory: &Path) -> Vec<std::ffi::OsString> {
+        let mut names: Vec<_> = fs::read_dir(directory)
+            .expect("listing")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A source that refuses the connection (nothing listens on the loopback
+    /// discard port) is reported before the store, the credential vault or
+    /// the cursor key of a fresh target is created.
+    #[tokio::test]
+    async fn refused_source_creates_no_hub_target_state() {
+        for history_only in [true, false] {
+            let temporary = tempfile::tempdir().expect("temporary directory");
+            let data_dir = temporary.path().join("data");
+            fs::create_dir(&data_dir).expect("data directory");
+            fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o700))
+                .expect("private data directory");
+            let config_path = temporary.path().join("config.toml");
+            fs::write(
+                &config_path,
+                format!(
+                    "data_dir = {data_dir:?}\nbind = '127.0.0.1:18443'\n[collector]\ninterval_seconds = 0\n[collector.legacy_auth]\nenabled = false\n"
+                ),
+            )
+            .expect("configuration");
+            let password_path = temporary.path().join("password");
+            fs::write(&password_path, "synthetic-password").expect("password");
+            fs::set_permissions(&password_path, fs::Permissions::from_mode(0o600))
+                .expect("private password");
+            let admission = AdmittedUserHub::admit(&data_dir).expect("admission");
+            let before = listing(&data_dir);
+            run_macos_migration(
+                &admission,
+                MacMigrationInput {
+                    config_path: &config_path,
+                    source_url: "postgresql://reader@127.0.0.1:9/sourcedb",
+                    car_id: 42,
+                    source_key: None,
+                    new_import_source: true,
+                    postgres_password_file: &password_path,
+                    history_only,
+                    encryption_key_file: None,
+                    access_token_file: None,
+                    refresh_token_file: None,
+                    online_snapshot: true,
+                    preserve_existing_credentials: false,
+                },
+            )
+            .await
+            .expect_err("the source refuses the connection");
+            assert_eq!(listing(&data_dir), before, "history_only = {history_only}");
+            assert!(!data_dir.join("hub.sqlite").exists());
+            assert!(!tesatlas_hub::legacy_owner_credentials::cursor_key_path(&data_dir).exists());
+        }
+    }
+}
