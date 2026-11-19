@@ -833,6 +833,54 @@ fn source_db_schema_20261102130000_is_the_accepted_reviewed_set() {
         hex::encode(digest.finalize()),
         SOURCE_DB_V4_MIGRATION_SET_SHA256
     );
+    // Pinned literal: the v4.5.0 database's 108 migrations, newest 20261102130000.
+    assert_eq!(
+        SOURCE_DB_V4_MIGRATION_SET_SHA256,
+        "65c5af7596b2a550cccc03203be2825ef1ce892154e1dc2ed573ad0cbb9db3da"
+    );
+    assert_eq!(PINNED_MIGRATION_VERSIONS.last(), Some(&20_261_102_130_000));
+}
+
+/// v4.5.0 adds the `terrain_elevation_queue` table. The importer does not read
+/// it: no probe or projection names it, and its columns in a probe result do
+/// not change admission.
+#[test]
+fn v4_5_terrain_elevation_queue_is_not_read_and_does_not_trip_the_probe() {
+    const NEW_TABLE: &str = "terrain_elevation_queue";
+    for sql in [
+        MIGRATION_VERSION_SQL,
+        MIGRATION_VERSIONS_SQL,
+        SCHEMA_PROBE_SQL,
+        ENUM_PROBE_SQL,
+        SETTINGS_RELATIONSHIP_SQL,
+    ] {
+        assert!(!sql.contains(NEW_TABLE));
+    }
+    for table in SourceTable::ALL {
+        assert_ne!(table.name(), NEW_TABLE);
+        assert!(!projection(table).sql.contains(NEW_TABLE));
+    }
+
+    let mut observed = complete_schema();
+    observed.push(ObservedColumn {
+        table: NEW_TABLE,
+        name: "drive_id",
+        type_name: "int4",
+        format_type: "integer",
+        nullable: false,
+    });
+    observed.push(ObservedColumn {
+        table: NEW_TABLE,
+        name: "attempted_at",
+        type_name: "timestamp",
+        format_type: "timestamp without time zone",
+        nullable: true,
+    });
+    assert_eq!(validate_observed_schema(&observed), Ok(()));
+    assert_eq!(
+        validate_migration_versions(&PINNED_MIGRATION_VERSIONS),
+        Ok(20_261_102_130_000)
+    );
 }
 
 #[test]
