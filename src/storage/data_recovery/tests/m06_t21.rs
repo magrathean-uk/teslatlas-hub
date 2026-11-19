@@ -199,7 +199,7 @@ fn backup_catalogue_growing_past_the_budget_under_the_gate_refuses_before_copyin
             for index in 0..400 {
                 store
                     .register_source(
-                        &SourceDescriptor::new("tesla_owner_api", &format!("m06-t21-grow-{index}")),
+                        &SourceDescriptor::new("tesla_owner_api", format!("m06-t21-grow-{index}")),
                         1_000,
                     )
                     .expect("growth");
@@ -240,7 +240,7 @@ fn backup_catalogue_outgrowing_its_scratch_room_under_the_gate_stops_before_copy
                     .register_source(
                         &SourceDescriptor::new(
                             "tesla_owner_api",
-                            &format!("m06-t21-room-{index}-{}", "y".repeat(200)),
+                            format!("m06-t21-room-{index}-{}", "y".repeat(200)),
                         ),
                         1_000,
                     )
