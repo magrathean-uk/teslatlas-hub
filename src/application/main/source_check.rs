@@ -14,15 +14,36 @@ impl CatalogueCheckpointGuard {
     }
 
     fn finish(&mut self) -> Result<(), tesatlas_hub::db::StoreError> {
+        if !self.armed {
+            return Ok(());
+        }
         let result = self.store.checkpoint_catalogue_for_immutable_read();
         self.armed = false;
         result
+    }
+
+    /// The final checkpoint of a stopping service (issue #38): it runs only
+    /// while the shutdown budget has time left, and says whether it ran. A
+    /// skipped checkpoint leaves the write-ahead log to SQLite's recovery at
+    /// the next open; nothing committed is lost.
+    #[cfg(unix)]
+    fn finish_within(
+        &mut self,
+        budget: &tesatlas_hub::runtime::shutdown::ShutdownBudget,
+    ) -> Result<bool, tesatlas_hub::db::StoreError> {
+        if budget.work_exhausted() {
+            self.armed = false;
+            return Ok(false);
+        }
+        self.finish().map(|()| true)
     }
 }
 
 impl Drop for CatalogueCheckpointGuard {
     fn drop(&mut self) {
-        if self.armed {
+        // A service whose shutdown budget is spent does not start another
+        // unbounded checkpoint on its way out.
+        if self.armed && !tesatlas_hub::runtime::shutdown::ShutdownBudget::process().work_exhausted() {
             let _ = self.store.checkpoint_catalogue_for_immutable_read();
         }
     }

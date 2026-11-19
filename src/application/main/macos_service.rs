@@ -79,17 +79,30 @@ struct MacServeWorker {
     task: tokio::task::JoinHandle<std::io::Result<()>>,
 }
 
-// Unit tests use a short stop bound so a non-cooperative fake worker can prove
+#[cfg(unix)]
+use tesatlas_hub::runtime::shutdown::ShutdownBudget;
+
+// The service stop shares the process's one shutdown budget (issue #38).
+// Unit tests use a short budget so a non-cooperative fake worker can prove
 // the abort path without a real wait.
 #[cfg(all(unix, not(test)))]
-const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_secs(120);
+fn macos_serve_default_budget() -> std::sync::Arc<ShutdownBudget> {
+    ShutdownBudget::process()
+}
 #[cfg(all(unix, test))]
-const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_millis(50);
+fn macos_serve_default_budget() -> std::sync::Arc<ShutdownBudget> {
+    std::sync::Arc::new(ShutdownBudget::new(
+        std::sync::Arc::new(tesatlas_hub::runtime::shutdown::SystemMonotonic::default()),
+        Duration::from_millis(60),
+        Duration::from_millis(10),
+    ))
+}
 
 #[cfg(unix)]
 #[derive(Debug)]
 struct MacServeWorkerStopTimeout {
     label: &'static str,
+    budget_ms: u128,
 }
 
 #[cfg(unix)]
@@ -97,9 +110,8 @@ impl std::fmt::Display for MacServeWorkerStopTimeout {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "Hub {} worker did not stop within {} milliseconds",
-            self.label,
-            MACOS_SERVE_STOP_TIMEOUT.as_millis()
+            "Hub {} worker did not stop within the {} millisecond shutdown budget",
+            self.label, self.budget_ms
         )
     }
 }
@@ -131,16 +143,22 @@ impl MacServeWorker {
         self.join_result(result)
     }
 
-    async fn stop_and_wait(&mut self) -> std::io::Result<()> {
+    /// Requests the stop and waits only for what is left of the shared
+    /// shutdown budget; the first stop starts it.
+    async fn stop_and_wait(&mut self, budget: &ShutdownBudget) -> std::io::Result<()> {
         self.request_stop();
-        match tokio::time::timeout(MACOS_SERVE_STOP_TIMEOUT, &mut self.task).await {
+        let left = budget.remaining_for_work();
+        match tokio::time::timeout(left, &mut self.task).await {
             Ok(result) => self.join_result(result),
             Err(_) => {
                 self.task.abort();
                 let _ = (&mut self.task).await;
                 Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    MacServeWorkerStopTimeout { label: self.label },
+                    MacServeWorkerStopTimeout {
+                        label: self.label,
+                        budget_ms: budget.work_budget().as_millis(),
+                    },
                 ))
             }
         }
@@ -263,11 +281,12 @@ impl MacCommandProxy {
         self.child.wait().await
     }
 
-    async fn stop(&mut self) -> std::io::Result<()> {
+    async fn stop(&mut self, budget: &ShutdownBudget) -> std::io::Result<()> {
         if self.child.try_wait()?.is_none() {
             self.child.start_kill()?;
         }
-        tokio::time::timeout(Duration::from_secs(5), self.child.wait())
+        let wait = budget.remaining_for_work().min(Duration::from_secs(5));
+        tokio::time::timeout(wait, self.child.wait())
             .await
             .map_err(|_| {
                 std::io::Error::new(
@@ -335,6 +354,35 @@ where
     SF: FnOnce(Option<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> S,
     Control: Future<Output = MacServeControl>,
 {
+    run_macos_serve_supervisor_within(
+        macos_serve_default_budget(),
+        collector_enabled,
+        collector_start,
+        server_start,
+        control,
+    )
+    .await
+}
+
+/// [`run_macos_serve_supervisor`] on an explicit shutdown budget. Every stop
+/// below waits only for what is left of it, and both workers are stopped
+/// together, not one budget after the other.
+#[cfg(unix)]
+async fn run_macos_serve_supervisor_within<C, S, CF, SF, Control>(
+    budget: std::sync::Arc<ShutdownBudget>,
+    collector_enabled: bool,
+    collector_start: CF,
+    server_start: SF,
+    control: Control,
+) -> std::io::Result<()>
+where
+    C: Future<Output = std::io::Result<()>> + Send + 'static,
+    S: Future<Output = std::io::Result<()>> + Send + 'static,
+    CF: FnOnce(tokio::sync::oneshot::Sender<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> C,
+    SF: FnOnce(Option<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> S,
+    Control: Future<Output = MacServeControl>,
+{
+    let budget = budget.as_ref();
     tokio::pin!(control);
 
     // A collector-disabled runtime has no legacy Owner collector or Tesla
@@ -350,7 +398,7 @@ where
         return tokio::select! {
             result = server.wait() => result,
             control = &mut control => {
-                let server_result = server.stop_and_wait().await;
+                let server_result = server.stop_and_wait(budget).await;
                 match control {
                     MacServeControl::Shutdown => server_result,
                     MacServeControl::AdmissionInvalidated(error) => {
@@ -378,7 +426,7 @@ where
     let cursor_key = tokio::select! {
         received = &mut ready_rx => match received {
             Ok(cursor_key) => cursor_key,
-            Err(_) => match collector.stop_and_wait().await {
+            Err(_) => match collector.stop_and_wait(budget).await {
                 Ok(()) => return Err(std::io::Error::other("macOS collector exited before readiness")),
                 Err(error) => return Err(error),
             },
@@ -388,7 +436,7 @@ where
             Err(error) => return Err(error),
         },
         control = &mut control => {
-            let stop_result = collector.stop_and_wait().await;
+            let stop_result = collector.stop_and_wait(budget).await;
             return match control {
                 MacServeControl::Shutdown => stop_result,
                 MacServeControl::AdmissionInvalidated(error) => {
@@ -418,12 +466,12 @@ where
     match outcome {
         MacServeActiveOutcome::Server(result) => {
             server.request_stop();
-            let collector_stop_result = collector.stop_and_wait().await;
+            let collector_stop_result = collector.stop_and_wait(budget).await;
             preserve_active_result_after_stop(result, collector_stop_result)
         }
         MacServeActiveOutcome::Collector(result) => {
             collector.request_stop();
-            let server_stop_result = server.stop_and_wait().await;
+            let server_stop_result = server.stop_and_wait(budget).await;
             let collector_result = match result {
                 Ok(()) => Err(std::io::Error::other(
                     "macOS collector exited while Serve was active",
@@ -435,8 +483,10 @@ where
         MacServeActiveOutcome::Control(control) => {
             server.request_stop();
             collector.request_stop();
-            let server_result = server.stop_and_wait().await;
-            let collector_result = collector.stop_and_wait().await;
+            let (server_result, collector_result) = tokio::join!(
+                server.stop_and_wait(budget),
+                collector.stop_and_wait(budget)
+            );
             if is_macos_serve_stop_timeout(&server_result) {
                 return server_result;
             }
@@ -456,6 +506,7 @@ where
 
 #[cfg(unix)]
 async fn run_macos_serve_with_optional_proxy<C, S, CF, SF, Control>(
+    budget: std::sync::Arc<ShutdownBudget>,
     proxy: Option<MacCommandProxySpec>,
     collector_enabled: bool,
     collector_start: CF,
@@ -470,7 +521,8 @@ where
     Control: Future<Output = MacServeControl>,
 {
     let Some(spec) = proxy else {
-        return run_macos_serve_supervisor(
+        return run_macos_serve_supervisor_within(
+            budget,
             collector_enabled,
             collector_start,
             server_start,
@@ -481,12 +533,17 @@ where
 
     let mut proxy = MacCommandProxy::start(spec).await?;
     if let Err(error) = proxy.wait_ready().await {
-        let _ = proxy.stop().await;
+        let _ = proxy.stop(&budget).await;
         return Err(error);
     }
 
-    let serve =
-        run_macos_serve_supervisor(collector_enabled, collector_start, server_start, control);
+    let serve = run_macos_serve_supervisor_within(
+        std::sync::Arc::clone(&budget),
+        collector_enabled,
+        collector_start,
+        server_start,
+        control,
+    );
     tokio::pin!(serve);
     let result = tokio::select! {
         result = &mut serve => result,
@@ -499,7 +556,7 @@ where
             ))),
         },
     };
-    let stop_result = proxy.stop().await;
+    let stop_result = proxy.stop(&budget).await;
     match (result, stop_result) {
         (Ok(()), Ok(())) => Ok(()),
         (Ok(()), Err(error)) => Err(error),
@@ -797,5 +854,84 @@ mod shutdown_error_tests {
         .await;
         let error = result.expect_err("failed collector cleanup must fail the command");
         assert!(error.to_string().contains("synthetic collector cleanup failure"));
+    }
+
+    /// A clock the test moves by hand.
+    #[derive(Default)]
+    struct HandClock(std::sync::atomic::AtomicU64);
+
+    impl tesatlas_hub::runtime::shutdown::MonotonicClock for HandClock {
+        fn now(&self) -> Duration {
+            Duration::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
+        }
+    }
+
+    /// Issue #38: two workers that ignore the stop are stopped together
+    /// within one budget, not one fixed wait after the other.
+    #[tokio::test]
+    async fn design_later_38_two_stuck_workers_share_one_budget() {
+        let budget = std::sync::Arc::new(ShutdownBudget::new(
+            std::sync::Arc::new(tesatlas_hub::runtime::shutdown::SystemMonotonic::default()),
+            Duration::from_millis(1100),
+            Duration::from_millis(100),
+        ));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let began = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let control_began = std::sync::Arc::clone(&began);
+        let result = run_macos_serve_supervisor_within(
+            std::sync::Arc::clone(&budget),
+            true,
+            |ready, _shutdown| async move {
+                let _ = ready.send(CursorKey::from_bytes([17; 32]));
+                std::future::pending::<std::io::Result<()>>().await
+            },
+            |_, _shutdown| async move {
+                let _ = started_tx.send(());
+                std::future::pending::<std::io::Result<()>>().await
+            },
+            async move {
+                let _ = started_rx.await;
+                *control_began.lock().unwrap() = Some(std::time::Instant::now());
+                MacServeControl::Shutdown
+            },
+        )
+        .await;
+        let took = began.lock().unwrap().expect("control fired").elapsed();
+        let error = result.expect_err("both workers outlive the budget");
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(error.to_string().contains("shutdown budget"), "{error}");
+        assert!(took >= Duration::from_millis(900), "the budget was used: {took:?}");
+        assert!(took < Duration::from_millis(1800), "one budget, not two: {took:?}");
+        assert!(budget.work_exhausted());
+    }
+
+    /// Issue #38: a stop accepted late gets only what is left of the budget
+    /// that started earlier (for example during the recovery wait).
+    #[tokio::test]
+    async fn design_later_38_a_late_stop_gets_only_the_remaining_budget() {
+        let clock = std::sync::Arc::new(HandClock::default());
+        let budget = std::sync::Arc::new(ShutdownBudget::new(
+            std::sync::Arc::clone(&clock) as std::sync::Arc<dyn tesatlas_hub::runtime::shutdown::MonotonicClock>,
+            Duration::from_secs(50),
+            Duration::from_secs(10),
+        ));
+        budget.begin();
+        clock.0.store(39_950, std::sync::atomic::Ordering::SeqCst);
+        let began = std::time::Instant::now();
+        let result = run_macos_serve_supervisor_within(
+            std::sync::Arc::clone(&budget),
+            false,
+            |_ready, _shutdown| async { Ok(()) },
+            |_, shutdown| async move {
+                let _ = shutdown.await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                Ok(())
+            },
+            async { MacServeControl::Shutdown },
+        )
+        .await;
+        let error = result.expect_err("the slow server outlives the remainder");
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(began.elapsed() < Duration::from_secs(2), "{:?}", began.elapsed());
     }
 }

@@ -1991,6 +1991,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .with_recovery(std::sync::Arc::clone(&recovery))),
                 )?;
+                // One shutdown budget for the whole stop (issue #38): it
+                // starts on the first accepted stop, during the recovery
+                // wait too, and every stage below takes from it.
+                let shutdown_budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+                let quiesce_backup = std::sync::Arc::clone(&backup_schedule);
                 let recovery_stop = if recovery.pending() {
                     tracing::warn!(
                         "this Hub's signed data has no cursor key; the API starts after restore-recovery-credentials"
@@ -2006,6 +2011,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
+                if recovery_stop.is_some() {
+                    shutdown_budget.begin();
+                    quiesce_backup.request_stop();
+                }
+                let control_budget = std::sync::Arc::clone(&shutdown_budget);
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -2017,6 +2027,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     stopped
                 } else {
                     run_macos_serve_with_optional_proxy(
+                        std::sync::Arc::clone(&shutdown_budget),
                         command_proxy,
                         false,
                         |_ready, _shutdown| async { Ok(()) },
@@ -2036,26 +2047,70 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             .await
                         },
                         async move {
-                            tokio::select! {
+                            let control = tokio::select! {
                                 error = control_admission.wait_until_invalid() => {
                                     MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
                                 }
                                 _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
                                 _ = sigterm.recv() => MacServeControl::Shutdown,
-                            }
+                            };
+                            // Accept the stop and quiesce new backups at once.
+                            control_budget.begin();
+                            quiesce_backup.request_stop();
+                            control
                         },
                     )
                     .await
                 };
-                drop(channel);
-                tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
-                tokio::task::spawn_blocking(move || supervisor.stop()).await?;
+                // The operator channel, the backup schedule and the window
+                // supervisor (with its collector and handback publications)
+                // stop together, each within what is left of the budget.
+                shutdown_budget.begin();
+                backup_schedule.request_stop();
+                let backup_budget = std::sync::Arc::clone(&shutdown_budget);
+                let supervisor_budget = std::sync::Arc::clone(&shutdown_budget);
+                let (channel_stop, backup_stop, supervisor_stop) = tokio::join!(
+                    tokio::task::spawn_blocking(move || drop(channel)),
+                    tokio::task::spawn_blocking(move || backup_schedule.stop_within(&backup_budget)),
+                    tokio::task::spawn_blocking(move || supervisor.stop_within(&supervisor_budget)),
+                );
                 drop(authority);
-                match &serve_result {
-                    Ok(()) => tracing::info!("Hub serve stopped cleanly"),
-                    Err(error) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                let mut cleanup_errors = Vec::new();
+                if let Err(error) = channel_stop {
+                    cleanup_errors.push(format!("operator channel stop failed: {error}"));
+                }
+                for stop in [backup_stop, supervisor_stop] {
+                    match stop {
+                        Ok(Ok(())) => {}
+                        Ok(Err(timeout)) => cleanup_errors.push(timeout.to_string()),
+                        Err(error) => cleanup_errors.push(format!("a shutdown stage failed: {error}")),
+                    }
+                }
+                for error in &cleanup_errors {
+                    tracing::warn!(%error, "Hub serve shutdown stage");
+                }
+                // The final checkpoint runs only with budget left; the stop
+                // is reported clean only after it succeeded.
+                let checkpointed = catalogue_checkpoint.finish_within(&shutdown_budget);
+                match (&serve_result, cleanup_errors.is_empty(), &checkpointed) {
+                    (Ok(()), true, Ok(true)) => tracing::info!("Hub serve stopped cleanly"),
+                    (Err(error), _, _) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                    (Ok(()), _, Err(error)) => {
+                        tracing::error!(%error, "Hub serve stopped; the final checkpoint failed")
+                    }
+                    (Ok(()), _, _) => tracing::warn!(
+                        "Hub serve stopped within its shutdown budget, not cleanly; the store recovers at its next open"
+                    ),
                 }
                 serve_result?;
+                checkpointed?;
+                if !cleanup_errors.is_empty() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        cleanup_errors.join("; "),
+                    )
+                    .into());
+                }
             }
         }
         #[cfg(unix)]

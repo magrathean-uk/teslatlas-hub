@@ -1541,3 +1541,45 @@ fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
     assert_eq!(status["intakeLatency"]["count"], 1, "{status}");
     assert_eq!(status["intakeLatency"]["maxMs"].as_f64(), Some(8.0));
 }
+
+/// A collector that never reports stopping.
+#[derive(Clone, Default)]
+struct StuckSlot {
+    stops: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl crate::collection::window::supervisor::CollectorSlot for StuckSlot {
+    fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
+        Ok(())
+    }
+    fn is_running(&mut self) -> bool {
+        true
+    }
+    fn stop(&mut self) {
+        self.stops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    fn release_lease(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Issue #38: the window supervisor's stop waits for a collector that does
+/// not stop only within the shared shutdown budget, not its own 30 seconds.
+#[test]
+fn design_later_38_supervisor_stop_gives_a_stuck_collector_only_the_budget() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let rig = Rig::new();
+    let slot = StuckSlot::default();
+    let thread = super::authority::SupervisorThread::spawn(Arc::clone(&rig.controller), slot.clone())
+        .expect("supervisor thread");
+    let budget = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_millis(400),
+        std::time::Duration::from_millis(100),
+    );
+    let began = std::time::Instant::now();
+    let _ = thread.stop_within(&budget);
+    let took = began.elapsed();
+    assert!(took < std::time::Duration::from_secs(3), "the stop took {took:?}");
+    assert!(slot.stops.load(std::sync::atomic::Ordering::SeqCst) >= 1, "the collector was told to stop");
+}

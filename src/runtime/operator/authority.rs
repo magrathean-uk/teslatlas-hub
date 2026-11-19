@@ -630,7 +630,8 @@ enum Signal {
     /// The collection configuration was reloaded: the supervisor forgets its
     /// start backoff and tries at once (M02-T24).
     Reloaded,
-    Stop,
+    /// Stop, waiting for the collector at most this long.
+    Stop(Duration),
 }
 
 /// How often a handback's physical publication asks for a busy publication
@@ -699,16 +700,20 @@ pub fn publish_window_after_handback(data_dir: &Path) {
 }
 
 /// Runs [`publish_window_after_handback`] off the calling thread, so a
-/// window's supervision never waits for a publication.
-fn spawn_handback_publication(data_dir: Option<PathBuf>) {
+/// window's supervision never waits for a publication. The thread is owned
+/// by `running` (issue #38): the supervisor joins it when the service stops,
+/// within the shutdown budget, instead of leaving it detached.
+fn spawn_handback_publication(data_dir: Option<PathBuf>, running: &mut Vec<JoinHandle<()>>) {
     let Some(data_dir) = data_dir else {
         return;
     };
+    running.retain(|handle| !handle.is_finished());
     let spawned = std::thread::Builder::new()
         .name("hub-handback-publication".to_owned())
         .spawn(move || publish_window_after_handback(&data_dir));
-    if let Err(error) = spawned {
-        tracing::warn!(%error, "handback publication did not start");
+    match spawned {
+        Ok(handle) => running.push(handle),
+        Err(error) => tracing::warn!(%error, "handback publication did not start"),
     }
 }
 
@@ -717,7 +722,7 @@ fn spawn_handback_publication(data_dir: Option<PathBuf>) {
 /// when the service stops (the window itself survives a restart; design 2.9).
 pub struct SupervisorThread {
     sender: mpsc::Sender<Signal>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<Vec<JoinHandle<()>>>>,
 }
 
 /// How long a stopping service waits for its collector to exit.
@@ -735,20 +740,21 @@ impl SupervisorThread {
             .spawn(move || {
                 // Once at service start: a handback whose publication did not
                 // finish is planned again (M03-T22).
-                spawn_handback_publication(controller.data_dir());
+                let mut publications = Vec::new();
+                spawn_handback_publication(controller.data_dir(), &mut publications);
                 let mut supervisor = Supervisor::new(controller.clone(), slot);
-                loop {
+                let collector_wait = loop {
                     let report = supervisor.step();
                     if let Some(reason) = report.closed {
                         tracing::info!(reason = reason.code(), "collection window closed");
-                        spawn_handback_publication(controller.data_dir());
+                        spawn_handback_publication(controller.data_dir(), &mut publications);
                     }
                     // A handback that did not reach the store's coverage is
                     // written again; the heads stay refused until it is, and
                     // then the window's data is published (M03-T22).
                     if controller.coverage_unreconciled() && controller.reconcile_coverage() {
                         tracing::info!("the window's handback reached the store's coverage");
-                        spawn_handback_publication(controller.data_dir());
+                        spawn_handback_publication(controller.data_dir(), &mut publications);
                     }
                     if let Some(fault) = report.fault {
                         tracing::warn!(code = fault.code(), "collection window fault");
@@ -762,11 +768,14 @@ impl SupervisorThread {
                         Ok(Signal::Reloaded) => {
                             supervisor.reset_start_backoff();
                         }
-                        Ok(Signal::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Ok(Signal::Stop(wait)) => break wait,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break COLLECTOR_STOP_WAIT,
                     }
-                }
+                };
                 drop(supervisor);
-                stop_for_shutdown(&mut shutdown_slot, COLLECTOR_STOP_WAIT);
+                stop_for_shutdown(&mut shutdown_slot, collector_wait);
+                publications.retain(|handle| !handle.is_finished());
+                publications
             })?;
         Ok(Self {
             sender,
@@ -800,10 +809,46 @@ impl SupervisorThread {
         self.shutdown();
     }
 
+    /// Stops the collector, the thread and the handback publications it
+    /// started, within what is left of the service's shutdown budget (issue
+    /// #38). The collector gets at most the remaining budget. A thread still
+    /// running when the budget ends is reported, not waited for: a
+    /// publication runs under the publication gate in SQLite transactions,
+    /// and a head it leaves refused is planned again at the next start.
+    pub fn stop_within(
+        mut self,
+        budget: &crate::runtime::shutdown::ShutdownBudget,
+    ) -> Result<(), crate::runtime::shutdown::ShutdownTimedOut> {
+        use crate::runtime::shutdown::join_within;
+        let collector_wait = budget.remaining_for_work().min(COLLECTOR_STOP_WAIT);
+        let _ = self.sender.send(Signal::Stop(collector_wait));
+        let Some(thread) = self.thread.take() else {
+            return Ok(());
+        };
+        let publications = match join_within(thread, budget, "window supervisor") {
+            Ok(Ok(publications)) => publications,
+            Ok(Err(_)) => Vec::new(),
+            Err((_thread, timeout)) => return Err(timeout),
+        };
+        let mut outcome = Ok(());
+        for publication in publications {
+            if let Err((_publication, timeout)) =
+                join_within(publication, budget, "handback publication")
+            {
+                outcome = Err(timeout);
+            }
+        }
+        outcome
+    }
+
     fn shutdown(&mut self) {
-        let _ = self.sender.send(Signal::Stop);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        let _ = self.sender.send(Signal::Stop(COLLECTOR_STOP_WAIT));
+        if let Some(thread) = self.thread.take()
+            && let Ok(publications) = thread.join()
+        {
+            for publication in publications {
+                let _ = publication.join();
+            }
         }
     }
 }

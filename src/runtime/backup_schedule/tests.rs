@@ -1326,3 +1326,48 @@ fn backup_password_source_an_equal_but_unusable_item_is_not_equal() {
         assert_eq!(refusal.code, BACKUP_PASSWORD_UNAVAILABLE);
     }
 }
+
+/// Issue #38: a stopping service quiesces its schedule at once, waits for a
+/// scheduled run only within the shared budget, keeps owning the run that
+/// outlives it, and starts no new manual backup.
+#[test]
+fn design_later_38_backup_stop_is_bounded_by_the_budget_and_starts_no_new_run() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let dir = tempfile::tempdir().unwrap();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::channel();
+    let runner = Arc::new(Blocking {
+        entered: entered_tx,
+        release: Mutex::new(release_rx),
+        runs: AtomicUsize::new(0),
+    });
+    let mut due = settings(true);
+    due.startup_delay_ms = 0;
+    let schedule = BackupScheduler::start(
+        due,
+        runner.clone(),
+        dir.path().join(state::STATE_FILE),
+        Box::new(|| false),
+    )
+    .expect("start");
+    entered_rx.recv_timeout(Duration::from_secs(10)).expect("the scheduled run started");
+    let budget = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+    );
+    let began = std::time::Instant::now();
+    let timeout = schedule.stop_within(&budget).expect_err("the run outlives the budget");
+    assert_eq!(timeout.stage, "backup schedule");
+    assert!(began.elapsed() < Duration::from_secs(2), "the stop is bounded: {:?}", began.elapsed());
+    assert!(schedule.thread.lock().unwrap().is_some(), "the run is still owned");
+    // No new backup starts once the stop was accepted.
+    let refused = schedule.run_now(None, None).expect_err("stopping");
+    assert_eq!(refused.code, BACKUP_CANCELLED);
+    assert_eq!(runner.runs.load(Ordering::SeqCst), 1);
+    // The owned run finishes and is joined.
+    release_tx.send(()).unwrap();
+    schedule.stop();
+    assert!(schedule.thread.lock().unwrap().is_none());
+    assert_eq!(runner.runs.load(Ordering::SeqCst), 1, "no run after the stop");
+}
