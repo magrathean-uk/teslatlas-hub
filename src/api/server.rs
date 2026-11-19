@@ -1133,25 +1133,25 @@ where
                 })
         }
     };
-    let publication_drain = match (collector_owns_replay, cursor_key.as_ref()) {
-        (false, Some(cursor_key)) => Some(crate::collector::PublicationDrain::spawn(
-            store.clone(),
-            cursor_key.clone(),
-            Some(std::sync::Arc::clone(&admission)),
-            crate::collector::PublicationDrainConfig::default(),
-        )),
+    // The publication and import workers run beside serving: they start once the
+    // listeners are bound, before the caller's listening work (M08-T32).
+    let drain_cursor_key = match (collector_owns_replay, cursor_key.as_ref()) {
+        (false, Some(cursor_key)) => Some(cursor_key.clone()),
         _ => None,
     };
     let (current_stop, stopped) = tokio::sync::oneshot::channel();
-    let mut current_worker = config.import_source.current.clone().map(|current| {
-        tokio::spawn(crate::collection::source_db_current::run(
-            store.clone(),
-            current,
-            std::sync::Arc::clone(&admission),
-            async move {
-                let _ = stopped.await;
-            },
-        ))
+    type StartedWorkers = (Option<crate::collector::PublicationDrain>, Option<tokio::task::JoinHandle<()>>);
+    let started_workers: Arc<Mutex<StartedWorkers>> = Arc::default();
+    let (started, worker_store, worker_admission) = (Arc::clone(&started_workers), store.clone(), Arc::clone(&admission));
+    let current = config.import_source.current.clone();
+    let start_workers: ListeningHook = Box::new(move || {
+        let drain = drain_cursor_key.map(|cursor_key| crate::collector::PublicationDrain::spawn(
+            worker_store.clone(), cursor_key, Some(Arc::clone(&worker_admission)),
+            crate::collector::PublicationDrainConfig::default()));
+        let current = current.map(|current| tokio::spawn(crate::collection::source_db_current::run(
+            worker_store, current, worker_admission, async move { let _ = stopped.await; })));
+        *started.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = (drain, current);
+        run_listening_hook(on_listening);
     });
     let result = serve_with_cursor_key_at(
         store,
@@ -1160,10 +1160,12 @@ where
         cursor_key,
         Some(admission),
         summary_now_ms,
-        on_listening,
+        Some(start_workers),
         shutdown,
     )
     .await;
+    let (publication_drain, mut current_worker) =
+        std::mem::take(&mut *started_workers.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     // The publication task ends cooperatively; its active bounded turn finishes
     // before serving returns.
     if let Some(drain) = publication_drain
@@ -1446,7 +1448,8 @@ async fn ingest_fleet_telemetry(
 }
 
 async fn ready(State(state): State<AppState>) -> impl IntoResponse {
-    let readiness = state.service_readiness().await;
+    // The credential store is read first: when it decides the answer, the service
+    // readiness, which reads the packs' metadata, is not read (M08-T32).
     let credential_store_error = {
         let store = Arc::clone(&state.store);
         let mode = state.readiness_mode;
@@ -1464,13 +1467,14 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
             }
         }).await.unwrap_or(true)
     };
-    let mut response = match (credential_store_error, readiness) {
-        (true, _) => (
+    let readiness = if credential_store_error { None } else { Some(state.service_readiness().await) };
+    let mut response = match readiness {
+        None => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready { status: "not_ready", reason: Some("credential_store_error") }),
         ).into_response(),
-        (false, Ok(())) => (
+        Some(Ok(())) => (
             StatusCode::OK,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {
@@ -1479,7 +1483,7 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
             }),
         )
             .into_response(),
-        (false, Err(reason)) => (
+        Some(Err(reason)) => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {

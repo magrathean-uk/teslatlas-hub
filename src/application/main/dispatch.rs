@@ -1341,7 +1341,74 @@ fn open_command_credential_vault(store: HubStore, admission: std::sync::Arc<Admi
     }
 }
 
+/// Serve's start, phase by phase (M08-T32): one log line per phase with its
+/// duration and the catalogue opens it made, so that a slow start says where
+/// its time went.
+struct StartPhases {
+    started: Instant,
+    last: Instant,
+    database_path: Option<PathBuf>,
+    opens: tesatlas_hub::db::CatalogueOpenCounts,
+}
+
+impl StartPhases {
+    fn new(started: Instant) -> Self {
+        Self {
+            started,
+            last: Instant::now(),
+            database_path: None,
+            opens: tesatlas_hub::db::CatalogueOpenCounts::default(),
+        }
+    }
+
+    fn milliseconds(duration: Duration) -> u64 {
+        u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// The catalogue whose opens the later phases count.
+    fn count_opens_of(&mut self, data_dir: &Path) {
+        let database_path = data_dir.join("hub.sqlite");
+        self.opens = tesatlas_hub::db::catalogue_open_counts_at(&database_path);
+        self.database_path = Some(database_path);
+    }
+
+    /// The lifetime lock, with the directory-creation flushes it made: none on
+    /// an existing data folder.
+    #[cfg(unix)]
+    fn lifetime_lock(&mut self, directory_flushes: u64) {
+        let now = Instant::now();
+        tracing::info!(
+            phase = "lifetime_lock",
+            duration_ms = Self::milliseconds(now - self.last),
+            since_start_ms = Self::milliseconds(now - self.started),
+            directory_flushes,
+            "Hub start phase"
+        );
+        self.last = now;
+    }
+
+    fn phase(&mut self, phase: &'static str) {
+        let now = Instant::now();
+        let opens = self
+            .database_path
+            .as_deref()
+            .map_or(self.opens, tesatlas_hub::db::catalogue_open_counts_at);
+        tracing::info!(
+            phase,
+            duration_ms = Self::milliseconds(now - self.last),
+            since_start_ms = Self::milliseconds(now - self.started),
+            catalogue_opens = opens.opens.saturating_sub(self.opens.opens),
+            catalogue_opens_without_hold =
+                opens.opens_without_hold.saturating_sub(self.opens.opens_without_hold),
+            "Hub start phase"
+        );
+        self.last = now;
+        self.opens = opens;
+    }
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let run_started = Instant::now();
     #[cfg(feature = "credential-relocation-fixture")]
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
@@ -1534,6 +1601,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Long-lived service, import, credential, and recovery commands take the
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
+    let mut serve_start = matches!(&cli.command, Command::Serve).then(|| StartPhases::new(run_started));
+    #[cfg(unix)]
+    let directory_flushes_before = tesatlas_hub::hub_user_process::directory_creation_flushes();
     #[cfg(unix)]
     let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command)
         || matches!(&cli.command, Command::BackupPlaintextDirectory { .. })
@@ -1548,7 +1618,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         ) {
             validate_history_only_config(&config)?;
         }
-        Some(AdmittedUserHub::admit(&config.data_dir)?)
+        let admitted = AdmittedUserHub::admit(&config.data_dir)?;
+        if let Some(phases) = serve_start.as_mut() {
+            phases.lifetime_lock(
+                tesatlas_hub::hub_user_process::directory_creation_flushes()
+                    .saturating_sub(directory_flushes_before),
+            );
+        }
+        Some(admitted)
     } else {
         None
     };
@@ -1801,7 +1878,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // catalogue. A missing, emptied or replaced one is refused here, before
     // `hub.sqlite` is created or initialised, so it never comes up as new.
     tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
-    let store = HubStore::initialize(&config.data_dir)?;
+    let store = match serve_start.as_mut() {
+        Some(phases) => {
+            phases.count_opens_of(&config.data_dir);
+            HubStore::initialize_with_phases(&config.data_dir, &mut |phase| phases.phase(phase))?
+        }
+        None => HubStore::initialize(&config.data_dir)?,
+    };
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
         Command::Init => {
@@ -1855,9 +1938,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve => {
             #[cfg(unix)]
             {
+                let mut phases =
+                    serve_start.take().ok_or("Serve reached runtime without its start phases")?;
+                // One idle connection keeps the catalogue's shared memory
+                // mapped for the start and the life of Serve, so every later
+                // open of this process reuses it rather than truncating and
+                // rebuilding it (M08-T32, guest run P6j).
+                let catalogue_hold = store.hold_catalogue()?;
                 #[cfg(target_os = "macos")]
                 let (summary_now_ms, admitted_idle) = {
                     store.checkpoint_catalogue_for_immutable_read()?;
+                    phases.phase("wal_checkpoint");
                     let development_mode =
                         tesatlas_hub::macos_launch_agent::development_serve_mode(
                             tesatlas_hub::platform::name_migration::env::var_os(
@@ -1887,13 +1978,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     // The Fixture mode serves the fixture's own measurement
                     // time (C6 R28 (c)); every other mode keeps the system clock.
-                    (
-                        tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
-                            development_mode,
-                            &config.data_dir,
-                        )?,
-                        admitted_idle,
-                    )
+                    let summary_now_ms = tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+                        development_mode,
+                        &config.data_dir,
+                    )?;
+                    phases.phase("admission");
+                    (summary_now_ms, admitted_idle)
                 };
                 #[cfg(not(target_os = "macos"))]
                 let (summary_now_ms, admitted_idle): (Option<i64>, bool) = (None, false);
@@ -1916,26 +2006,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // The service holds the window authority: one controller on
                 // the process-wide egress gate. The collector runs only inside
                 // an Open window, under the supervisor; the API is served
-                // whatever the collector does (design 2.8, ruling R5).
-                let collector_ready = collector_can_start(&store, &config)?;
-                // The runtime inventory counts every observation and pack
-                // reference, so its cost grows with the store: it runs on a
-                // blocking task once the operator channel is bound and the
-                // listener is open, and can never delay serving (M08-T22).
-                let log_inventory: server::ListeningHook = {
-                    let store = store.clone();
-                    let config = config.clone();
-                    Box::new(move || {
-                        drop(tokio::task::spawn_blocking(move || {
-                            log_runtime_inventory(&store, &config);
-                        }));
-                    })
-                };
-                if collector_ready {
-                    // Once per start: a clamped stream timeout or an ignored
-                    // key (C3 R21).
-                    config.collector.log_start_notices();
-                }
+                // whatever the collector does (design 2.8, ruling R5). Its
+                // credential status is read once the listener is bound, and
+                // the collector is held until then (M08-T32).
                 // A data-only restore leaves signed data without its cursor
                 // key: the service then waits in its recovery state, before
                 // the API could create a new key, until the operator's
@@ -1946,7 +2019,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let (authority, resumed) =
                     start_window_authority(&config.data_dir, &operator_home()?)?;
                 tracing::info!(
-                    collector_ready,
                     window = ?authority.status().phase,
                     resumed = ?resumed,
                     provider = ?config.collector.provider,
@@ -1962,11 +2034,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     config.clone(),
                     std::sync::Arc::clone(&admission),
                     std::sync::Arc::clone(&recovery),
-                );
+                )
+                .held_until_status_known();
                 let supervisor = operator::authority::SupervisorThread::spawn(
                     std::sync::Arc::clone(&authority),
                     collector_slot.clone(),
                 )?;
+                let held_collector = collector_slot.clone();
+                let collector_status_kick = supervisor.reload_kicker();
                 let channel = operator::channel::ChannelServer::bind(
                     &config.data_dir,
                     std::sync::Arc::new(operator::authority::OperatorService::new(
@@ -1991,6 +2066,42 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .with_recovery(std::sync::Arc::clone(&recovery))),
                 )?;
+                phases.phase("operator_channel");
+                // Once the listener is bound and accepting, on a blocking
+                // task, never delaying serving: the collector's credential
+                // status, which then releases the held collector, and the
+                // runtime inventory, which counts every observation and pack
+                // reference, so its cost grows with the store (M08-T22).
+                let on_listening: server::ListeningHook = {
+                    let store = store.clone();
+                    let config = config.clone();
+                    Box::new(move || {
+                        phases.phase("bind");
+                        drop(tokio::task::spawn_blocking(move || {
+                            match collector_can_start(&store, &config) {
+                                Ok(collector_ready) => {
+                                    phases.phase("credential_status");
+                                    tracing::info!(collector_ready, "collector credential status read");
+                                    if collector_ready {
+                                        // Once per start: a clamped stream
+                                        // timeout or an ignored key (C3 R21).
+                                        config.collector.log_start_notices();
+                                    }
+                                }
+                                Err(error) => {
+                                    phases.phase("credential_status");
+                                    tracing::warn!(%error, "collector credential status unavailable; each collector start reads it again");
+                                }
+                            }
+                            // Each collector start reads the status again
+                            // itself; the hold only kept that read behind the
+                            // listener.
+                            held_collector.status_known();
+                            collector_status_kick();
+                            log_runtime_inventory(&store, &config);
+                        }));
+                    })
+                };
                 let recovery_stop = if recovery.pending() {
                     tracing::warn!(
                         "this Hub's signed data has no cursor key; the API starts after restore-recovery-credentials"
@@ -2028,7 +2139,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 server_admission,
                                 cursor_key,
                                 summary_now_ms,
-                                Some(log_inventory),
+                                Some(on_listening),
                                 async move {
                                     let _ = shutdown.await;
                                 },
@@ -2051,6 +2162,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
                 tokio::task::spawn_blocking(move || supervisor.stop()).await?;
                 drop(authority);
+                drop(catalogue_hold);
                 match &serve_result {
                     Ok(()) => tracing::info!("Hub serve stopped cleanly"),
                     Err(error) => tracing::error!(%error, "Hub serve stopped unexpectedly"),

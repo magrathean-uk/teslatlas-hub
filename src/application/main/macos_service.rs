@@ -632,6 +632,9 @@ struct ServiceCollectorSlotInner {
     config: HubConfig,
     admission: std::sync::Arc<AdmittedUserHub>,
     recovery: std::sync::Arc<tesatlas_hub::runtime::operator::authority::RecoveryGate>,
+    /// Serve reads the collector's credential status once its listener is
+    /// bound; until then the collector is held (M08-T32).
+    status_pending: bool,
     running: Option<ServiceCollectorRun>,
 }
 
@@ -660,9 +663,22 @@ impl ServiceCollectorSlot {
                 config,
                 admission,
                 recovery,
+                status_pending: false,
                 running: None,
             })),
         }
+    }
+
+    /// Hold the collector until [`Self::status_known`] (M08-T32).
+    fn held_until_status_known(self) -> Self {
+        self.lock().status_pending = true;
+        self
+    }
+
+    /// The credential status Serve reads after its bind is known: a start
+    /// inside an open window is no longer held.
+    fn status_known(&self) {
+        self.lock().status_pending = false;
     }
 
     /// Replaces the configuration the next collector start reads: the
@@ -699,6 +715,9 @@ impl tesatlas_hub::collection::window::CollectorSlot for ServiceCollectorSlot {
         // credential recovery the service waits for (review finding 2).
         if inner.recovery.pending() {
             return Err(tesatlas_hub::runtime::operator::authority::CREDENTIAL_RECOVERY_PENDING.to_owned());
+        }
+        if inner.status_pending {
+            return Err("collector_status_pending".to_owned());
         }
         // Collection starts only with an admitted own login, a configured car
         // and a positive cadence; inside the window the supervisor retries.

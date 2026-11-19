@@ -206,7 +206,8 @@ async fn idle_start_collection_begins_only_after_sign_in_inside_the_window() {
     assert!(!hub_is_never_configured(&configured).expect("configured state"));
     preflight_hub_for_serve(&configured, None).expect("the restart passes the full admission");
 
-    // The restart's slot starts the collector inside the same window.
+    // The restart's slot starts the collector inside the same window, once
+    // Serve has read its credential status after the bind (M08-T32).
     let admission = AdmittedUserHub::admit(&data).expect("service admission");
     let slot = ServiceCollectorSlot::new(
         tokio::runtime::Handle::current(),
@@ -214,7 +215,12 @@ async fn idle_start_collection_begins_only_after_sign_in_inside_the_window() {
         configured,
         Arc::clone(&admission),
         RecoveryGate::new(false),
-    );
+    )
+    .held_until_status_known();
+    let mut held = slot.clone();
+    assert_eq!(held.start(deadline).unwrap_err(), "collector_status_pending", "held until the status is known");
+    assert!(!held.is_running());
+    slot.status_known();
     let mut started = slot.clone();
     assert_eq!(started.start(deadline), Ok(()), "collection begins inside the window");
     started.stop();

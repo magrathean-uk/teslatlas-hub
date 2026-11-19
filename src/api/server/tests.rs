@@ -291,6 +291,55 @@ async fn admitted_tls_server_creates_data_dir_cursor_key_when_not_supplied() {
     drop(rebound);
 }
 
+/// M08-T32: the publication worker starts once the listener is bound. A Serve
+/// whose address is taken fails at the bind without starting it; one that binds
+/// starts it once.
+#[tokio::test]
+async fn admitted_server_starts_the_publication_worker_only_after_the_bind() {
+    let temporary = crate::private_tempdir().expect("temporary admitted plain server root");
+    let (admission, store_path) = admitted_server_fixture(&temporary);
+    let taken = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
+    let bind = taken.local_addr().expect("reserved address");
+    let config = local_plain_server_config(store_path, bind);
+    let store = HubStore::initialize(&config.data_dir).expect("store");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
+        .expect("persisted cursor key");
+    store.instrumentation().reset();
+    serve_for_admitted_user(
+        store.clone(),
+        &config,
+        Sha256Digest::of_bytes(b"worker after bind test"),
+        std::sync::Arc::clone(&admission),
+        None,
+        std::future::pending(),
+    )
+    .await
+    .expect_err("the address is taken");
+    assert_eq!(store.instrumentation().snapshot().publication_task_starts, 0, "no worker before the bind");
+
+    drop(taken);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let server_store = store.clone();
+    let server_task = tokio::spawn(async move {
+        serve_for_admitted_user(
+            server_store,
+            &config,
+            Sha256Digest::of_bytes(b"worker after bind test"),
+            admission,
+            None,
+            async move {
+                let _ = shutdown_rx.await;
+            },
+        )
+        .await
+    });
+    wait_for_tcp_listener(bind).await;
+    assert_eq!(store.instrumentation().snapshot().publication_task_starts, 1, "the worker starts with the listener");
+    shutdown_tx.send(()).expect("signal server shutdown");
+    server_task.await.expect("server task").expect("plain server shutdown");
+    assert_eq!(store.instrumentation().snapshot().publication_task_exits, 1, "the worker stops with Serve");
+}
+
 #[tokio::test]
 async fn admitted_plain_server_reuses_the_persisted_schema_22_cursor_key() {
     let temporary = crate::private_tempdir().expect("temporary admitted plain server root");
