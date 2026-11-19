@@ -13,7 +13,10 @@ use crate::data_recovery::{
     archive_crypto::KdfParams,
     backup_admission::{VolumeTrust, test_seam},
     create_encrypted_backup, encrypted_backup_space_needs,
-    encrypted_backup::{HookAction, clear_hook, force_scratch_above, scratch_need, set_hook},
+    encrypted_backup::{
+        HookAction, clear_hook, force_default_scratch, force_scratch_above, scratch_need,
+        set_hook,
+    },
     restore_encrypted_backup, verify_encrypted_backup,
 };
 use crate::runtime::config::BackupConfig;
@@ -182,8 +185,8 @@ fn backup_scratch_budget_below_the_need_refuses_before_attaching_or_copying() {
 }
 
 /// A catalogue that grows past the budget between the measurement and the
-/// gate is refused under the gate, before anything is copied; the scratch
-/// volume is detached and removed.
+/// gate is refused under the gate, before any scratch is attached or anything
+/// copied (REV-CX-B3-STORAGE F4).
 #[cfg(target_os = "macos")]
 #[test]
 fn backup_catalogue_growing_past_the_budget_under_the_gate_refuses_before_copying() {
@@ -215,10 +218,83 @@ fn backup_catalogue_growing_past_the_budget_under_the_gate_refuses_before_copyin
         matches!(error, DataRecoveryError::ScratchBudgetExceeded { budget, required, .. } if budget == need && required > need),
         "{error}"
     );
-    assert_eq!(stages.borrow().as_slice(), ["space_measured"], "nothing was copied");
-    assert_eq!(hub.scratch_entries(), 0, "the scratch volume is removed");
+    assert_eq!(stages.borrow().as_slice(), ["space_measured"], "nothing attached or copied");
+    assert_eq!(hub.scratch_entries(), 0, "no scratch was created");
     assert!(hub.destination_entries().is_empty());
     assert_eq!(hub.pin_rows(), 0);
+}
+
+/// The default scratch location (the temporary folder) passes the same
+/// admission as a configured one: inside the live data or the destination,
+/// or reached through a link into either, it is refused before any scratch
+/// is created there (REV-CX-B3-STORAGE F2).
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_default_scratch_inside_data_or_destination_is_refused_before_creating_scratch() {
+    let hub = hub();
+    let data = hub.store.database_path().parent().unwrap().to_path_buf();
+    let inside_data = data.join("m06-t21-temporary");
+    private_folder(&inside_data);
+    let inside_destination = hub.destination.join("temporary");
+    private_folder(&inside_destination);
+    let link = hub.temporary.path().join("temporary-link");
+    std::os::unix::fs::symlink(&inside_data, &link).unwrap();
+    for (folder, refusal) in [
+        (&inside_data, "live Hub data directory"),
+        (&inside_destination, "inside the backup destination"),
+        (&link, "live Hub data directory"),
+    ] {
+        force_scratch_above(Some(0));
+        force_default_scratch(Some(folder.clone()));
+        let mut request = hub.request();
+        request.scratch_directory = None;
+        let error = create_encrypted_backup(&hub.store, &request).expect_err("refused");
+        clear_hook();
+        assert!(error.to_string().contains(refusal), "{}: {error}", folder.display());
+        assert_eq!(fs::read_dir(folder).unwrap().count(), 0, "no scratch in {}", folder.display());
+    }
+    assert_eq!(hub.pin_rows(), 0);
+}
+
+/// The admitted scratch folder is held: replaced by a link into the live
+/// data after admission, the run still creates, uses and removes its scratch
+/// in the folder it admitted, never through the link (REV-CX-B3-STORAGE F3).
+#[cfg(target_os = "macos")]
+#[test]
+fn backup_scratch_folder_replaced_after_admission_is_not_followed() {
+    let hub = hub();
+    let data = hub.store.database_path().parent().unwrap().to_path_buf();
+    let forbidden = data.join("m06-t21-forbidden");
+    private_folder(&forbidden);
+    let moved = hub.temporary.path().join("scratch-moved");
+    force_scratch_above(Some(0));
+    let (scratch, moved_seen, forbidden_seen) =
+        (hub.scratch.clone(), moved.clone(), forbidden.clone());
+    let counts = Rc::new(RefCell::new(Vec::<(String, usize, usize)>::new()));
+    let seen = counts.clone();
+    set_hook(move |stage, _| {
+        if stage == "space_measured" {
+            fs::rename(&scratch, &moved_seen).expect("move the admitted folder");
+            std::os::unix::fs::symlink(&forbidden_seen, &scratch).expect("plant a link");
+        }
+        if matches!(stage, "scratch_attached" | "scratch_copied") {
+            seen.borrow_mut().push((
+                stage.to_owned(),
+                fs::read_dir(&moved_seen).unwrap().count(),
+                fs::read_dir(&forbidden_seen).unwrap().count(),
+            ));
+        }
+        HookAction::Continue
+    });
+    let result = create_encrypted_backup(&hub.store, &hub.request());
+    clear_hook();
+    result.expect("the run uses the folder it admitted");
+    assert_eq!(counts.borrow().as_slice(), [
+        ("scratch_attached".to_owned(), 1, 0),
+        ("scratch_copied".to_owned(), 1, 0),
+    ]);
+    assert_eq!(fs::read_dir(&forbidden).unwrap().count(), 0, "nothing in the live data");
+    assert_eq!(fs::read_dir(&moved).unwrap().count(), 0, "the scratch is removed");
 }
 
 /// Without a budget, a catalogue that outgrows the room its scratch volume

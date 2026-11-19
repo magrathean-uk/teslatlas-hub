@@ -956,6 +956,27 @@ fn available_bytes(path: &Path) -> Result<u64, DataRecoveryError> {
         .ok_or(DataRecoveryError::CapacityOverflow)
 }
 
+/// The free space of the held directory `directory` (M06-T21): the volume
+/// of the folder admitted, whatever its path names now.
+fn held_available_bytes(
+    directory: &backup_admission::AdmittedDirectory,
+) -> Result<u64, DataRecoveryError> {
+    #[cfg(test)]
+    if let Some(available) = space_seam::available(&directory.path) {
+        return Ok(available);
+    }
+    let stats = rustix::fs::fstatvfs(&directory.fd).map_err(|source| {
+        DataRecoveryError::FilesystemSpace {
+            path: directory.path.clone(),
+            source,
+        }
+    })?;
+    stats
+        .f_bavail
+        .checked_mul(stats.f_frsize)
+        .ok_or(DataRecoveryError::CapacityOverflow)
+}
+
 fn admit_known_capacity(
     parent: &Path,
     required: u64,
