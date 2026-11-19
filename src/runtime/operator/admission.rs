@@ -130,6 +130,7 @@ pub fn route(command: &Command) -> Route {
 pub fn requires_user_hub_admission(command: &Command) -> bool {
     match command {
         Command::Init | Command::Serve | Command::Pair { .. } | Command::Repair => true,
+        Command::StorageCensus { .. } => true,
         Command::Backup { .. } => true,
         #[cfg(unix)]
         Command::Bootstrap

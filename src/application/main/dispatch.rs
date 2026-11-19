@@ -2157,6 +2157,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let report = store.repair()?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        Command::StorageCensus { reclaim } => {
+            if reclaim {
+                println!("{}", serde_json::to_string(&store.reclaim_storage()?)?);
+            } else {
+                println!("{}", serde_json::to_string(&store.storage_census()?)?);
+            }
+        }
         // Encrypted by default (M06-T08): one authenticated bundle in the
         // destination folder, keeping every earlier generation.
         Command::Backup { destination } => {

@@ -2011,6 +2011,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         all_vehicles: false,
     }));
     assert!(command_requires_user_hub_admission(&Command::Repair));
+    assert!(command_requires_user_hub_admission(&Command::StorageCensus { reclaim: false }));
     assert!(command_requires_user_hub_admission(&Command::Backup {
         destination: PathBuf::from("backup"),
     }));
