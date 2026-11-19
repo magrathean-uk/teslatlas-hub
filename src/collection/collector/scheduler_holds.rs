@@ -1151,6 +1151,8 @@ impl VehicleScheduler {
             self.account.next_billing_probe = None;
         }
         self.account.wait = None;
+        self.account.provider_until = None;
+        self.account.transport_until = None;
         self.account.list_wanted = Some(now);
         self.account.list_floor = None;
         tracing::info!(

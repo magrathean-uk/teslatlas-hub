@@ -1269,6 +1269,8 @@ fn ct58_a_persisted_refusal_survives_a_restart_until_the_configuration_changes()
                 since_ms: CORE_W0,
                 rate_limited_until_ms: None,
                 next_probe_ms: None,
+                unreachable_until_ms: None,
+                consecutive_unreachable: 0,
             }),
             gap_inserts: vec![crate::db::CollectorGapInsert {
                 vehicle_id: None,
@@ -2275,6 +2277,8 @@ fn r7_a_new_fleet_application_or_region_changes_the_fingerprint_and_resets_a_sto
                 since_ms: CORE_W0,
                 rate_limited_until_ms: None,
                 next_probe_ms: None,
+                unreachable_until_ms: None,
+                consecutive_unreachable: 0,
             }),
             ..Default::default()
         },
@@ -2960,4 +2964,71 @@ fn intake_latency_belongs_to_one_window_and_survives_its_retries() {
     intake_guard(restarted, 12).record_intake(Duration::from_millis(50));
     assert_eq!(restarted.status(&window_b)["count"], 1);
     assert_eq!(restarted.status(&intake_window(13))["count"], 0);
+}
+
+// ---- Retry pacing (P04-F01, P04-F06, P04-F07) ---------------------------------
+
+fn retry_stored_hub_id(bed: &TickBed) -> Uuid {
+    bed.scheduler.vehicles[&core_id(1)].hub_id.expect("hub id")
+}
+
+#[tokio::test]
+async fn a_longer_authentication_wait_ending_early_leaves_the_providers_retry_after_in_force() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            let start = bed.now();
+            bed.scheduler.begin_tick();
+            bed.scheduler.rate_limited(120, start);
+            bed.scheduler
+                .auth_failed(ErrorClass::AuthWait, Some(Duration::from_secs(300)), None, start);
+            assert!(matches!(
+                bed.scheduler.account.wait,
+                Some((_, WaitReason::AuthWait))
+            ));
+            bed.advance(Duration::from_secs(2));
+            let now = bed.now();
+            bed.scheduler.end_auth_wait(now);
+            assert!(!bed.scheduler.requests_allowed(now));
+            assert_eq!(
+                bed.scheduler.list_due_at(),
+                Some(start + Duration::from_secs(120)),
+                "discovery stays withheld until the original deadline"
+            );
+            bed.commit(TickBatch::default()).await;
+            let stored = bed.store.load_collector_state_rows().unwrap();
+            assert_eq!(
+                stored.account.and_then(|row| row.rate_limited_until_ms),
+                Some(CORE_W0 + 120_000),
+                "the row keeps the provider's deadline"
+            );
+            // A failed commit that imposes a longer store wait does the same.
+            bed.advance(Duration::from_secs(1));
+            let now = bed.now();
+            bed.scheduler.begin_tick();
+            bed.scheduler.account.store_failures = 8;
+            let tick = std::mem::take(&mut bed.scheduler.pending);
+            bed.scheduler.commit_failed(tick, now);
+            assert!(matches!(
+                bed.scheduler.account.wait,
+                Some((until, WaitReason::Store)) if until > start + Duration::from_secs(120)
+            ));
+            bed.scheduler.commit_succeeded(PendingTick::default(), now);
+            assert_eq!(bed.scheduler.account.wait.map(|(_, reason)| reason), Some(WaitReason::RateLimited));
+            assert!(!bed.scheduler.requests_allowed(now));
+            assert_eq!(
+                bed.scheduler.list_due_at(),
+                Some(start + Duration::from_secs(120))
+            );
+            // A reload keeps it as well.
+            let hub = retry_stored_hub_id(&bed);
+            let (mut scheduler, _clock, t) =
+                restarted_scheduler(crate::config::CollectorMode::Legacy, CORE_W0 + 3_000);
+            scheduler.load(&snapshot_of(&bed.store, hub, DS_FP_A), t);
+            assert!(!scheduler.requests_allowed(t + Duration::from_secs(116)));
+            assert!(scheduler.requests_allowed(t + Duration::from_secs(117)));
+        })
+        .await;
 }

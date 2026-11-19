@@ -311,10 +311,55 @@ impl VehicleScheduler {
 
     /// Start or lengthen the account's wait: a longer wait of any reason stays,
     /// so one answer never shortens another's wait.
+    ///
+    /// A provider or transport deadline is also kept on its own, so a longer wait
+    /// of another reason that ends early leaves it in force ([`Self::restore_retained_wait`]).
     fn extend_wait(&mut self, until: Instant, reason: WaitReason) {
+        let retained = match reason {
+            WaitReason::RateLimited => Some(&mut self.account.provider_until),
+            WaitReason::TeslaUnreachable => Some(&mut self.account.transport_until),
+            _ => None,
+        };
+        if let Some(retained) = retained {
+            *retained = Some(retained.map_or(until, |held| held.max(until)));
+        }
         match self.account.wait {
             Some((current, _)) if current >= until => {}
             _ => self.account.wait = Some((until, reason)),
+        }
+    }
+
+    /// The later of the provider's and the transport's retained deadlines that
+    /// is still to come, with the reason it belongs to.
+    fn retained_wait(&self, now: Instant) -> Option<(Instant, WaitReason)> {
+        [
+            (self.account.provider_until, WaitReason::RateLimited),
+            (self.account.transport_until, WaitReason::TeslaUnreachable),
+        ]
+        .into_iter()
+        .filter_map(|(until, reason)| until.filter(|until| *until > now).map(|u| (u, reason)))
+        .max_by_key(|(until, _)| *until)
+    }
+
+    /// A wait of another reason ended: the provider's or the transport's deadline
+    /// it had replaced is back in force (P04-F06, P04-F07).
+    fn restore_retained_wait(&mut self, now: Instant) {
+        if self.account.wait.is_none() {
+            self.account.wait = self.retained_wait(now);
+        }
+    }
+
+    /// The provider's deadline as the account row stores it: the retained one, or
+    /// the running wait's when that is a rate limit.
+    fn provider_deadline(&self) -> Option<Instant> {
+        let running = self
+            .account
+            .wait
+            .filter(|(_, reason)| *reason == WaitReason::RateLimited)
+            .map(|(until, _)| until);
+        match (self.account.provider_until, running) {
+            (Some(held), Some(running)) => Some(held.max(running)),
+            (held, running) => held.or(running),
         }
     }
 
@@ -488,6 +533,7 @@ impl VehicleScheduler {
     fn end_auth_wait(&mut self, now: Instant) {
         if matches!(self.account.wait, Some((_, WaitReason::AuthWait))) {
             self.account.wait = None;
+            self.restore_retained_wait(now);
             self.account.list_wanted = Some(now);
             tracing::info!(
                 target: "collector.decision",
@@ -599,13 +645,14 @@ impl VehicleScheduler {
     /// A request got an HTTP status, even an error (C3 R43): the account is
     /// reachable, so a `TeslaUnreachable` wait ends and its count resets.
     fn note_answered(&mut self, now: Instant) {
-        let _ = now;
         if self.account.consecutive_unreachable == 0 {
             return;
         }
         self.account.consecutive_unreachable = 0;
+        self.account.transport_until = None;
         if matches!(self.account.wait, Some((_, WaitReason::TeslaUnreachable))) {
             self.account.wait = None;
+            self.restore_retained_wait(now);
         }
         tracing::info!(
             target: "collector.decision",
@@ -628,6 +675,7 @@ impl VehicleScheduler {
         self.account.auth_failures = 0;
         if matches!(self.account.wait, Some((_, WaitReason::AuthWait))) {
             self.account.wait = None;
+            self.restore_retained_wait(now);
         }
     }
 

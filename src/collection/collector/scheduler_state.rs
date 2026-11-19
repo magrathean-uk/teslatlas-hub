@@ -571,9 +571,8 @@ impl VehicleScheduler {
                 self.account.state = state;
                 self.account.state_reason = reason;
                 self.account.state_since_ms = row.since_ms;
-                self.account.wait = rate_limited_until
-                    .filter(|until| *until > now)
-                    .map(|until| (until, WaitReason::RateLimited));
+                self.account.provider_until = rate_limited_until.filter(|until| *until > now);
+                self.account.wait = self.retained_wait(now);
                 self.account.next_billing_probe = next_probe;
             } else if state != AccountState::Collecting {
                 self.account.state = AccountState::Collecting;
@@ -886,11 +885,7 @@ impl VehicleScheduler {
             state: self.account.state,
             reason: self.account.state_reason,
             since_ms: self.account.state_since_ms,
-            rate_limited_until: self
-                .account
-                .wait
-                .filter(|(_, reason)| *reason == WaitReason::RateLimited)
-                .map(|(until, _)| until),
+            rate_limited_until: self.provider_deadline(),
             next_probe: self.account.next_billing_probe,
         }
     }
@@ -1100,7 +1095,6 @@ impl VehicleScheduler {
     /// gaps become the tick's, a store back-off ends, and the baseline renews so a
     /// later failure rolls back only what is not yet committed.
     fn commit_succeeded(&mut self, tick: PendingTick, now: Instant) {
-        let _ = now;
         self.account.probe_time_of_the_tick = None;
         // The counter rows are the store's now, and so is the reservation they carry
         // (R27: sends rely only on a committed reservation).
@@ -1135,6 +1129,7 @@ impl VehicleScheduler {
                 .is_some_and(|(_, reason)| reason == WaitReason::Store)
             {
                 self.account.wait = None;
+                self.restore_retained_wait(now);
             }
             tracing::info!(
                 target: "collector.decision",

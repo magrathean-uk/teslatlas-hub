@@ -1061,6 +1061,13 @@ struct AccountRecord {
     state_since_ms: i64,
     /// While set and in the future no request is sent (R43, R45, R47).
     wait: Option<(Instant, WaitReason)>,
+    /// The provider's own deadline (a 429's Retry-After), kept when a longer
+    /// authentication or store wait replaces `wait`, so it holds again once that
+    /// wait ends and is stored independently (P04-F06).
+    provider_until: Option<Instant>,
+    /// The end of the transport back-off, kept the same way and stored so a restart
+    /// keeps the step and the deadline (P04-F07).
+    transport_until: Option<Instant>,
     consecutive_429: u32,
     consecutive_unreachable: u32,
     /// Authentication outcomes in a row that were not a stop (C3 R47); the count
@@ -1109,6 +1116,8 @@ impl AccountRecord {
             state_reason: "collecting",
             state_since_ms: wall_ms,
             wait: None,
+            provider_until: None,
+            transport_until: None,
             consecutive_429: 0,
             consecutive_unreachable: 0,
             auth_failures: 0,
