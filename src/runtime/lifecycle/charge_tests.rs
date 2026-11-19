@@ -2006,3 +2006,223 @@ fn astra_p07_f06_long_charge_duration_fits_the_public_smallint_column() {
         Some(T0 + (K_SMALLINT_MAX + 2) * MIN)
     );
 }
+
+// ------------------------------------------------- issue #13 provisional reset
+
+/// The issue's five readings: one uninterrupted 5.2 kWh charge whose third
+/// counter reads zero once. The odometer never changes.
+fn design_later_13_issue_samples() -> Vec<LifecycleSample> {
+    vec![
+        cv(1, T0, "Charging", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + MIN, "Charging", Some(5.0), Some(55), Some(1000.0)),
+        at(
+            cv(3, T0 + 2 * MIN, "Charging", Some(0.0), Some(55), Some(1000.0)),
+            10.0,
+            20.0,
+        ),
+        cv(4, T0 + 3 * MIN, "Charging", Some(5.1), Some(55), Some(1000.0)),
+        cv(5, T0 + 4 * MIN, "Complete", Some(5.2), Some(56), Some(1000.0)),
+    ]
+}
+
+/// A genuine new Tesla session: the next counter after the fall stays low.
+fn design_later_13_reset_samples() -> Vec<LifecycleSample> {
+    vec![
+        cv(1, T0, "Charging", Some(0.0), Some(50), Some(1000.0)),
+        cv(2, T0 + MIN, "Charging", Some(5.0), Some(55), Some(1000.0)),
+        cv(3, T0 + 2 * MIN, "Charging", Some(0.0), Some(55), Some(1000.0)),
+        cv(4, T0 + 3 * MIN, "Charging", Some(0.3), Some(56), Some(1000.0)),
+        cv(5, T0 + 4 * MIN, "Complete", Some(0.4), Some(56), Some(1000.0)),
+    ]
+}
+
+#[test]
+fn design_later_13_one_zero_counter_reading_does_not_duplicate_charge_energy() {
+    let result = run(&design_later_13_issue_samples());
+    assert_eq!(spans(&result.delta), vec![(T0, Some(T0 + 4 * MIN))]);
+    assert_eq!(energies(&result.delta), vec![Some(5.2)]);
+    // Every raw sample is kept, unchanged, under the one charge.
+    let samples = &result.delta.open_charge_samples;
+    assert_eq!(samples.len(), 5);
+    assert!(samples.iter().all(|sample| sample.charge_process_id == result.delta.charges[0].id));
+    assert_eq!(
+        samples.iter().map(|sample| sample.charge_energy_added_kwh).collect::<Vec<_>>(),
+        vec![Some(0.0), Some(5.0), Some(0.0), Some(5.1), Some(5.2)]
+    );
+    assert!(result.state.pending_counter_reset.is_none());
+    // The fold over the stored samples, used by seeds and recomputation,
+    // agrees with the live projection.
+    assert_eq!(
+        charge_energy_from_samples(samples, Some(0.0)).added_kwh,
+        Some(5.2)
+    );
+    // Unrelated facts of the pending observation are not deferred.
+    assert!(
+        result
+            .delta
+            .positions
+            .iter()
+            .any(|position| position.date_ms == T0 + 2 * MIN)
+    );
+}
+
+#[test]
+fn design_later_13_a_corroborated_reset_starts_the_successor_at_the_pending_sample() {
+    let result = run(&design_later_13_reset_samples());
+    assert_eq!(
+        spans(&result.delta),
+        vec![(T0, Some(T0 + MIN)), (T0 + 2 * MIN, Some(T0 + 4 * MIN))]
+    );
+    assert_eq!(energies(&result.delta), vec![Some(5.0), Some(0.4)]);
+    let owners = result
+        .delta
+        .open_charge_samples
+        .iter()
+        .map(|sample| (sample.timestamp_ms, sample.charge_process_id))
+        .collect::<Vec<_>>();
+    let first = result.delta.charges[0].id;
+    let second = result.delta.charges[1].id;
+    assert_eq!(
+        owners,
+        vec![
+            (T0, first),
+            (T0 + MIN, first),
+            (T0 + 2 * MIN, second),
+            (T0 + 3 * MIN, second),
+            (T0 + 4 * MIN, second),
+        ]
+    );
+    // An explicit unplug and replug remains real evidence.
+    let replug = run(&[
+        cv(1, T0, "Charging", Some(5.0), Some(50), Some(1000.0)),
+        cv(2, T0 + MIN, "Disconnected", Some(5.0), Some(55), Some(1000.0)),
+        cv(3, T0 + 2 * MIN, "Charging", Some(0.2), Some(55), Some(1000.0)),
+        cv(4, T0 + 3 * MIN, "Complete", Some(0.3), Some(56), Some(1000.0)),
+    ]);
+    assert_eq!(energies(&replug.delta), vec![Some(5.0), Some(0.3)]);
+}
+
+#[test]
+fn design_later_13_an_unresolved_reset_keeps_evidence_and_leaves_totals_unknown() {
+    let mut issue = design_later_13_issue_samples();
+    issue.truncate(3);
+    for ending in [
+        event(4, T0 + 3 * MIN, "handback"),
+        disc(4, T0 + 3 * MIN, "asleep"),
+        cv(4, T0 + 3 * MIN, "Charging", None, Some(55), Some(1000.0)),
+    ] {
+        let mut samples = issue.clone();
+        samples.push(ending);
+        samples.push(cv(5, T0 + 4 * MIN, "Complete", Some(5.2), Some(56), Some(1000.0)));
+        let result = run(&samples);
+        let first = &result.delta.charges[0];
+        assert_eq!(first.charge_energy_added, None);
+        assert_eq!(first.charge_energy_used_kwh, None);
+        let tariff = ChargeTariff {
+            billing_type: GeofenceBillingType::PerKwh,
+            cost_per_unit: Some(0.3),
+            session_fee: None,
+        };
+        let context = ChargeCostContext {
+            free_supercharging: false,
+            brand_is_tesla: false,
+            span_observed: true,
+        };
+        assert_eq!(calculate_charge_cost(first, Some(tariff), context), None);
+        // The pending raw sample is kept under the original charge.
+        assert!(
+            result
+                .delta
+                .open_charge_samples
+                .iter()
+                .any(|sample| sample.timestamp_ms == T0 + 2 * MIN
+                    && sample.charge_process_id == first.id
+                    && sample.charge_energy_added_kwh == Some(0.0))
+        );
+        assert!(result.state.pending_counter_reset.is_none());
+    }
+    // A session that ends while the reset is still pending stays unknown too.
+    let mut open = issue.clone();
+    open.push(disc(4, T0 + 3 * MIN, "online"));
+    let waiting = run(&open);
+    assert!(waiting.state.pending_counter_reset.is_some());
+    assert!(waiting.delta.charges.is_empty());
+}
+
+#[test]
+fn design_later_13_restart_and_duplicate_replay_give_the_same_rows() {
+    for samples in [
+        design_later_13_issue_samples(),
+        design_later_13_reset_samples(),
+    ] {
+        let whole = run(&samples);
+        for split in 1..samples.len() {
+            let first = run(&samples[..split]);
+            let blob = first.state.encode().expect("encode");
+            let restored = OpenSessionState::decode(&blob).expect("decode");
+            let rest = run_from(restored, &samples[split..]);
+            let mut rows = first.delta;
+            merge_step_delta(&mut rows, rest.delta);
+            assert_eq!(rows.charges, whole.delta.charges, "split {split}");
+            assert_eq!(
+                rows.open_charge_samples, whole.delta.open_charge_samples,
+                "split {split}"
+            );
+            assert_eq!(rest.state.encode().unwrap(), whole.state.encode().unwrap());
+        }
+        // The pending observation stored again under a new observation id
+        // adds no sample and no row.
+        let mut duplicated = samples.clone();
+        duplicated.insert(3, samples[2].clone());
+        for (index, sample) in duplicated.iter_mut().enumerate() {
+            sample.observation_id = index as i64 + 1;
+        }
+        let replayed = run(&duplicated);
+        assert_eq!(replayed.delta.charges, whole.delta.charges);
+        assert_eq!(
+            replayed.delta.open_charge_samples,
+            whole.delta.open_charge_samples
+        );
+    }
+}
+
+#[test]
+fn design_later_13_stored_fold_resolves_the_reset_like_the_live_fold() {
+    let sample = |t: i64, counter: Option<f64>| ProjectionChargeSample {
+        timestamp_ms: t,
+        charge_energy_added_kwh: counter,
+        ..charge_sample_from(1, 1, &ParsedSample::default())
+    };
+    let contradicted = [
+        sample(T0, Some(0.0)),
+        sample(T0 + MIN, Some(5.0)),
+        sample(T0 + 2 * MIN, Some(0.0)),
+        sample(T0 + 3 * MIN, Some(5.1)),
+        sample(T0 + 4 * MIN, Some(5.2)),
+    ];
+    assert_eq!(charge_energy_from_samples(&contradicted, Some(0.0)).added_kwh, Some(5.2));
+    let corroborated = [
+        sample(T0, Some(0.0)),
+        sample(T0 + MIN, Some(5.0)),
+        sample(T0 + 2 * MIN, Some(0.0)),
+        sample(T0 + 3 * MIN, Some(0.3)),
+    ];
+    assert_eq!(charge_energy_from_samples(&corroborated, Some(0.0)).added_kwh, Some(5.3));
+    let unresolved = [
+        sample(T0, Some(0.0)),
+        sample(T0 + MIN, Some(5.0)),
+        sample(T0 + 2 * MIN, Some(0.0)),
+        sample(T0 + 3 * MIN, None),
+        sample(T0 + 4 * MIN, Some(5.2)),
+    ];
+    assert_eq!(charge_energy_from_samples(&unresolved, Some(0.0)).added_kwh, None);
+    assert_eq!(charge_energy_from_samples(&contradicted[..3], Some(0.0)).added_kwh, None);
+    // Old blobs decode without the new members.
+    let open: OpenCharge = serde_json::from_value(json!({
+        "id": 1, "car_id": 1, "start_date_ms": T0,
+        "outside_temp_sum": 0.0, "outside_temp_count": 0
+    }))
+    .expect("old open charge");
+    assert_eq!(open.pending_counter_reset_kwh, None);
+    assert!(!open.counter_reading_unresolved);
+}
