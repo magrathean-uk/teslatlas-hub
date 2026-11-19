@@ -71,6 +71,20 @@ fn rows(connection: &Connection) -> Rows {
         .collect()
 }
 
+/// The values the v81 rung (M08-T30) keeps from `rows` of an older store: the
+/// import state rows lose their entity text (the second column) and keep
+/// every other value.
+pub(crate) fn rows_after_import_state_compaction(rows: &Rows) -> Rows {
+    let mut kept = rows.clone();
+    if let Some(values) = kept.get_mut("import_projection_state_rows") {
+        for value in values.iter_mut() {
+            value.remove(1);
+        }
+        values.sort();
+    }
+    kept
+}
+
 pub(super) fn schema_snapshot(connection: &Connection) -> (i32, Schema, Rows) {
     (
         schema_version(connection).unwrap(),
@@ -281,7 +295,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
         catalogue_floor_witnesses(&connection) > 0,
         "assertion failed: {test}: the floor witnesses are listed as imported rows"
     );
-    let before = rows(&connection);
+    let before = rows_after_import_state_compaction(&rows(&connection));
     migrate(&connection).labelled_ok(test, "the floor fixture reaches HEAD");
     assert!(
         schema_version(&connection).unwrap() == SCHEMA_VERSION,
@@ -463,7 +477,7 @@ fn m1_t4_import_readers_equal_stepwise_store() {
             && rows(&baseline) == rows(&stepwise),
         "assertion failed: {test}: both floors list their witnesses as imported rows alike"
     );
-    let retained = rows(&baseline);
+    let retained = rows_after_import_state_compaction(&rows(&baseline));
     migrate(&baseline).labelled_ok(test, "the seeded baseline floor reaches C10 head");
     migrate(&stepwise).labelled_ok(test, "the shipped stepwise floor reaches C10 head");
     assert!(

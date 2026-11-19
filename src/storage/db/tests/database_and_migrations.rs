@@ -1079,3 +1079,443 @@ fn corrupt_referenced_pack_refuses_and_cleans_backup_root() {
     ));
     assert!(!backup_root.exists());
 }
+
+/// M08-T30: the v80 shape of the import's per-row state, as the v78 floor
+/// creates it (entity text and UNIQUE(vehicle_id, entity, entity_id)).
+fn import_state_v80_rows_schema() -> String {
+    let floor = include_str!("../schema_floor.sql");
+    let start = floor
+        .find("CREATE TABLE \"import_projection_state_rows\" (")
+        .expect("floor defines the state rows");
+    let end = start + floor[start..].find(";").expect("statement end") + 1;
+    floor[start..end].replacen(
+        "CREATE TABLE \"import_projection_state_rows\" (",
+        "CREATE TABLE import_projection_state_rows_v80 (",
+        1,
+    )
+}
+
+fn import_state_raw_catalogue(root: &Path) -> Connection {
+    let connection = Connection::open(root.join("hub.sqlite")).expect("raw catalogue");
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .expect("foreign keys");
+    connection
+}
+
+/// Takes a current store back to v80: the state rows return to the floor's
+/// shape, with their entity text, and the catalogue is compacted so a later
+/// size comparison starts from a compact v80 catalogue.
+fn rewind_import_state_rows_to_v80(root: &Path) {
+    let connection = import_state_raw_catalogue(root);
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE;
+             {}
+             INSERT INTO import_projection_state_rows_v80(
+                 vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256)
+             SELECT vehicle_id, {}, entity_ordinal, entity_id, car_id, projection_sha256
+               FROM import_projection_state_rows
+              ORDER BY vehicle_id, entity_ordinal, entity_id;
+             DROP TABLE import_projection_state_rows;
+             ALTER TABLE import_projection_state_rows_v80
+                 RENAME TO \"import_projection_state_rows\";
+             PRAGMA user_version = 80;
+             COMMIT;
+             VACUUM;
+             PRAGMA wal_checkpoint(TRUNCATE);",
+            import_state_v80_rows_schema(),
+            crate::db::import_table_names::import_state_entity_name_sql!("entity_ordinal"),
+        ))
+        .expect("rewind the state rows to v80");
+}
+
+fn import_state_columns(connection: &Connection) -> Vec<String> {
+    connection
+        .prepare("SELECT name FROM pragma_table_info('import_projection_state_rows') ORDER BY cid")
+        .expect("columns")
+        .query_map([], |row| row.get(0))
+        .expect("column rows")
+        .collect::<Result<_, _>>()
+        .expect("collect columns")
+}
+
+fn import_state_indexes(connection: &Connection) -> Vec<String> {
+    connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+              WHERE type = 'index' AND tbl_name = 'import_projection_state_rows' ORDER BY name",
+        )
+        .expect("indexes")
+        .query_map([], |row| row.get(0))
+        .expect("index rows")
+        .collect::<Result<_, _>>()
+        .expect("collect indexes")
+}
+
+type ImportStateRawRow = (String, i64, i64, i64, Vec<u8>);
+
+fn import_state_raw_rows(connection: &Connection) -> Vec<ImportStateRawRow> {
+    connection
+        .prepare(
+            "SELECT vehicle_id, entity_ordinal, entity_id, car_id, projection_sha256
+               FROM import_projection_state_rows ORDER BY 1, 2, 3",
+        )
+        .expect("state rows")
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        })
+        .expect("state row values")
+        .collect::<Result<_, _>>()
+        .expect("collect state rows")
+}
+
+fn import_state_owed(connection: &Connection) -> bool {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM hub_metadata WHERE key = ?1)",
+            params![IMPORT_STATE_COMPACTION_OWED_KEY],
+            |row| row.get(0),
+        )
+        .expect("owed marker")
+}
+
+fn import_state_catalogue_bytes(root: &Path) -> u64 {
+    let connection = import_state_raw_catalogue(root);
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .expect("checkpoint");
+    drop(connection);
+    std::fs::metadata(root.join("hub.sqlite"))
+        .expect("catalogue file")
+        .len()
+}
+
+/// Everything a reader of the state answers for one vehicle: the digest
+/// pages, the successor's deletion inventory and the seam's prior ids.
+#[derive(Debug, PartialEq, Eq)]
+struct ImportStateAnswers {
+    pages: Vec<(SourceDbProjectionStateEntity, i64, i64, Vec<u8>)>,
+    inventory: Vec<(String, i64, i64)>,
+    seam_ids: Vec<(SourceDbProjectionStateEntity, Vec<i64>)>,
+}
+
+fn import_state_answers(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    binding: &ProjectionBinding,
+) -> ImportStateAnswers {
+    let mut lookup = store
+        .source_db_import_projection_state_lookup(
+            vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("state lookup");
+    let mut pages = Vec::new();
+    let mut after = None;
+    loop {
+        let page = lookup.page_after_store(after, 500).expect("state page");
+        pages.extend(page.rows.iter().map(|row| {
+            (row.entity, row.id, row.car_id, row.digest.as_bytes().to_vec())
+        }));
+        match page.next_after {
+            Some(next) => after = Some(next),
+            None => break,
+        }
+    }
+    for (entity, id, _, digest) in pages.iter().step_by(97) {
+        let stored = lookup
+            .digest_store(*entity, *id)
+            .expect("cached digest lookup")
+            .expect("stored row");
+        assert_eq!(stored.as_bytes().as_slice(), digest.as_slice());
+    }
+    let mut inventory: Vec<(String, i64, i64)> = store
+        .source_db_import_projection_inventory(
+            vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("deletion inventory")
+        .rows
+        .iter()
+        .map(|row| (format!("{:?}", row.entity), row.id, row.car_id))
+        .collect();
+    inventory.sort();
+    let connection = store.open().expect("catalogue");
+    let seam_ids = SourceDbProjectionStateEntity::ALL
+        .into_iter()
+        .map(|entity| {
+            let mut ids: Vec<i64> = durable_prior_imported_ids_in_connection(
+                &connection,
+                &vehicle_id.to_string(),
+                entity,
+            )
+            .expect("seam prior ids")
+            .into_iter()
+            .collect();
+            ids.sort_unstable();
+            (entity, ids)
+        })
+        .collect();
+    ImportStateAnswers {
+        pages,
+        inventory,
+        seam_ids,
+    }
+}
+
+/// A store with imported state of every row entity, taken back to v80.
+fn import_state_v80_fixture() -> (
+    tempfile::TempDir,
+    VehicleRecord,
+    ProjectionBinding,
+    ImportStateAnswers,
+    Vec<ImportStateRawRow>,
+) {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let mut rows = Vec::new();
+    for (entity, count) in [
+        (SourceDbProjectionStateEntity::Drive, 40_i64),
+        (SourceDbProjectionStateEntity::Position, 6_000),
+        (SourceDbProjectionStateEntity::Charge, 20),
+        (SourceDbProjectionStateEntity::ChargeSample, 300),
+        (SourceDbProjectionStateEntity::State, 25),
+        (SourceDbProjectionStateEntity::Update, 5),
+    ] {
+        rows.extend((1..=count).map(|id| (entity, id * 3)));
+    }
+    let (vehicle, binding) = persist_projection_state_rows(&store, temporary.path(), &rows);
+    let answers = import_state_answers(&store, vehicle.vehicle_id, &binding);
+    assert_eq!(answers.pages.len(), rows.len() + 1, "every row and the car");
+    let raw = import_state_raw_rows(&store.open().expect("catalogue"));
+    drop(store);
+    rewind_import_state_rows_to_v80(temporary.path());
+    let connection = import_state_raw_catalogue(temporary.path());
+    assert_eq!(schema_version(&connection).expect("version"), 80);
+    assert!(import_state_columns(&connection).contains(&"entity".to_owned()));
+    assert_eq!(import_state_indexes(&connection).len(), 1, "the v80 UNIQUE index");
+    assert_eq!(import_state_raw_rows(&connection), raw);
+    (temporary, vehicle, binding, answers, raw)
+}
+
+fn assert_import_state_v81(root: &Path, raw: &[ImportStateRawRow], test: &str) {
+    let connection = import_state_raw_catalogue(root);
+    assert_eq!(schema_version(&connection).expect("version"), SCHEMA_VERSION, "{test}");
+    assert_eq!(
+        import_state_columns(&connection),
+        ["vehicle_id", "entity_ordinal", "entity_id", "car_id", "projection_sha256"],
+        "{test}: no entity text"
+    );
+    assert!(import_state_indexes(&connection).is_empty(), "{test}: no UNIQUE index");
+    assert_eq!(import_state_raw_rows(&connection), raw, "{test}: every row and digest");
+    assert!(!import_state_owed(&connection), "{test}: compaction done");
+    let rebuild: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name = 'import_projection_state_rows_rebuild'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("rebuild table");
+    assert_eq!(rebuild, 0, "{test}: no replacement left behind");
+    let check: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .expect("integrity check");
+    assert_eq!(check, "ok", "{test}");
+}
+
+#[test]
+fn import_state_compaction_keeps_every_answer_and_shrinks_the_catalogue() {
+    let test = "import_state_compaction_keeps_every_answer_and_shrinks_the_catalogue";
+    let (temporary, vehicle, binding, answers, raw) = import_state_v80_fixture();
+    let before = import_state_catalogue_bytes(temporary.path());
+    let store = HubStore::initialize(temporary.path()).expect("migrate to v81");
+    assert_import_state_v81(temporary.path(), &raw, test);
+    assert_eq!(
+        import_state_answers(&store, vehicle.vehicle_id, &binding),
+        answers,
+        "{test}: digests, deletion inventory and seam ids unchanged"
+    );
+    drop(store);
+    let after = import_state_catalogue_bytes(temporary.path());
+    assert!(after < before, "{test}: catalogue {before} bytes became {after}");
+
+    // A fresh store is created in the v81 shape and owes no compaction.
+    let fresh = crate::private_tempdir().expect("fresh store");
+    drop(HubStore::initialize(fresh.path()).expect("fresh"));
+    assert_import_state_v81(fresh.path(), &[], test);
+}
+
+#[test]
+fn import_state_compaction_resumes_after_an_interruption_at_each_step() {
+    let test = "import_state_compaction_resumes_after_an_interruption_at_each_step";
+    for step in [
+        ImportStateCompactionStep::Copied,
+        ImportStateCompactionStep::Dropped,
+        ImportStateCompactionStep::CutOver,
+        ImportStateCompactionStep::Committed,
+        ImportStateCompactionStep::Compacted,
+    ] {
+        let (temporary, vehicle, binding, answers, raw) = import_state_v80_fixture();
+        interrupt_import_state_compaction_at(step);
+        assert!(
+            matches!(
+                HubStore::initialize(temporary.path()),
+                Err(StoreError::Migrate(_))
+            ),
+            "{test}: {step:?} interrupts the open"
+        );
+        {
+            let connection = import_state_raw_catalogue(temporary.path());
+            assert_eq!(import_state_raw_rows(&connection), raw, "{test}: {step:?} keeps rows");
+            let cut_over = matches!(
+                step,
+                ImportStateCompactionStep::Committed | ImportStateCompactionStep::Compacted
+            );
+            assert_eq!(
+                schema_version(&connection).expect("version"),
+                if cut_over { SCHEMA_VERSION } else { 80 },
+                "{test}: {step:?}"
+            );
+            assert_eq!(
+                import_state_columns(&connection).contains(&"entity".to_owned()),
+                !cut_over,
+                "{test}: {step:?} is all or nothing"
+            );
+            assert_eq!(import_state_owed(&connection), cut_over, "{test}: {step:?} marker");
+        }
+        let store = HubStore::initialize(temporary.path()).expect("resume the migration");
+        assert_import_state_v81(temporary.path(), &raw, test);
+        assert_eq!(
+            import_state_answers(&store, vehicle.vehicle_id, &binding),
+            answers,
+            "{test}: {step:?} answers unchanged"
+        );
+    }
+}
+
+#[test]
+fn import_state_compaction_refuses_without_room_and_changes_nothing() {
+    let test = "import_state_compaction_refuses_without_room_and_changes_nothing";
+    let (temporary, vehicle, binding, answers, raw) = import_state_v80_fixture();
+    let catalogue = import_state_catalogue_bytes(temporary.path());
+    let before = g2_4_m1::schema_snapshot(&import_state_raw_catalogue(temporary.path()));
+    // One catalogue beside the old one is not enough: the replacement and
+    // the journal need two.
+    set_import_state_compaction_available_bytes(Some(catalogue + 64 * 1024 * 1024));
+    let refused = HubStore::initialize(temporary.path());
+    set_import_state_compaction_available_bytes(None);
+    match refused {
+        Err(StoreError::Migrate(rusqlite::Error::SqliteFailure(error, Some(message)))) => {
+            assert_eq!(error.code, rusqlite::ErrorCode::DiskFull, "{test}");
+            assert!(message.contains("nothing was changed"), "{test}: {message}");
+        }
+        other => panic!("{test}: expected a budget refusal, got {other:?}"),
+    }
+    assert_eq!(
+        g2_4_m1::schema_snapshot(&import_state_raw_catalogue(temporary.path())),
+        before,
+        "{test}: the refused store is unchanged"
+    );
+    let store = HubStore::initialize(temporary.path()).expect("migrate with room");
+    assert_import_state_v81(temporary.path(), &raw, test);
+    assert_eq!(import_state_answers(&store, vehicle.vehicle_id, &binding), answers);
+
+    // Once cut over, a shortfall leaves the compaction owed, not the store.
+    let (temporary, _, _, _, raw) = import_state_v80_fixture();
+    interrupt_import_state_compaction_at(ImportStateCompactionStep::Committed);
+    assert!(HubStore::initialize(temporary.path()).is_err());
+    set_import_state_compaction_available_bytes(Some(0));
+    let refused = HubStore::initialize(temporary.path());
+    set_import_state_compaction_available_bytes(None);
+    assert!(matches!(refused, Err(StoreError::Migrate(_))), "{test}: compaction budget");
+    assert_eq!(
+        import_state_raw_rows(&import_state_raw_catalogue(temporary.path())),
+        raw,
+        "{test}: rows kept while the compaction waits"
+    );
+    drop(HubStore::initialize(temporary.path()).expect("compact with room"));
+    assert_import_state_v81(temporary.path(), &raw, test);
+}
+
+#[test]
+fn import_state_compaction_then_a_direct_successor_import_advances_every_head() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, manifest) = v2_base_manifest(&store);
+    let car = import_delta_test_car(binding.selected_car_id);
+    let inventory = SourceDbImportProjectionInventory {
+        source_id: binding.account_id,
+        selected_car_id: binding.selected_car_id,
+        rows: Vec::new(),
+    };
+    let base_state = test_projection_state(temporary.path(), &car);
+    store
+        .finalize_source_db_import_snapshot_with_projection_state(
+            &manifest,
+            Sha256Digest::of_bytes(b"compacted-successor-base"),
+            &[],
+            &binding,
+            &inventory,
+            &base_state,
+        )
+        .expect("catalogue base");
+    drop(store);
+    rewind_import_state_rows_to_v80(temporary.path());
+    let store = HubStore::initialize(temporary.path()).expect("migrate to v81");
+    let base = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("base lineage")
+        .expect("base lineage exists");
+    let first = imported_typed_delta(&store, &binding, &base);
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+        )
+        .expect("staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &SourceDbOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("stage direct-import tail");
+    let successor_state = unchanged_direct_successor_projection_state(
+        &store,
+        run_id,
+        vehicle.vehicle_id,
+        &binding,
+        &car,
+    );
+    store
+        .finalize_import_generation_delta_successors_with_projection_state(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+            std::slice::from_ref(&first),
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, first.to_sequence),
+            Sha256Digest::of_bytes(b"compacted-successor"),
+            &[],
+            &successor_state,
+            false,
+        )
+        .expect("successor import on the compacted store");
+    let state = store
+        .source_db_import_projection_state_lookup(
+            vehicle.vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("replacement digest state");
+    assert_eq!(state.header().head_sequence, first.to_sequence);
+}
