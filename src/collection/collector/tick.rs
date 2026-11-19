@@ -441,6 +441,37 @@ struct TickCommit<'a> {
     offline_drive_timeout: Duration,
 }
 
+/// The phase and sleep eligibility a successful read gives the scheduler (issue
+/// #114). Storage discards a reply older than the car's current read of the same
+/// provider, so such a reply moves no phase and shows no use: the car keeps its
+/// phase. A car with no stored read, or a failed lookup, takes the reply's own.
+fn read_reply_phase(
+    store: &HubStore,
+    scheduler: &VehicleScheduler,
+    provider: CollectorProvider,
+    vehicle_id: VehicleId,
+    snapshot: &VehicleData,
+    received_at_ms: i64,
+    req_not_unlocked: bool,
+) -> (PollPhase, bool) {
+    let reply = (
+        poll_phase(snapshot),
+        sleep_eligible_with_policy(snapshot, req_not_unlocked),
+    );
+    let Some(record) = scheduler.vehicles.get(&vehicle_id) else {
+        return reply;
+    };
+    let Some(hub_id) = record.hub_id else {
+        return reply;
+    };
+    match store.current_observed_at_ms(hub_id, provider_vehicle_data_record_type(provider)) {
+        Ok(Some(stored)) if stored > observation_timestamp(snapshot, received_at_ms) => {
+            (record.phase, true)
+        }
+        _ => reply,
+    }
+}
+
 /// C3 R14's rule with the bounded presence refresh: a discovery the rule skips is
 /// still delivered once the car's newest delivered observation is older than
 /// [`crate::db::DISCOVERY_PRESENCE_REFRESH_MS`], so an unchanged state keeps the

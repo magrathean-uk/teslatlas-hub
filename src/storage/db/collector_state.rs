@@ -1295,6 +1295,26 @@ impl HubStore {
         Ok(snapshot)
     }
 
+    /// `observed_at_ms` of the car's current row of `record_type`, if it has one.
+    /// Storage discards a reply older than this row, so the collector reads it to
+    /// keep such a reply from moving the car's phase (issue #114).
+    pub(crate) fn current_observed_at_ms(
+        &self,
+        vehicle_id: Uuid,
+        record_type: &str,
+    ) -> Result<Option<i64>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT observed_at_ms FROM current_observations
+                  WHERE vehicle_id = ?1 AND record_type = ?2",
+                params![vehicle_id.to_string(), record_type],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    }
+
     /// [`Self::collector_lifecycle_snapshot_in_transaction`] on a read-only
     /// connection, for the start load of the lifecycle views and the R40 check
     /// (C3 R7 step 6, R40).
