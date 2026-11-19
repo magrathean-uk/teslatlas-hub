@@ -102,6 +102,9 @@ const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ADMITTED_PHYSICAL_PACK_BYTES: u64 = 16 * 1024 * 1024;
+/// The legacy profile's object ceiling (`ProtocolLimits::default()`), which
+/// bounds the buffer a legacy catalogued pack is verified in before it is sent.
+const MAX_CATALOGUED_PACK_BYTES: u64 = 64 * 1024 * 1024;
 const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 /// The `hub-http-v1` revision discovery names. It tracks the committed profile
 /// under `protocol/profiles/hub-http-v1/`; a test pins the two together. The
@@ -2562,28 +2565,32 @@ async fn stream_pack(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let verified_bytes = if verify_digest {
-        match read_verified_physical_pack(&mut file, stored.compressed_bytes, stored.digest).await {
-            Ok(bytes) => Some(bytes),
-            Err(error) => {
-                tracing::error!(%error, digest = %stored.digest, "cannot verify admitted physical pack");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-        }
+    // Every pack, a legacy catalogued one included, is read whole through the
+    // descriptor it is served from and checked against its digest before any
+    // byte is sent, so a same-size damaged file is refused for a range too.
+    let max_bytes = if verify_digest {
+        MAX_ADMITTED_PHYSICAL_PACK_BYTES
     } else {
-        None
+        MAX_CATALOGUED_PACK_BYTES
+    };
+    let verified_bytes = match read_verified_physical_pack(
+        &mut file,
+        stored.compressed_bytes,
+        stored.digest,
+        max_bytes,
+    )
+    .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(%error, digest = %stored.digest, "cannot verify pack bytes against their digest");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
     };
     let range = match parse_single_range(range_header, metadata.len()) {
         Ok(range) => range,
         Err(_) => return range_not_satisfiable(metadata.len()),
     };
-    if verified_bytes.is_none()
-        && let Err(error) =
-            tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(range.start)).await
-    {
-        tracing::error!(%error, digest = %stored.digest, "cannot seek pack file");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    }
     let content_length = match HeaderValue::from_str(&range.len().to_string()) {
         Ok(value) => value,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -2613,23 +2620,14 @@ async fn stream_pack(
         };
         response = response.header(header::CONTENT_RANGE, content_range);
     }
-    let body = if let Some(bytes) = verified_bytes {
-        let start = usize::try_from(range.start).expect("physical pack start fits usize");
-        let end = usize::try_from(range.end + 1).expect("physical pack end fits usize");
-        verified_pack_body(
-            bytes.slice(start..end),
-            permit,
-            device_slot,
-            PACK_STREAM_IDLE_TIMEOUT,
-        )
-    } else {
-        pack_stream_body(
-            tokio::io::AsyncReadExt::take(file, range.len()),
-            permit,
-            device_slot,
-            PACK_STREAM_IDLE_TIMEOUT,
-        )
-    };
+    let start = usize::try_from(range.start).expect("pack start fits usize");
+    let end = usize::try_from(range.end + 1).expect("pack end fits usize");
+    let body = verified_pack_body(
+        verified_bytes.slice(start..end),
+        permit,
+        device_slot,
+        PACK_STREAM_IDLE_TIMEOUT,
+    );
     response
         .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
@@ -2650,11 +2648,10 @@ async fn read_verified_physical_pack(
     file: &mut tokio::fs::File,
     expected_bytes: u64,
     expected_digest: Sha256Digest,
+    max_bytes: u64,
 ) -> std::io::Result<Bytes> {
-    if !(1..=MAX_ADMITTED_PHYSICAL_PACK_BYTES).contains(&expected_bytes) {
-        return Err(std::io::Error::other(
-            "admitted physical pack size is outside the profile",
-        ));
+    if !(1..=max_bytes).contains(&expected_bytes) {
+        return Err(std::io::Error::other("pack size is outside the profile"));
     }
     tokio::io::AsyncSeekExt::seek(file, std::io::SeekFrom::Start(0)).await?;
     let capacity = usize::try_from(expected_bytes)
@@ -2664,7 +2661,7 @@ async fn read_verified_physical_pack(
     tokio::io::AsyncReadExt::read_to_end(&mut bounded, &mut bytes).await?;
     if bytes.len() != capacity || Sha256Digest::of_bytes(&bytes) != expected_digest {
         return Err(std::io::Error::other(
-            "admitted physical pack bytes do not match the durable marker",
+            "pack bytes do not match the catalogued digest",
         ));
     }
     Ok(Bytes::from(bytes))

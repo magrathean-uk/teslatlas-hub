@@ -732,3 +732,66 @@ fn unknown_source_revision_is_refused_for_captures_and_witnesses() {
             .is_none()
     );
 }
+
+/// HUB-UPDATES-LOGICAL-NOOP: an unchanged capture is answered from its logical
+/// content and full source binding without building a pack, so a new SQLite or
+/// compression library, which would encode the same rows into other bytes,
+/// writes no replacement pack. A change of any captured root still publishes.
+#[cfg(unix)]
+#[test]
+fn unchanged_capture_is_answered_logically_without_writing_a_pack() {
+    let temp = crate::private_tempdir().expect("store root");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([47; 32]);
+    let binding = registered_binding(&store, 7);
+    let source = production_source(7);
+    let first = publish_production_updates_schema_22(&store, &cursor_key, &binding, source.clone())
+        .expect("first publication");
+    assert!(!first.reused_current_snapshot);
+    let pair = schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+        .expect("published pair");
+
+    // Building a pack always stages it in the packs folder's private staging
+    // folder first; holding that folder read-only makes any rebuild fail, so
+    // success proves the answer is logical.
+    let packs = store.packs_dir();
+    let staging = packs.join(".staging");
+    assert!(staging.is_dir(), "the first publication staged its pack");
+    let held = [staging, packs.join("sha256"), packs.to_path_buf()];
+    let listing = |path: &std::path::Path| {
+        let mut names: Vec<_> = fs::read_dir(path)
+            .expect("list packs")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        names.sort();
+        names
+    };
+    let before: Vec<_> = held.iter().map(|path| listing(path)).collect();
+    fs::set_permissions(&held[0], fs::Permissions::from_mode(0o500)).expect("hold staging");
+    let mut retry = source.clone();
+    retry.postgres_snapshot_sha256 = hex_sha256(Uuid::new_v4().as_bytes());
+    let replay = publish_production_updates_schema_22(&store, &cursor_key, &binding, retry);
+    fs::set_permissions(&held[0], fs::Permissions::from_mode(0o700)).expect("release staging");
+    let replay = replay.expect("unchanged capture is answered without a pack write");
+    assert!(replay.reused_current_snapshot);
+    assert_eq!(replay.state, "schema_2_2_already_current");
+    assert_eq!(replay.snapshot_id, first.snapshot_id);
+    assert_eq!(replay.pack_sha256, first.pack_sha256);
+    assert_eq!(replay.noop_sha256, first.noop_sha256);
+    assert_eq!(held.iter().map(|path| listing(path)).collect::<Vec<_>>(), before);
+    assert_eq!(
+        schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key).expect("same pair"),
+        pair
+    );
+
+    // The binding covers every captured root, not only the updates rows.
+    let mut settings_changed = source;
+    settings_changed.postgres_snapshot_sha256 = hex_sha256(Uuid::new_v4().as_bytes());
+    settings_changed.car_settings.suspend_min += 1;
+    let successor =
+        publish_production_updates_schema_22(&store, &cursor_key, &binding, settings_changed)
+            .expect("changed car settings publish a successor");
+    assert!(!successor.reused_current_snapshot);
+    assert!(successor.sequence > first.sequence);
+    assert_eq!(successor.source_logical_sha256, first.source_logical_sha256);
+}
