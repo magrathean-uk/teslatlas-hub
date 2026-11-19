@@ -235,6 +235,7 @@ async fn source_max_id(
     client: &Client,
     table: SourceDbStageTable,
     selected_car_id: i16,
+    reply_deadline: Duration,
 ) -> Result<i64, SourceDbReaderError> {
     let sql = match table {
         SourceDbStageTable::Positions => {
@@ -251,10 +252,11 @@ async fn source_max_id(
         }
         _ => unreachable!("only large tables are sharded"),
     };
-    Ok(client
-        .query_one(sql, &[&selected_car_id])
-        .await?
-        .try_get("max_id")?)
+    Ok(
+        within_source_reply_deadline(reply_deadline, client.query_one(sql, &[&selected_car_id]))
+            .await?
+            .try_get("max_id")?,
+    )
 }
 
 fn encode_stage_row(table: SourceDbStageTable, row: &Row) -> Result<String, SourceDbReaderError> {

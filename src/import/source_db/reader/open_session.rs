@@ -59,7 +59,8 @@ pub(crate) async fn read_open_session_in_client(
     let processes =
         read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
     let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
-    let watermarks = read_source_watermarks(client, selected_car_id).await?;
+    let watermarks =
+        read_source_watermarks(client, selected_car_id, source_reply_deadline(limits)).await?;
     // Source database can leave stale open rows behind after interrupted sessions.
     // Keep those rows in the immutable history capture, but do not guess which
     // of several drives or charges is live. State rows are different: the
@@ -298,6 +299,7 @@ where
 async fn read_source_watermarks(
     client: &Client,
     selected_car_id: i16,
+    reply_deadline: Duration,
 ) -> Result<SourceDbWatermarks, SourceDbReaderError> {
     Ok(SourceDbWatermarks {
         drives: read_interval_watermark(
@@ -305,6 +307,7 @@ async fn read_source_watermarks(
             "drives",
             "SELECT MAX(\"id\") AS \"max_id\", MAX(\"start_date\") AS \"max_start\", MAX(\"end_date\") AS \"max_end\" FROM \"public\".\"drives\" WHERE \"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
         positions: read_date_watermark(
@@ -312,6 +315,7 @@ async fn read_source_watermarks(
             "positions",
             "SELECT MAX(\"id\") AS \"max_id\", MAX(\"date\") AS \"max_timestamp\" FROM \"public\".\"positions\" WHERE \"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
         charging_processes: read_interval_watermark(
@@ -319,6 +323,7 @@ async fn read_source_watermarks(
             "charging_processes",
             "SELECT MAX(\"id\") AS \"max_id\", MAX(\"start_date\") AS \"max_start\", MAX(\"end_date\") AS \"max_end\" FROM \"public\".\"charging_processes\" WHERE \"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
         charges: read_date_watermark(
@@ -326,6 +331,7 @@ async fn read_source_watermarks(
             "charges",
             "SELECT MAX(\"charge\".\"id\") AS \"max_id\", MAX(\"charge\".\"date\") AS \"max_timestamp\" FROM \"public\".\"charges\" AS \"charge\" JOIN \"public\".\"charging_processes\" AS \"process\" ON \"process\".\"id\" = \"charge\".\"charging_process_id\" WHERE \"process\".\"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
         states: read_interval_watermark(
@@ -333,6 +339,7 @@ async fn read_source_watermarks(
             "states",
             "SELECT MAX(\"id\") AS \"max_id\", MAX(\"start_date\") AS \"max_start\", MAX(\"end_date\") AS \"max_end\" FROM \"public\".\"states\" WHERE \"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
         updates: read_interval_watermark(
@@ -340,6 +347,7 @@ async fn read_source_watermarks(
             "updates",
             "SELECT MAX(\"id\") AS \"max_id\", MAX(\"start_date\") AS \"max_start\", MAX(\"end_date\") AS \"max_end\" FROM \"public\".\"updates\" WHERE \"car_id\" = $1",
             selected_car_id,
+            reply_deadline,
         )
         .await?,
     })
@@ -350,8 +358,11 @@ async fn read_interval_watermark(
     table: &'static str,
     sql: &'static str,
     selected_car_id: i16,
+    reply_deadline: Duration,
 ) -> Result<SourceDbWatermark, SourceDbReaderError> {
-    let row = client.query_one(sql, &[&selected_car_id]).await?;
+    let row =
+        within_source_reply_deadline(reply_deadline, client.query_one(sql, &[&selected_car_id]))
+            .await?;
     let max_id = row
         .try_get::<_, Option<i32>>("max_id")
         .map_err(|source| cell(table, "id", source))?
@@ -382,8 +393,11 @@ async fn read_date_watermark(
     table: &'static str,
     sql: &'static str,
     selected_car_id: i16,
+    reply_deadline: Duration,
 ) -> Result<SourceDbWatermark, SourceDbReaderError> {
-    let row = client.query_one(sql, &[&selected_car_id]).await?;
+    let row =
+        within_source_reply_deadline(reply_deadline, client.query_one(sql, &[&selected_car_id]))
+            .await?;
     let max_id = row
         .try_get::<_, Option<i32>>("max_id")
         .map_err(|source| cell(table, "id", source))?

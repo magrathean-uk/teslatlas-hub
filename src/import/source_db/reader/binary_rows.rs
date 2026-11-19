@@ -379,10 +379,12 @@ async fn read_positions(
     let remaining_rows = limits.maximum_rows.saturating_sub(*retained_rows);
     let maximum = MAX_MATERIALIZED_HISTORY_POSITIONS.min(remaining_rows);
     let count_sql = materialized_position_count_sql(maximum);
-    let count: i64 = client
-        .query_one(&count_sql, &[&selected_car_id])
-        .await?
-        .try_get("position_count")?;
+    let count: i64 = within_source_reply_deadline(
+        source_reply_deadline(limits),
+        client.query_one(&count_sql, &[&selected_car_id]),
+    )
+    .await?
+    .try_get("position_count")?;
     let count = validate_materialized_history_position_count(count, maximum)?;
     let query_limit = i64::try_from(maximum.saturating_add(1)).unwrap_or(i64::MAX);
     let mut rows = open_bounded_copy(

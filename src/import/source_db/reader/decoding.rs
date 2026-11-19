@@ -412,6 +412,8 @@ pub enum SourceDbReaderError {
     NativeTrustStoreUnavailable,
     #[error("Source database PostgreSQL connection timed out")]
     ConnectTimedOut,
+    #[error("Source database PostgreSQL did not reply within the client deadline")]
+    SourceReplyTimedOut,
     #[error(
         "Source database PostgreSQL COPY statement timeout must be between 60 seconds and 24 hours"
     )]
@@ -514,8 +516,34 @@ pub enum SourceDbReaderError {
     Schema(#[from] crate::source_db_schema::SchemaCompatibilityError),
     #[error(transparent)]
     Stage(#[from] SourceDbStageError),
-    #[error(transparent)]
-    Postgres(#[from] tokio_postgres::Error),
+    #[error("{}", PostgresFailure(.0))]
+    Postgres(tokio_postgres::Error),
+}
+
+impl From<tokio_postgres::Error> for SourceDbReaderError {
+    fn from(error: tokio_postgres::Error) -> Self {
+        Self::Postgres(error)
+    }
+}
+
+/// How a PostgreSQL failure reaches the Hub's diagnostics. The source database
+/// chooses the text of its errors and notices, and that text can quote source
+/// values, so a server error keeps only its SQLSTATE: the message, detail,
+/// hint and context are never displayed, and the driver error is not exposed
+/// as a cause. A failure the driver raised itself keeps the driver's text.
+pub(crate) struct PostgresFailure<'a>(pub(crate) &'a tokio_postgres::Error);
+
+impl std::fmt::Display for PostgresFailure<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.code() {
+            Some(code) => write!(
+                formatter,
+                "Source database refused the request (SQLSTATE {})",
+                code.code()
+            ),
+            None => write!(formatter, "{}", self.0),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -571,6 +599,7 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
                 SourceDbReaderError::InvalidParallelCopyLanes => (),
                 SourceDbReaderError::NativeTrustStoreUnavailable => (),
                 SourceDbReaderError::ConnectTimedOut => (),
+                SourceDbReaderError::SourceReplyTimedOut => (),
                 SourceDbReaderError::InvalidCopyStatementTimeout => (),
                 SourceDbReaderError::SnapshotRollbackTimedOut => (),
                 SourceDbReaderError::SnapshotConnectionShutdownTimedOut => (),
@@ -640,6 +669,7 @@ mod n1_src_import_source_db_reader_decoding_rs_display_tests {
         check_source_db_reader_error(SourceDbReaderError::InvalidParallelCopyLanes);
         check_source_db_reader_error(SourceDbReaderError::NativeTrustStoreUnavailable);
         check_source_db_reader_error(SourceDbReaderError::ConnectTimedOut);
+        check_source_db_reader_error(SourceDbReaderError::SourceReplyTimedOut);
         check_source_db_reader_error(SourceDbReaderError::InvalidCopyStatementTimeout);
         check_source_db_reader_error(SourceDbReaderError::SnapshotRollbackTimedOut);
         check_source_db_reader_error(SourceDbReaderError::SnapshotConnectionShutdownTimedOut);

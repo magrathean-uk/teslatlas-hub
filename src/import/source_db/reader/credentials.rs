@@ -46,11 +46,17 @@ pub(crate) async fn open_exported_snapshot_lease(
 ) -> Result<(ExportedSnapshotLease, i16, SourceDbSchemaInfo), SourceDbReaderError> {
     let (session, selected_car_id, schema) =
         open_snapshot_session_with_schema(source, password, selected_car_id, limits).await?;
-    let exported = session
-        .client()
-        .query_one("SELECT pg_export_snapshot() AS snapshot_id", &[])
-        .await
-        .and_then(|row| row.try_get::<_, String>("snapshot_id"));
+    let exported = within_source_reply_deadline(
+        source_reply_deadline(limits),
+        session
+            .client()
+            .query_one("SELECT pg_export_snapshot() AS snapshot_id", &[]),
+    )
+    .await
+    .and_then(|row| {
+        row.try_get::<_, String>("snapshot_id")
+            .map_err(SourceDbReaderError::from)
+    });
     let snapshot_id = match exported {
         Ok(snapshot_id) => match validate_exported_snapshot_id(snapshot_id) {
             Ok(snapshot_id) => snapshot_id,
@@ -61,7 +67,7 @@ pub(crate) async fn open_exported_snapshot_lease(
         },
         Err(error) => {
             let _ = session.finish().await;
-            return Err(error.into());
+            return Err(error);
         }
     };
     Ok((
@@ -99,24 +105,23 @@ pub(crate) async fn open_snapshot_capture_lane(
     let snapshot_sql = snapshot_import_sql(snapshot_id)?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
     let session = SourceDbSnapshotSession::new(client, connection_task);
+    let reply_deadline = source_reply_deadline(limits);
     let prepared = async {
-        session
-            .client()
-            .batch_execute(source.session_sql()[0])
+        let client = session.client();
+        within_source_reply_deadline(reply_deadline, client.batch_execute(source.session_sql()[0]))
             .await?;
-        session
-            .client()
-            .batch_execute(source.session_sql()[1])
+        within_source_reply_deadline(reply_deadline, client.batch_execute(source.session_sql()[1]))
             .await?;
-        session.client().batch_execute(&snapshot_sql).await?;
+        within_source_reply_deadline(reply_deadline, client.batch_execute(&snapshot_sql)).await?;
         for statement in &source.session_sql()[2..] {
-            session.client().batch_execute(statement).await?;
+            within_source_reply_deadline(reply_deadline, client.batch_execute(statement)).await?;
         }
-        session
-            .client()
-            .batch_execute(&copy_statement_timeout_sql(limits.copy_statement_timeout))
-            .await?;
-        validate_source_schema(session.client()).await
+        within_source_reply_deadline(
+            reply_deadline,
+            client.batch_execute(&copy_statement_timeout_sql(limits.copy_statement_timeout)),
+        )
+        .await?;
+        validate_source_schema(client, reply_deadline).await
     }
     .await;
     if let Err(error) = prepared {

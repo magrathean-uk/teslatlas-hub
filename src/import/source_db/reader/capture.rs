@@ -234,6 +234,7 @@ async fn capture_history_to_stage_parallel(
         owner.session.client(),
         SourceDbStageTable::Positions,
         selected_car_id,
+        source_reply_deadline(limits),
     )
     .await
     {
@@ -247,6 +248,7 @@ async fn capture_history_to_stage_parallel(
         owner.session.client(),
         SourceDbStageTable::Charges,
         selected_car_id,
+        source_reply_deadline(limits),
     )
     .await
     {
