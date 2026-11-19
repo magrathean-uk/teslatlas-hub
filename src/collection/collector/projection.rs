@@ -1404,4 +1404,43 @@ mod astra_p06_f07_tests {
             "the older drive group stays stale"
         );
     }
+
+    #[test]
+    fn astra_p06_issue_newer_group_in_an_older_reply_is_kept() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t = 1_800_000_000_000_i64;
+        let persist = |reply: ManualCollection, received_at_ms: i64| {
+            persist_collection_atomic_for_provider(
+                &store,
+                &reply,
+                received_at_ms,
+                CollectorProvider::Legacy,
+            )
+            .expect("poll")
+        };
+        assert_eq!(persist(poll(t + 2_000, t, 50), t + 3_000).observations_inserted, 1);
+        // Ordered at t + 1000, before the stored reply at t + 2000, yet the
+        // charge group is newer than the stored charge group.
+        let newer_battery = persist(poll(t + 1_000, t + 1_000, 51), t + 4_000);
+        assert_eq!(newer_battery.observations_inserted, 1, "the newer battery group is stored");
+        // Every group older than the stored ones: still discarded.
+        let stale = persist(poll(t + 1_500, t - 1_000, 49), t + 5_000);
+        assert_eq!(stale.observations_inserted, 0);
+        assert_eq!(stale.observations_already_present, 1);
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let lifecycle = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("lifecycle query")
+            .expect("lifecycle state");
+        let state = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
+        assert_eq!(state.last_battery_fact_ms, Some(t + 1_000));
+    }
 }

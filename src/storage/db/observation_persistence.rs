@@ -139,6 +139,7 @@ fn append_observation_in_transaction(
         && (current.observed_at_ms > input.observed_at_ms
             || (current.observed_at_ms == input.observed_at_ms
                 && current.payload_sha256 == payload_sha256))
+        && !carries_newer_group(&input.payload, &current.payload)
     {
         return Ok(AppendObservation {
             observation: current,
@@ -214,6 +215,36 @@ fn append_observation_in_transaction(
         observation,
         inserted,
     })
+}
+
+/// Whether a vehicle-data reply carries a drive, charge, climate or vehicle
+/// group later than the same group of the stored current reply (P06-F07). A
+/// reply ordered before the stored one can still hold a newer group; it is
+/// stored so that group reaches the lifecycle, which judges each group by its
+/// own time. The current row keeps the later-ordered reply.
+fn carries_newer_group(incoming: &Value, current: &Value) -> bool {
+    let is_vehicle_data = matches!(
+        incoming.get("record_type").and_then(Value::as_str),
+        Some("owner_api_vehicle_data_v1" | "fleet_api_vehicle_data_v1")
+    );
+    let group_time = |payload: &Value, group: &str| {
+        payload
+            .pointer("/provider_raw_json/response")
+            .or_else(|| payload.get("vehicle_data"))
+            .and_then(|data| data.get(group))
+            .and_then(|group| group.get("timestamp"))
+            .and_then(Value::as_i64)
+    };
+    is_vehicle_data
+        && ["drive_state", "charge_state", "climate_state", "vehicle_state"]
+            .into_iter()
+            .any(
+                |group| match (group_time(incoming, group), group_time(current, group)) {
+                    (Some(incoming), Some(current)) => incoming > current,
+                    (Some(_), None) => true,
+                    (None, _) => false,
+                },
+            )
 }
 
 fn current_observation_for_type(
