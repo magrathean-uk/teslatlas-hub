@@ -2213,12 +2213,45 @@ async fn dec246_a_lost_answer_is_reported_as_possibly_sent() {
         .await;
 }
 
+/// Review M08-T37b: a gateway timeout after the send does not prove the car
+/// refused, so it is reported as possibly sent with the receipt.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dec246_a_gateway_timeout_after_a_send_is_reported_as_possibly_sent() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, async {
+            let (rig, _window, _route, serving) = dec246_serving_rig().await;
+            rig.fake.action_status.store(504, Ordering::SeqCst);
+            let error = request_resident_vehicle_action(&rig.dir, rig.hub_vehicle, LegacyVehicleAction::FlashLights)
+                .await
+                .expect_err("a 504 is no answer from the car");
+            let ResidentVehicleActionError::OutcomeAmbiguous { audit_receipt_id: Some(receipt) } = error else {
+                panic!("{error:?}");
+            };
+            assert_eq!(rig.fake.action_requests(), 1, "sent once, never repeated");
+            let text = error.to_string();
+            assert!(text.contains("may have been sent"), "{text}");
+            assert!(text.contains(&format!("audit receipt {receipt}")), "{text}");
+            assert!(!text.contains("rejected"), "{text}");
+            serving.abort();
+            let _ = serving.await;
+        })
+        .await;
+}
+
 /// Review finding 3: which failed sends are possibly sent. No answer, or an
 /// unreadable one, may follow the car's action; an HTTP status or an explicit
-/// `result: false` is a definite rejection.
+/// `result: false` is a definite rejection; a 5xx, 408 or 429 is not.
 #[test]
 fn dec246_only_a_lost_answer_is_possibly_sent() {
     for error in [
+        OwnerApiError::HttpStatus(500),
+        OwnerApiError::HttpStatus(502),
+        OwnerApiError::HttpStatus(503),
+        OwnerApiError::HttpStatus(504),
+        OwnerApiError::HttpStatus(408),
+        OwnerApiError::HttpStatus(429),
+        OwnerApiError::RateLimited { retry_after_seconds: 5 },
         OwnerApiError::RequestTimeout,
         OwnerApiError::Transport,
         OwnerApiError::ResponseRead,
@@ -2235,8 +2268,8 @@ fn dec246_only_a_lost_answer_is_possibly_sent() {
         ResidentVehicleActionFailure::OutcomeAmbiguous
     );
     for error in [
-        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(500)),
-        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(408)),
+        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(400)),
+        OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(422)),
         OwnerApiAuthError::Owner(OwnerApiError::CommandRejected),
         OwnerApiAuthError::Owner(OwnerApiError::VehicleNotFound),
         OwnerApiAuthError::NotSignedIn,

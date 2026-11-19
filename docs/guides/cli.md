@@ -125,12 +125,13 @@ writes one of these lines to standard error, and nothing is sent:
 | `vehicle_action_unknown: ...` | The running Hub does not know the action. |
 
 An action name the command line does not know is a usage error (exit 2). When
-Tesla answers with an HTTP error or rejects the command, the line says the
-provider rejected it. When the action was sent
-but its answer was lost, timed out or could not be read, the command exits 1
+Tesla explicitly rejects the command (a 4xx answer other than 408 or 429, or a
+refusal in the answer), the line says the provider rejected it. When the action
+was sent but its answer was lost, timed out, could not be read, or came back as a
+server or gateway failure (5xx, 408, 429), the command exits 1
 with `vehicle command outcome is unknown: it may have been sent (audit receipt
 N); do not repeat it`: the car may have acted, and the audit receipt records the
-transport, timeout or protocol failure rather than a rejection. Check the car
+failure rather than a rejection. Check the car
 before repeating anything.
 
 Do not run real vehicle commands during testing. Charging, climate, lock, wake,

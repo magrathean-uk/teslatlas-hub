@@ -955,8 +955,10 @@ pub const VEHICLE_ACTION_UNKNOWN: &str = "the vehicle action is not known to the
 pub const VEHICLE_ACTION_NOT_PERMITTED: &str = "only wake, flash-lights and honk-horn are sent to a car; this action is refused and nothing was sent";
 
 /// Whether an action's request failed after it may have reached the car: no
-/// answer, or one that could not be read. A definite answer (an HTTP status or
-/// an explicit `result: false`) is a rejection instead.
+/// answer, one that could not be read, or an HTTP status that does not prove
+/// the car refused (5xx, 408, 429 and any other non-4xx status, such as a
+/// gateway or upstream failure). Only an explicit provider rejection (another
+/// 4xx status or `result: false`) is a rejection instead.
 fn legacy_action_answer_lost(error: &OwnerApiAuthError) -> bool {
     matches!(
         error,
@@ -968,7 +970,8 @@ fn legacy_action_answer_lost(error: &OwnerApiAuthError) -> bool {
                 | OwnerApiError::InvalidResponseEnvelope
                 | OwnerApiError::InvalidCommandResponse
                 | OwnerApiError::SensitiveDataInResponse
-        )
+                | OwnerApiError::RateLimited { .. }
+        ) | OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(408 | 429 | 500..=u16::MAX | 0..=399))
     )
 }
 
