@@ -466,7 +466,7 @@ keep working.
 
 | Account state | What caused it | What ends it |
 |---|---|---|
-| Owner API refused (Legacy) | A 403 that names the Fleet API, a 403 that repeats after one token refresh and one resend, a 410, or every collected car refused | Choose a provider or consented Fleet API polling, or `collector retry` if Tesla's refusal was lifted |
+| Owner API refused (Legacy) | A 403 that names the Fleet API, a 403 that repeats after one token refresh and one resend, a 410, or every collected car refused | Choose a provider or consented Fleet API polling, make a fresh sign-in or change the collection configuration, then restart; `collector retry` does not lift it |
 | Provider refused | The provider answered 402, 410 or 403 as above | Resolve it with the provider, then `collector retry`, or change the provider settings |
 | Billing suspended (Fleet) | Tesla answered 402 | The Hub asks for the car list every 6 hours and at the start of each month, and resumes on the first answer |
 | Fleet access refused | 403 on the car list | Re-consent in Tesla's console, then `collector retry` |
