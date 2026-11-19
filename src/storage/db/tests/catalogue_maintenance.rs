@@ -414,3 +414,30 @@ fn storage_census_of_a_lab_store_copy() {
         println!("{}", serde_json::to_string(&report).expect("reclaim JSON"));
     }
 }
+
+#[test]
+fn storage_census_and_reclaim_refuse_a_linked_pack_directory_and_leave_outside_files() {
+    for linked in ["sha256", "physical-kept", "physical-kept/.staging"] {
+        let fixture = public_fixture();
+        let store = &fixture.store;
+        let outside = tempfile::tempdir().expect("outside directory");
+        let stray = Uuid::from_u128(0x2930);
+        let outside_files = [
+            outside.path().join(format!("{}.sqlite.zst", "ab".repeat(32))),
+            outside.path().join(format!("{stray}.sqlite")),
+            outside.path().join(format!("{stray}.source.json")),
+        ];
+        for path in &outside_files {
+            std::fs::write(path, b"outside the store").expect("outside file");
+        }
+        let link = store.packs_dir().join(linked);
+        if std::fs::symlink_metadata(&link).is_ok() {
+            std::fs::rename(&link, link.with_extension("moved")).expect("move aside");
+        }
+        std::os::unix::fs::symlink(outside.path(), &link).expect("directory link");
+
+        assert!(store.storage_census_at(fixture.now_ms).is_err(), "{linked}");
+        assert!(store.reclaim_storage_at(fixture.now_ms).is_err(), "{linked}");
+        assert!(outside_files.iter().all(|path| path.exists()), "{linked}");
+    }
+}

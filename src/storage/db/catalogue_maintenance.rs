@@ -190,7 +190,12 @@ enum PackStorageClass {
     PreparedMap,
 }
 
+/// A pack-tree file, held by the opened directory that holds it and its
+/// plain name there, so reclamation unlinks the entry it counted and never
+/// resolves the path again.
 struct PackStorageFile {
+    directory: std::rc::Rc<std::os::fd::OwnedFd>,
+    name: String,
     path: PathBuf,
     bytes: u64,
     class: Option<PackStorageClass>,
@@ -199,6 +204,64 @@ struct PackStorageFile {
 
 fn is_pack_object_name(digest: &str) -> bool {
     digest.len() == 64 && digest.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Open one directory of the pack tree without following a link: `parent` is
+/// an already opened directory and `name` a plain entry of it, or with no
+/// parent `path` is the packs root. A missing directory is `None`; a link or
+/// any other non-directory is refused, so the census never reads, and
+/// reclamation never unlinks, outside the store.
+fn open_pack_tree_directory(
+    parent: Option<&std::os::fd::OwnedFd>,
+    name: &str,
+    path: &Path,
+) -> Result<Option<std::rc::Rc<std::os::fd::OwnedFd>>, StoreError> {
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let opened = match parent {
+        Some(parent) => openat(parent, name, flags, Mode::empty()),
+        None => open(path, flags, Mode::empty()),
+    };
+    match opened {
+        Ok(descriptor) => Ok(Some(std::rc::Rc::new(descriptor))),
+        Err(Errno::NOENT) => Ok(None),
+        Err(error) => Err(StoreError::InspectCatalogPack {
+            path: path.to_path_buf(),
+            source: error.into(),
+        }),
+    }
+}
+
+/// The regular files of an opened pack-tree directory, by UTF-8 name, with
+/// their sizes. Links and other entries are left out, as is an entry that
+/// vanished while it was read.
+fn pack_tree_regular_files(
+    directory: &std::os::fd::OwnedFd,
+    path: &Path,
+) -> Result<Vec<(String, u64)>, StoreError> {
+    let inspect = |source: Errno| StoreError::InspectCatalogPack {
+        path: path.to_path_buf(),
+        source: source.into(),
+    };
+    let mut files = Vec::new();
+    for entry in Dir::read_from(directory).map_err(inspect)? {
+        let entry = entry.map_err(inspect)?;
+        let Ok(name) = std::str::from_utf8(entry.file_name().to_bytes()) else {
+            continue;
+        };
+        if name == "." || name == ".." {
+            continue;
+        }
+        let stat = match statat(directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(Errno::NOENT) => continue,
+            Err(source) => return Err(inspect(source)),
+        };
+        if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
+            continue;
+        }
+        files.push((name.to_owned(), u64::try_from(stat.st_size).unwrap_or(0)));
+    }
+    Ok(files)
 }
 
 /// Every digest any catalogue row names, current or expired, by class.
@@ -250,49 +313,35 @@ fn pack_storage_files(
     needed.extend(crate::data_recovery::live_backup_pack_pins(connection, now_ms)?);
     let classes = pack_storage_classes(connection)?;
     let mut files = Vec::new();
-    for directory in [packs_dir.to_path_buf(), packs_dir.join("sha256")] {
-        let entries = match fs::read_dir(&directory) {
-            Ok(entries) => entries,
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(source) => {
-                return Err(StoreError::InspectCatalogPack {
-                    path: directory,
-                    source,
-                });
-            }
-        };
-        for entry in entries {
-            let entry = entry.map_err(|source| StoreError::InspectCatalogPack {
-                path: directory.clone(),
-                source,
-            })?;
-            let Some(digest) = entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.strip_suffix(".sqlite.zst"))
+    let Some(root) = open_pack_tree_directory(None, "", packs_dir)? else {
+        return Ok(files);
+    };
+    let objects = packs_dir.join("sha256");
+    let directories = [
+        Some((root.clone(), packs_dir.to_path_buf())),
+        open_pack_tree_directory(Some(&root), "sha256", &objects)?
+            .map(|directory| (directory, objects)),
+    ];
+    for (directory, path) in directories.into_iter().flatten() {
+        for (name, bytes) in pack_tree_regular_files(&directory, &path)? {
+            let Some(digest) = name
+                .strip_suffix(".sqlite.zst")
                 .filter(|digest| is_pack_object_name(digest))
                 .map(str::to_owned)
             else {
                 continue;
             };
-            let path = entry.path();
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(source) => return Err(StoreError::InspectCatalogPack { path, source }),
-            };
-            if !metadata.file_type().is_file() {
-                continue;
-            }
             files.push(PackStorageFile {
-                path,
-                bytes: metadata.len(),
+                directory: directory.clone(),
+                path: path.join(&name),
+                name,
+                bytes,
                 class: classes.get(&digest).copied(),
                 needed: needed.contains(&digest),
             });
         }
     }
-    files.extend(kept_stage_files(connection, packs_dir)?);
+    files.extend(kept_stage_files(connection, &root, packs_dir)?);
     Ok(files)
 }
 
@@ -308,6 +357,7 @@ const KEPT_STAGES_DIRECTORY: &str = "physical-kept";
 /// held. Files of any other shape are not counted.
 fn kept_stage_files(
     connection: &Connection,
+    root: &std::os::fd::OwnedFd,
     packs_dir: &Path,
 ) -> Result<Vec<PackStorageFile>, StoreError> {
     let vehicles = connection
@@ -317,49 +367,33 @@ fn kept_stage_files(
         .map_err(StoreError::Query)?
         .collect::<Result<HashSet<_>, _>>()
         .map_err(StoreError::Query)?;
-    let kept = packs_dir.join(KEPT_STAGES_DIRECTORY);
     let mut files = Vec::new();
-    for (directory, suffix) in [
-        (kept.join(".staging"), ".sqlite"),
-        (kept.clone(), ".source.json"),
-    ] {
-        let entries = match fs::read_dir(&directory) {
-            Ok(entries) => entries,
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(source) => {
-                return Err(StoreError::InspectCatalogPack {
-                    path: directory,
-                    source,
-                });
-            }
-        };
-        for entry in entries {
-            let entry = entry.map_err(|source| StoreError::InspectCatalogPack {
-                path: directory.clone(),
-                source,
-            })?;
-            let Some(stem) = entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.strip_suffix(suffix))
+    let kept_path = packs_dir.join(KEPT_STAGES_DIRECTORY);
+    let Some(kept) = open_pack_tree_directory(Some(root), KEPT_STAGES_DIRECTORY, &kept_path)?
+    else {
+        return Ok(files);
+    };
+    let staging_path = kept_path.join(".staging");
+    let directories = [
+        open_pack_tree_directory(Some(&kept), ".staging", &staging_path)?
+            .map(|directory| (directory, staging_path, ".sqlite")),
+        Some((kept, kept_path, ".source.json")),
+    ];
+    for (directory, path, suffix) in directories.into_iter().flatten() {
+        for (name, bytes) in pack_tree_regular_files(&directory, &path)? {
+            let Some(stem) = name
+                .strip_suffix(suffix)
                 .filter(|stem| stem.len() == 36 && Uuid::parse_str(stem).is_ok())
                 .map(str::to_owned)
             else {
                 continue;
             };
-            let path = entry.path();
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(source) => return Err(StoreError::InspectCatalogPack { path, source }),
-            };
-            if !metadata.file_type().is_file() {
-                continue;
-            }
             let base = vehicles.contains(&stem);
             files.push(PackStorageFile {
-                path,
-                bytes: metadata.len(),
+                directory: directory.clone(),
+                path: path.join(&name),
+                name,
+                bytes,
                 class: base.then_some(PackStorageClass::ImportBase),
                 needed: base,
             });
@@ -418,27 +452,28 @@ impl HubStore {
         let before = storage_census_of(&files);
         let (mut reclaimed_files, mut reclaimed_bytes) = (0_u64, 0_u64);
         for file in files.iter().filter(|file| !file.needed) {
-            let bytes = match fs::symlink_metadata(&file.path) {
-                Ok(metadata) if metadata.file_type().is_file() => metadata.len(),
-                Ok(_) => continue,
-                Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
+            let bytes = match statat(&*file.directory, file.name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile => {
+                    u64::try_from(stat.st_size).unwrap_or(0)
+                }
+                Ok(_) | Err(Errno::NOENT) => continue,
                 Err(source) => {
                     return Err(StoreError::InspectCatalogPack {
                         path: file.path.clone(),
-                        source,
+                        source: source.into(),
                     });
                 }
             };
-            match fs::remove_file(&file.path) {
+            match unlinkat(&*file.directory, file.name.as_str(), AtFlags::empty()) {
                 Ok(()) => {
                     reclaimed_files += 1;
                     reclaimed_bytes = reclaimed_bytes.saturating_add(bytes);
                 }
-                Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+                Err(Errno::NOENT) => {}
                 Err(source) => {
                     return Err(StoreError::CleanupUnpublishedPack {
                         path: file.path.clone(),
-                        source,
+                        source: source.into(),
                     });
                 }
             }
