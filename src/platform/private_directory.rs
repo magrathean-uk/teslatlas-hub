@@ -246,11 +246,25 @@ fn walk(
     })
 }
 
+/// Device flushes of a containing directory after a directory was created, in
+/// this process (M08-T32): Serve logs them with its lifetime-lock phase, and a
+/// start on an existing data folder records none.
+static DIRECTORY_CREATION_FLUSHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn directory_creation_flushes() -> u64 {
+    DIRECTORY_CREATION_FLUSHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn note_directory_creation_flush() {
+    DIRECTORY_CREATION_FLUSHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Persist a directory entry this walk created, once it is protected, through a
 /// durable sync of its held containing directory (P15-F04).
 fn sync_created_entry(parent: &OwnedFd, created: &Path) -> Result<(), PrivateDirectoryError> {
     let parent_path = created.parent().ok_or(PrivateDirectoryError::InvalidPath)?;
     crate::platform::file_attempts::note_directory_sync(parent_path);
+    note_directory_creation_flush();
     durable_sync_fd(parent.as_fd())
         .map_err(|error| io_error(parent_path, io::Error::from_raw_os_error(error.errno)))
 }
@@ -279,6 +293,7 @@ pub(crate) fn create_directory_all_durably(path: &Path) -> io::Result<()> {
     match mkdirat(&parent, name, Mode::RWXU) {
         Ok(()) => {
             crate::platform::file_attempts::note_directory_sync(parent_path);
+            note_directory_creation_flush();
             durable_sync_fd(parent.as_fd())
                 .map_err(|error| io::Error::from_raw_os_error(error.errno))
         }

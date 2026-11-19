@@ -1497,6 +1497,61 @@ fn production_start_admission_reads_neither_the_whole_store_nor_a_pack() {
     }
 }
 
+/// M08-T32: a production start on an existing data folder creates no directory,
+/// so it makes no directory-creation flush, and the catalogue opens before the
+/// listener are few: the store opening keeps one connection, and once Serve
+/// holds its catalogue the admission's opens all reuse the held shared-memory
+/// mapping, none truncating and rebuilding it. Without the hold every one does.
+#[test]
+fn production_start_admission_opens_the_catalogue_under_one_hold() {
+    use crate::platform::file_attempts::directory_syncs_at;
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data = temporary.path().join("data");
+    let config = seed_awaiting_hub(&data);
+    let syncs = |path: &Path| directory_syncs_at(path);
+    let (parent_syncs, data_syncs, packs_syncs) =
+        (syncs(temporary.path()), syncs(&data), syncs(&data.join("packs")));
+    let database = data.join("hub.sqlite");
+
+    let lock = crate::hub_user_process::AdmittedUserHub::admit(&data).expect("lifetime lock");
+    let opened = crate::db::catalogue_open_counts_at(&database);
+    let store = HubStore::initialize(&data).expect("the existing store opens");
+    assert_eq!(
+        (syncs(temporary.path()), syncs(&data), syncs(&data.join("packs"))),
+        (parent_syncs, data_syncs, packs_syncs),
+        "no directory-creation flush on an existing data folder"
+    );
+    let initialised = store.catalogue_open_counts();
+    let opening = initialised.opens_without_hold - opened.opens_without_hold;
+    let hold = store.hold_catalogue().expect("Serve holds its catalogue");
+    let held = store.catalogue_open_counts();
+    assert_eq!(held.opens_without_hold - initialised.opens_without_hold, 1, "the hold's own open");
+
+    let admit = |store: &HubStore| {
+        store.checkpoint_catalogue_for_immutable_read().expect("checkpoint");
+        assert!(!hub_is_never_configured(&config).expect("configured"));
+        preflight_hub_for_serve(&config, None).expect("served awaiting the sign-in");
+        crate::storage::setup_marker::record(&data, store.installation_id().expect("installation id"))
+            .expect("set-up marker");
+    };
+    admit(&store);
+    let admitted = store.catalogue_open_counts();
+    let admission_opens = admitted.opens - held.opens;
+    assert!(admission_opens > 0, "the admission reads the catalogue");
+    assert_eq!(admitted.opens_without_hold, held.opens_without_hold, "every admission open reused the held mapping");
+    assert!(opening <= 1, "the store opening rebuilds the shared memory at most once: {opening}");
+
+    drop(hold);
+    admit(&store);
+    let unheld = store.catalogue_open_counts();
+    assert_eq!(
+        unheld.opens_without_hold - admitted.opens_without_hold,
+        unheld.opens - admitted.opens,
+        "without the hold each open is the shared memory's only user"
+    );
+    drop(lock);
+}
+
 /// M08-T22: on a healthy store the bounded admission decides every reviewed state
 /// as the whole-store form it replaced did (that form was removed in M08-T25).
 #[test]

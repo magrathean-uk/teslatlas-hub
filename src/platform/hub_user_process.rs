@@ -35,6 +35,14 @@ impl std::fmt::Debug for AdmittedUserHub {
     }
 }
 
+/// Device flushes of a containing directory after a directory was created, in
+/// this process so far (M08-T32): the lifetime lock creates a missing data
+/// folder durably, and finds an existing one without a flush.
+#[doc(hidden)]
+pub fn directory_creation_flushes() -> u64 {
+    crate::platform::private_directory::directory_creation_flushes()
+}
+
 impl AdmittedUserHub {
     #[doc(hidden)]
     pub fn admit(data_dir: &Path) -> Result<Arc<Self>, UserLifetimeLockError> {
