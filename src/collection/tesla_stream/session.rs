@@ -1351,13 +1351,17 @@ impl TeslaStreamSupervisor {
             };
             match wake {
                 Wake::Shutdown => return Live::Shutdown,
-                // The quiet stop: the work may settle, nothing is read or sent.
+                // The quiet stop: the work may settle (a queued lock wait must
+                // take and release the lock), but its outcome is dropped, so no
+                // token reaches a write. Nothing is read or sent until the
+                // ordinary signal or the window's end.
                 Wake::Quiet => {
-                    return tokio::select! {
+                    tokio::select! {
                         biased;
-                        () = shutdown.wait() => Live::Shutdown,
-                        value = &mut work => Live::Done(value),
-                    };
+                        () = shutdown.wait() => {}
+                        _ = &mut work => shutdown.wait().await,
+                    }
+                    return Live::Shutdown;
                 }
                 Wake::Done(value) => return Live::Done(value),
                 Wake::Dead => {
