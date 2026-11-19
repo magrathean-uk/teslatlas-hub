@@ -233,6 +233,32 @@ where
     .await
 }
 
+/// The bounded observation's command result: it succeeds only when the
+/// observation stopped cleanly and any window close was handed back. A failed
+/// handback leaves the window unfinished, so it fails the command (P17-F07).
+#[cfg(unix)]
+fn observation_outcome(
+    observe_result: std::io::Result<()>,
+    handback: Result<Option<tesatlas_hub::collection::window::Handback>, OperatorRefusal>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match &handback {
+        Ok(Some(handback)) => tracing::info!(reason = handback.reason.code(), "collection window closed"),
+        Ok(None) => {}
+        Err(refusal) => tracing::error!(code = %refusal.code, "collection window handback failed"),
+    }
+    match (observe_result, handback) {
+        (Err(error), _) => {
+            tracing::error!(%error, "Hub bounded observation stopped unexpectedly");
+            Err(error.into())
+        }
+        (Ok(()), Err(refusal)) => Err(refusal.into()),
+        (Ok(()), Ok(_)) => {
+            tracing::info!("Hub bounded observation stopped cleanly");
+            Ok(())
+        }
+    }
+}
+
 use tesatlas_hub::runtime::operator::{
     self as operator,
     admission::{OperatorRefusal, Route},
@@ -2116,19 +2142,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 },
             )
             .await;
-            match &observe_result {
-                Ok(()) => tracing::info!("Hub bounded observation stopped cleanly"),
-                Err(error) => {
-                    tracing::error!(%error, "Hub bounded observation stopped unexpectedly")
-                }
-            }
-            match handback {
-                Ok(Some(handback)) => tracing::info!(reason = handback.reason.code(), "collection window closed"),
-                Ok(None) => {}
-                Err(refusal) => tracing::warn!(code = %refusal.code, "collection window handback failed"),
-            }
             drop(authority);
-            observe_result?;
+            observation_outcome(observe_result, handback)?;
         }
         #[cfg(unix)]
         Command::Migrate { .. } | Command::TakeOverSourceToken { .. } => {
@@ -2553,5 +2568,26 @@ mod status_privacy_tests {
             .expect("diagnostic fields");
         assert_eq!(status.location_name, None, "redacted status must not reveal the current address");
         assert_eq!(status.battery_level, Some(81));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod observation_outcome_tests {
+    use super::*;
+
+    #[test]
+    fn astra_p17_f07_failed_window_handback_fails_the_observation() {
+        let refusal = OperatorRefusal::new("window_io", "the window ledger could not be written");
+        let error = observation_outcome(Ok(()), Err(refusal))
+            .expect_err("a failed handback must fail the command");
+        assert!(error.to_string().contains("window ledger"), "{error}");
+    }
+
+    #[test]
+    fn astra_p17_f07_observation_outcome_keeps_success_and_observation_errors() {
+        observation_outcome(Ok(()), Ok(None)).expect("a clean stop without a close succeeds");
+        let error = observation_outcome(Err(std::io::Error::other("collector failed")), Ok(None))
+            .expect_err("an observation error still fails the command");
+        assert!(error.to_string().contains("collector failed"), "{error}");
     }
 }
