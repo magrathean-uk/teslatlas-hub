@@ -5,14 +5,17 @@ pub(crate) async fn prepare_read_only_snapshot(
     source: &ReadOnlySource,
     limits: SourceDbReadLimits,
 ) -> Result<SourceDbSchemaInfo, SourceDbReaderError> {
+    let reply_deadline = source_reply_deadline(limits);
     for statement in source.session_sql() {
-        client.batch_execute(statement).await?;
+        within_source_reply_deadline(reply_deadline, client.batch_execute(statement)).await?;
     }
-    client
-        .batch_execute(&copy_statement_timeout_sql(limits.copy_statement_timeout))
-        .await?;
+    within_source_reply_deadline(
+        reply_deadline,
+        client.batch_execute(&copy_statement_timeout_sql(limits.copy_statement_timeout)),
+    )
+    .await?;
 
-    validate_source_schema(client).await
+    validate_source_schema(client, reply_deadline).await
 }
 
 fn copy_statement_timeout_sql(timeout: Duration) -> String {
@@ -21,13 +24,14 @@ fn copy_statement_timeout_sql(timeout: Duration) -> String {
 
 async fn validate_source_schema(
     client: &Client,
+    reply_deadline: Duration,
 ) -> Result<SourceDbSchemaInfo, SourceDbReaderError> {
     let migration_rows = query_bounded(
         client,
         MIGRATION_VERSIONS_SQL,
         &[],
         "schema_migrations",
-        SourceReadBudget::fixed(MAX_MIGRATION_PROBE_ROWS),
+        SourceReadBudget::fixed(MAX_MIGRATION_PROBE_ROWS).with_reply_deadline(reply_deadline),
     )
     .await?;
     let migration_versions = migration_rows
@@ -44,7 +48,7 @@ async fn validate_source_schema(
         SCHEMA_PROBE_SQL,
         &[],
         "schema_columns",
-        SourceReadBudget::fixed(MAX_SCHEMA_PROBE_ROWS),
+        SourceReadBudget::fixed(MAX_SCHEMA_PROBE_ROWS).with_reply_deadline(reply_deadline),
     )
     .await?;
     let observed = rows
@@ -66,7 +70,7 @@ async fn validate_source_schema(
         ENUM_PROBE_SQL,
         &[],
         "schema_enum_labels",
-        SourceReadBudget::fixed(MAX_ENUM_PROBE_ROWS),
+        SourceReadBudget::fixed(MAX_ENUM_PROBE_ROWS).with_reply_deadline(reply_deadline),
     )
     .await?;
     let observed_enums = enum_rows
@@ -80,7 +84,11 @@ async fn validate_source_schema(
         .collect::<Result<Vec<_>, tokio_postgres::Error>>()?;
     validate_observed_enums(&observed_enums)?;
 
-    let relationship = client.query_one(SETTINGS_RELATIONSHIP_SQL, &[]).await?;
+    let relationship = within_source_reply_deadline(
+        reply_deadline,
+        client.query_one(SETTINGS_RELATIONSHIP_SQL, &[]),
+    )
+    .await?;
     let settings_count: i64 = relationship.try_get("settings_count")?;
     let cars_without_settings: i64 = relationship.try_get("cars_without_settings")?;
     validate_settings_relationship(settings_count, cars_without_settings)?;

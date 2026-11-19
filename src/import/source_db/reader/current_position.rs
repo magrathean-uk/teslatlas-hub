@@ -41,18 +41,22 @@ pub(crate) async fn read_current_position(
     };
     let (client, task) = connect_source(source, password, limits).await?;
     let session = SourceDbSnapshotSession::new(client, task);
+    let reply_deadline = source_reply_deadline(limits);
     let result = async {
+        let client = session.client();
         for sql in source.session_sql() {
-            session.client().batch_execute(sql).await?;
+            within_source_reply_deadline(reply_deadline, client.batch_execute(sql)).await?;
         }
-        session
-            .client()
-            .batch_execute("SET LOCAL statement_timeout = '5000ms'")
-            .await?;
-        let row = session
-            .client()
-            .query_opt(CURRENT_POSITION_SQL, &[&car_id])
-            .await?;
+        within_source_reply_deadline(
+            reply_deadline,
+            client.batch_execute("SET LOCAL statement_timeout = '5000ms'"),
+        )
+        .await?;
+        let row = within_source_reply_deadline(
+            reply_deadline,
+            client.query_opt(CURRENT_POSITION_SQL, &[&car_id]),
+        )
+        .await?;
         row.map(|row| {
             Ok(SourceDbCurrentPosition {
                 car_id: row.try_get("car_id")?,

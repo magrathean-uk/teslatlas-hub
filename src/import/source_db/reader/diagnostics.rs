@@ -103,6 +103,7 @@ impl SourceDbReadLimits {
     /// Budget of a read that returns at most `max_rows` rows.
     pub(crate) fn budget_for_rows(&self, max_rows: usize) -> SourceReadBudget {
         SourceReadBudget::new(max_rows, self.page_byte_budget())
+            .with_reply_deadline(source_reply_deadline(*self))
     }
 
     /// Budget of a `LIMIT 1` read of one row.
@@ -315,10 +316,11 @@ pub async fn check_source_history_compatibility(
         open_snapshot_session_with_schema(source, password, selected_car_id, limits).await?;
     let mut retained_rows = 0_usize;
     let result = async {
-        let witness_row = session
-            .client()
-            .query_one(LIVE_SOURCE_WITNESS_SQL, &[])
-            .await?;
+        let witness_row = within_source_reply_deadline(
+            source_reply_deadline(limits),
+            session.client().query_one(LIVE_SOURCE_WITNESS_SQL, &[]),
+        )
+        .await?;
         let connection = parse_live_source_connection(&witness_row)?;
         if !connection.transaction_read_only {
             return Err(SourceDbReaderError::WitnessTransactionWritable);
@@ -365,10 +367,13 @@ pub async fn check_source_history_compatibility(
             &mut retained_rows,
         )
         .await?;
-        let count_row = session
-            .client()
-            .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16])
-            .await?;
+        let count_row = within_source_reply_deadline(
+            source_reply_deadline(limits),
+            session
+                .client()
+                .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16]),
+        )
+        .await?;
         Ok(SourceDbCheckSnapshot {
             schema,
             connection,
@@ -461,10 +466,11 @@ pub async fn inspect_source_db_live_source(
     let session = SourceDbSnapshotSession::new(client, connection_task);
     let result = async {
         prepare_read_only_snapshot(session.client(), source, limits).await?;
-        let row = session
-            .client()
-            .query_one(LIVE_SOURCE_WITNESS_SQL, &[])
-            .await?;
+        let row = within_source_reply_deadline(
+            source_reply_deadline(limits),
+            session.client().query_one(LIVE_SOURCE_WITNESS_SQL, &[]),
+        )
+        .await?;
         let witness = parse_live_source_witness(&row)?;
         if witness.private_schema_usage {
             return Err(SourceDbReaderError::PrivateSchemaUsageGranted);

@@ -13,12 +13,14 @@
 // PostgreSQL is only `query_bounded`, `open_bounded_copy`, `ServerCancel` and
 // the `WireFields` impl for `BinaryCopyOutRow`.
 
-/// The row, per-row and per-page budgets of one bounded source read.
+/// The row, per-row and per-page budgets of one bounded source read, and the
+/// longest wait for one reply of the source (opening the read, then each row).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SourceReadBudget {
     max_rows: usize,
     row_bytes: usize,
     page_bytes: usize,
+    reply_deadline: Duration,
 }
 
 impl SourceReadBudget {
@@ -34,6 +36,16 @@ impl SourceReadBudget {
             max_rows,
             row_bytes,
             page_bytes,
+            reply_deadline: MAX_SOURCE_REPLY_DEADLINE,
+        }
+    }
+
+    /// Wait at most `reply_deadline` for each reply of the source. Without it
+    /// a read waits at most [`MAX_SOURCE_REPLY_DEADLINE`].
+    pub(crate) const fn with_reply_deadline(self, reply_deadline: Duration) -> Self {
+        Self {
+            reply_deadline,
+            ..self
         }
     }
 
@@ -176,9 +188,14 @@ where
         }
     }
 
-    /// The next admitted row, or `None` at the end of the stream.
+    /// The next admitted row, or `None` at the end of the stream. A source
+    /// that sends no row within the reply deadline ends the read with
+    /// [`SourceDbReaderError::SourceReplyTimedOut`].
     pub(crate) async fn next_row(&mut self) -> Result<Option<R>, SourceDbReaderError> {
-        let Some(row) = self.rows.as_mut().try_next().await? else {
+        let reply_deadline = self.meter.budget.reply_deadline;
+        let Some(row) =
+            within_source_reply_deadline(reply_deadline, self.rows.as_mut().try_next()).await?
+        else {
             return Ok(None);
         };
         if let Err(excess) = self.meter.admit(row.source_bytes()) {
@@ -245,7 +262,11 @@ pub(crate) async fn query_bounded(
     table: &'static str,
     budget: SourceReadBudget,
 ) -> Result<Vec<Row>, SourceDbReaderError> {
-    let stream = client.query_raw(sql, params.iter().copied()).await?;
+    let stream = within_source_reply_deadline(
+        budget.reply_deadline,
+        client.query_raw(sql, params.iter().copied()),
+    )
+    .await?;
     collect_bounded_rows(stream, table, budget, ServerCancel::of(client)).await
 }
 
@@ -331,7 +352,7 @@ pub(crate) async fn open_bounded_copy(
     table: &'static str,
     budget: SourceReadBudget,
 ) -> Result<BoundedCopyRows, SourceDbReaderError> {
-    let stream = client.copy_out(sql).await?;
+    let stream = within_source_reply_deadline(budget.reply_deadline, client.copy_out(sql)).await?;
     let rows = CopyRowStream::new(
         tokio_postgres::binary_copy::BinaryCopyOutStream::new(stream, types),
         types,

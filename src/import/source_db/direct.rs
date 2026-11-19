@@ -1459,7 +1459,9 @@ async fn read_direct_source_counts_from_exported_snapshot(
     limits: SourceDbReadLimits,
 ) -> Result<SourceDbCounts, SourceDbDirectError> {
     let lane = open_snapshot_capture_lane(source, password, snapshot_token, limits).await?;
-    let result = read_direct_source_counts(lane.client(), selected_car_id).await;
+    let result =
+        read_direct_source_counts(lane.client(), selected_car_id, source_reply_deadline(limits))
+            .await;
     let finish = lane.finish().await;
     match (result, finish) {
         (Ok(counts), Ok(())) => Ok(counts),
@@ -1542,10 +1544,13 @@ SELECT
 async fn read_direct_source_counts(
     client: &Client,
     selected_car_id: i16,
+    reply_deadline: Duration,
 ) -> Result<SourceDbCounts, SourceDbDirectError> {
-    let row = client
-        .query_one(direct_source_count_sql(), &[&selected_car_id])
-        .await?;
+    let row = within_source_reply_deadline(
+        reply_deadline,
+        client.query_one(direct_source_count_sql(), &[&selected_car_id]),
+    )
+    .await?;
     Ok(SourceDbCounts {
         cars: source_count(&row, "cars")?,
         drives: source_count(&row, "drives")?,

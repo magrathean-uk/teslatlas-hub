@@ -197,6 +197,11 @@ pub(crate) async fn connect_source(
 /// a slow statement first; this bounds a peer that keeps the transport open
 /// but has stopped replying.
 const SOURCE_REPLY_GRACE: Duration = Duration::from_secs(5 * 60);
+/// The reply deadline of a read with no `SourceDbReadLimits` in reach: the
+/// longest statement timeout `SourceDbReadLimits::validate` accepts, plus the
+/// grace.
+pub(crate) const MAX_SOURCE_REPLY_DEADLINE: Duration =
+    Duration::from_secs(24 * 60 * 60 + SOURCE_REPLY_GRACE.as_secs());
 /// TCP keepalive probes find a source host that went away without closing the
 /// connection.
 const SOURCE_KEEPALIVE_IDLE: Duration = Duration::from_secs(60);
@@ -428,6 +433,56 @@ mod source_wire_tests {
         assert!(
             connection_released.await.is_err(),
             "the connection task ended without completing"
+        );
+    }
+
+    /// A peer that authenticates, then never answers the first statement.
+    async fn silent_after_authentication() -> (Client, tokio::task::JoinHandle<()>) {
+        let (client, connection) = connect_in_memory(|mut server| async move {
+            accept(&mut server).await;
+            read_request(&mut server).await;
+            std::future::pending::<()>().await;
+        })
+        .await;
+        (client, tokio::spawn(drive_source_connection(connection)))
+    }
+
+    /// Snapshot setup, the first statement of every source read, ends at the
+    /// reply deadline of its limits when the source never answers.
+    #[tokio::test(start_paused = true)]
+    async fn a_source_that_never_answers_snapshot_setup_ends_with_the_typed_deadline_error() {
+        let (client, _driver) = silent_after_authentication().await;
+        let source = ReadOnlySource::parse("postgresql://reader@127.0.0.1/sourcedb")
+            .expect("valid source");
+        let limits = SourceDbReadLimits::default();
+        let setup = timeout(
+            source_reply_deadline(limits) + Duration::from_secs(1),
+            prepare_read_only_snapshot(&client, &source, limits),
+        )
+        .await
+        .expect("the setup wait is bounded by the reply deadline");
+        match setup {
+            Err(SourceDbReaderError::SourceReplyTimedOut) => {}
+            Err(other) => panic!("expected the typed deadline error, got {other}"),
+            Ok(_) => panic!("the silent source completed the setup"),
+        }
+    }
+
+    /// A page read ends at the reply deadline of the limits its budget came
+    /// from when the source never answers it.
+    #[tokio::test(start_paused = true)]
+    async fn a_page_read_from_a_silent_source_ends_with_the_typed_deadline_error() {
+        let (client, _driver) = silent_after_authentication().await;
+        let limits = SourceDbReadLimits::default();
+        let read = timeout(
+            source_reply_deadline(limits) + Duration::from_secs(1),
+            query_bounded(&client, "SELECT 1", &[], "positions", limits.page_budget()),
+        )
+        .await
+        .expect("the page read is bounded by the reply deadline");
+        assert!(
+            matches!(read, Err(SourceDbReaderError::SourceReplyTimedOut)),
+            "{read:?}"
         );
     }
 
