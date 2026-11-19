@@ -258,6 +258,25 @@ pub(crate) fn discovery_action(
     }
 }
 
+/// How long an unchanged discovery may go without advancing the car's durable
+/// current observation. A repeat inside this bound writes nothing (C3 R14,
+/// M04-T01); the first repeat after it is delivered, so successful discovery keeps
+/// the car's observation time current without a write per poll.
+pub(crate) const DISCOVERY_PRESENCE_REFRESH_MS: i64 = 15 * 60 * 1_000;
+
+/// Whether a discovery received at `received_at_ms`, which [`discovery_action`]
+/// would skip, is delivered instead to advance the car's durable observation
+/// time. `last_stored_obs_ms` is the newest receipt among the car's delivered
+/// current rows (C3 R40); with none, the repeat is delivered.
+pub(crate) fn discovery_presence_refresh_due(
+    last_stored_obs_ms: Option<i64>,
+    received_at_ms: i64,
+) -> bool {
+    last_stored_obs_ms.is_none_or(|stored| {
+        received_at_ms.saturating_sub(stored) >= DISCOVERY_PRESENCE_REFRESH_MS
+    })
+}
+
 fn collector_vehicle_uuid(value: &str) -> Result<Uuid, StoreError> {
     parse_stored_uuid("collector vehicle", value)
 }

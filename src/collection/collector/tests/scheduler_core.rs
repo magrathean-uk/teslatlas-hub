@@ -1874,3 +1874,47 @@ fn r53_a_configured_car_the_list_never_names_waits_for_the_inventory_cadence_and
     assert_eq!(core.scheduler.vehicles[&core_id(2)].hold, VehicleHold::Removed);
     assert_eq!(core.scheduler.vehicles[&core_id(2)].reason, "vehicle_removed");
 }
+
+// ---- Issues #114 and #115: the tick's stored phase and presence ------------
+
+/// Issue #115 (P06-F10): an unchanged discovery advances the car's durable
+/// current observation once the stored one is older than the presence bound, and
+/// a repeat inside the bound still writes nothing.
+#[tokio::test]
+async fn astra_p06_unchanged_discovery_advances_durable_presence() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            let car = || vec![core_vehicle(1, "asleep")];
+            let received = |bed: &TickBed| -> i64 {
+                bed.query(
+                    "SELECT received_at_ms FROM current_observations
+                      WHERE record_type = 'owner_api_discovery_v1'",
+                )
+            };
+            bed.list(car()).await;
+            let first = bed.wall();
+            assert_eq!(received(&bed), first);
+            // Thirty seconds later the repeat writes nothing.
+            bed.advance(Duration::from_secs(30));
+            bed.list(car()).await;
+            assert_eq!(received(&bed), first);
+            assert_eq!(seam.tick_commits(), 1);
+            // Once the stored observation is older than the bound, the repeat
+            // advances it, from the scheduler's cached view.
+            let refresh_ms = u64::try_from(crate::db::DISCOVERY_PRESENCE_REFRESH_MS).unwrap();
+            bed.advance(Duration::from_millis(refresh_ms - 30_000));
+            bed.list(car()).await;
+            let second = bed.wall();
+            assert_eq!(second - first, crate::db::DISCOVERY_PRESENCE_REFRESH_MS);
+            assert_eq!(received(&bed), second);
+            assert_eq!(seam.tick_commits(), 2);
+            // And the next repeat inside the bound writes nothing again.
+            bed.advance(Duration::from_secs(30));
+            bed.list(car()).await;
+            assert_eq!(received(&bed), second);
+            assert_eq!(seam.tick_commits(), 2);
+        })
+        .await;
+}

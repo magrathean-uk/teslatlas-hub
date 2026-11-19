@@ -441,6 +441,41 @@ struct TickCommit<'a> {
     offline_drive_timeout: Duration,
 }
 
+/// C3 R14's rule with the bounded presence refresh: a discovery the rule skips is
+/// still delivered once the car's newest delivered observation is older than
+/// [`crate::db::DISCOVERY_PRESENCE_REFRESH_MS`], so an unchanged state keeps the
+/// durable current observation advancing.
+fn discovery_action_with_presence(
+    state: &str,
+    last_reach: Option<&str>,
+    current_discovery_state: Option<&str>,
+    last_stored_obs_ms: Option<i64>,
+    received_at_ms: i64,
+) -> crate::db::DiscoveryAction {
+    match crate::db::discovery_action(state, last_reach, current_discovery_state) {
+        crate::db::DiscoveryAction::Skip
+            if crate::db::discovery_presence_refresh_due(last_stored_obs_ms, received_at_ms) =>
+        {
+            crate::db::DiscoveryAction::Deliver
+        }
+        action => action,
+    }
+}
+
+/// The scheduler's cached R14 view of a car with its cached newest delivered
+/// observation time, or `None` when the transaction must read them.
+fn cached_discovery_facts(
+    scheduler: &VehicleScheduler,
+    id: VehicleId,
+) -> Option<(Option<String>, Option<String>, Option<i64>)> {
+    let (last_reach, current) = scheduler.cached_discovery_view(id)?;
+    let last_stored_obs_ms = scheduler
+        .vehicles
+        .get(&id)
+        .and_then(|vehicle| vehicle.last_stored_obs_ms);
+    Some((last_reach, current, last_stored_obs_ms))
+}
+
 /// C3 R14 for one discovery candidate, inside the tick transaction. The cached
 /// lifecycle facts decide when they are current; otherwise the transaction reads
 /// them once. Returns the vehicle's identity use through `output`, and whether an
@@ -451,12 +486,14 @@ fn store_discovery_in_transaction(
     commit: &TickCommit<'_>,
     registered: &Registered,
     item: &DiscoveryItem,
-    cached: Option<(Option<String>, Option<String>)>,
+    cached: Option<(Option<String>, Option<String>, Option<i64>)>,
     output: &mut TickTxOutput,
 ) -> Result<bool, CollectorError> {
     let vehicle = &item.vehicle;
-    let (last_reach, current, read) = match cached {
-        Some((last_reach, current)) => (last_reach, current, None),
+    let (last_reach, current, last_stored_obs_ms, read) = match cached {
+        Some((last_reach, current, last_stored_obs_ms)) => {
+            (last_reach, current, last_stored_obs_ms, None)
+        }
         None => {
             let snapshot = HubStore::collector_lifecycle_snapshot_in_transaction(
                 transaction,
@@ -465,12 +502,18 @@ fn store_discovery_in_transaction(
             (
                 snapshot.last_reach.clone(),
                 snapshot.current_discovery_state.clone(),
+                snapshot.last_stored_obs_ms,
                 Some(snapshot),
             )
         }
     };
-    let action =
-        crate::db::discovery_action(&vehicle.state, last_reach.as_deref(), current.as_deref());
+    let action = discovery_action_with_presence(
+        &vehicle.state,
+        last_reach.as_deref(),
+        current.as_deref(),
+        last_stored_obs_ms,
+        item.received_at_ms,
+    );
     let input = ObservationInput {
         source_id: registered.source_id,
         vehicle_id: registered.hub_id,
@@ -779,7 +822,7 @@ fn write_tick_in_transaction(
         let identity = registered
             .get(&item.vehicle.id)
             .ok_or(CollectorError::SnapshotWithoutListedVehicle)?;
-        let cached = scheduler.cached_discovery_view(item.vehicle.id);
+        let cached = cached_discovery_facts(scheduler, item.vehicle.id);
         if store_discovery_in_transaction(
             store,
             transaction,
@@ -934,13 +977,15 @@ fn tick_needs_transaction(
         return true;
     }
     batch.discoveries.iter().any(
-        |item| match scheduler.cached_discovery_view(item.vehicle.id) {
+        |item| match cached_discovery_facts(scheduler, item.vehicle.id) {
             None => true,
-            Some((last_reach, current)) => {
-                crate::db::discovery_action(
+            Some((last_reach, current, last_stored_obs_ms)) => {
+                discovery_action_with_presence(
                     &item.vehicle.state,
                     last_reach.as_deref(),
                     current.as_deref(),
+                    last_stored_obs_ms,
+                    item.received_at_ms,
                 ) != crate::db::DiscoveryAction::Skip
             }
         },
