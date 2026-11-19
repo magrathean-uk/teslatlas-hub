@@ -218,6 +218,7 @@ fn data_recovery_m06_t11_backup_schedule_records_no_last_good_for_an_invalid_pub
         keep: NonZeroUsize::new(2),
         retry_ms: 60_000,
         startup_delay_ms: 0,
+        scratch: Default::default(),
     };
     let schedule = BackupScheduler::start(
         settings,

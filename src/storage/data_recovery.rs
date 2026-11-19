@@ -164,6 +164,16 @@ pub enum DataRecoveryError {
         required: u64,
         available: u64,
     },
+    /// An encrypted backup whose scratch need exceeds the configured budget
+    /// (M06-T21), refused before any scratch is attached or anything copied.
+    #[error(
+        "scratch_budget_exceeded: the encrypted backup of a {catalogue}-byte catalogue needs {required} bytes of scratch, above the scratch budget of {budget} bytes; nothing was attached or copied"
+    )]
+    ScratchBudgetExceeded {
+        catalogue: u64,
+        required: u64,
+        budget: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -939,6 +949,27 @@ fn available_bytes(path: &Path) -> Result<u64, DataRecoveryError> {
     let stats = statvfs(path).map_err(|source| DataRecoveryError::FilesystemSpace {
         path: path.to_path_buf(),
         source,
+    })?;
+    stats
+        .f_bavail
+        .checked_mul(stats.f_frsize)
+        .ok_or(DataRecoveryError::CapacityOverflow)
+}
+
+/// The free space of the held directory `directory` (M06-T21): the volume
+/// of the folder admitted, whatever its path names now.
+fn held_available_bytes(
+    directory: &backup_admission::AdmittedDirectory,
+) -> Result<u64, DataRecoveryError> {
+    #[cfg(test)]
+    if let Some(available) = space_seam::available(&directory.path) {
+        return Ok(available);
+    }
+    let stats = rustix::fs::fstatvfs(&directory.fd).map_err(|source| {
+        DataRecoveryError::FilesystemSpace {
+            path: directory.path.clone(),
+            source,
+        }
     })?;
     stats
         .f_bavail
@@ -2535,8 +2566,9 @@ pub use recovery_password::{
 };
 pub(crate) use encrypted_backup::live_backup_pack_pins;
 pub use encrypted_backup::{
-    EncryptedBackupReport, EncryptedBackupRequest, create_encrypted_backup,
-    restore_encrypted_backup, verify_encrypted_backup,
+    EncryptedBackupReport, EncryptedBackupRequest, EncryptedBackupSpaceNeeds,
+    create_encrypted_backup, encrypted_backup_space_needs, restore_encrypted_backup,
+    verify_encrypted_backup,
 };
 
 #[cfg(test)]

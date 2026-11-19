@@ -2285,6 +2285,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             // The command's existing private folder: owner-only, by mode and
             // by ACL, where the volume enforces ownership (M06-T14).
             request.private_destination = true;
+            // The configured scratch budget and folder, and the three space
+            // needs shown before the run starts (M06-T21).
+            request.scratch_budget_bytes = config.backup.scratch_budget_bytes;
+            request.scratch_directory = config.backup.scratch_directory.as_deref();
+            let needs = tesatlas_hub::data_recovery::encrypted_backup_space_needs(&store, &request)
+                .map_err(|error| backup_refusal(&store, error))?;
+            eprintln!("{}", backup_space_needs_text(&needs));
             let report = tesatlas_hub::data_recovery::create_encrypted_backup(&store, &request)
                 .map_err(|error| backup_refusal(&store, error))?;
             println!("{}", serde_json::to_string(&report)?);
@@ -2307,6 +2314,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
+}
+
+/// The three space needs of an encrypted backup, one line, before it starts
+/// (M06-T21).
+fn backup_space_needs_text(needs: &tesatlas_hub::data_recovery::EncryptedBackupSpaceNeeds) -> String {
+    let budget = needs
+        .scratch_budget_bytes
+        .map_or_else(|| "no budget".to_owned(), |budget| format!("budget {budget} bytes"));
+    format!(
+        "Backup space needs: catalogue {} bytes; scratch {} bytes in {} ({budget}); destination {} bytes in {}",
+        needs.catalogue_bytes,
+        needs.scratch_bytes,
+        needs.scratch_directory.display(),
+        needs.destination_bytes,
+        needs.destination.display(),
+    )
 }
 
 /// A refusal caused by refused pre-upgrade credentials names the command that
@@ -2496,6 +2519,7 @@ mod backup_recovery_repair_tests {
                 password: tesatlas_hub::runtime::backup_schedule::PasswordSource::File(password_file),
                 keep: None,
                 cancel: Arc::new(AtomicBool::new(false)),
+                scratch: Default::default(),
             })
             .expect("the scheduled runner writes a bundle");
         let bundle = PathBuf::from(report["path"].as_str().expect("bundle path"));

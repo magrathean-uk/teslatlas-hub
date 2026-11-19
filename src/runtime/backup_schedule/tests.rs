@@ -53,6 +53,7 @@ fn settings(enabled: bool) -> BackupSettings {
         keep: NonZeroUsize::new(3),
         retry_ms: 15 * 60 * 1000,
         startup_delay_ms: 2 * 60 * 1000,
+        scratch: Default::default(),
     }
 }
 

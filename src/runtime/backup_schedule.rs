@@ -93,6 +93,16 @@ pub struct BackupSettings {
     pub keep: Option<NonZeroUsize>,
     pub retry_ms: i64,
     pub startup_delay_ms: i64,
+    /// The scratch budget and approved scratch folder (M06-T21).
+    pub scratch: BackupScratch,
+}
+
+/// The encrypted backup's scratch budget in bytes and approved scratch
+/// folder (M06-T21); `None` sets no budget and uses the temporary folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackupScratch {
+    pub budget_bytes: Option<u64>,
+    pub directory: Option<PathBuf>,
 }
 
 impl BackupSettings {
@@ -111,6 +121,10 @@ impl BackupSettings {
             keep: NonZeroUsize::new(usize::try_from(config.keep).unwrap_or(usize::MAX)),
             retry_ms: RETRY_AFTER_MS.min(interval_ms),
             startup_delay_ms: STARTUP_DELAY_MS.min(interval_ms),
+            scratch: BackupScratch {
+                budget_bytes: config.scratch_budget_bytes,
+                directory: config.scratch_directory.clone(),
+            },
         }
     }
 
@@ -161,6 +175,7 @@ pub struct BackupJob {
     pub keep: Option<NonZeroUsize>,
     /// Set when the service stops; the run checks it per chunk.
     pub cancel: Arc<AtomicBool>,
+    pub scratch: BackupScratch,
 }
 
 /// What a run does. The service's is [`StoreBackupRunner`]; tests supply others.
@@ -216,6 +231,8 @@ impl BackupRunner for StoreBackupRunner {
         let mut request = EncryptedBackupRequest::new(&job.destination, password.as_str());
         request.keep = job.keep;
         request.cancel = Some(Arc::clone(&job.cancel));
+        request.scratch_budget_bytes = job.scratch.budget_bytes;
+        request.scratch_directory = job.scratch.directory.as_deref();
         let report = create_encrypted_backup(&self.store, &request).map_err(|error| {
             refusal_from(&error, refused_credential_backup_message(&self.store, &error))
         })?;
@@ -337,6 +354,7 @@ impl Shared {
             password: self.settings.password.clone()?,
             keep: self.settings.keep,
             cancel: Arc::clone(&self.cancel),
+            scratch: self.settings.scratch.clone(),
         })
     }
 
@@ -494,6 +512,7 @@ impl BackupScheduler {
             password,
             keep: settings.keep,
             cancel: Arc::clone(&self.shared.cancel),
+            scratch: settings.scratch.clone(),
         };
         let mut report = self.shared.execute(&job, wall_ms())?;
         if let Value::Object(map) = &mut report {

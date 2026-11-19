@@ -75,6 +75,19 @@
 //! written before v5 list their members in the manifest; they still verify and
 //! restore, with that list bounded as when they were written.
 //!
+//! Space (M06-T21). A run needs room in three separate places, measured
+//! before it starts ([`EncryptedBackupSpaceNeeds`]): the catalogue, the
+//! scratch its encrypted copy takes (none below the in-memory cap, about
+//! 2.625 times the catalogue plus 277 MiB above it) and the archive's room at
+//! the destination, where the packs go; packs never pass through scratch. A
+//! configured scratch budget refuses a run whose scratch need is above it
+//! before any scratch is attached or anything copied, and one whose catalogue
+//! has grown past it, or past the volume prepared for it, by the time the
+//! publication gate is taken, before anything is copied. The volume's fixed
+//! size caps the copy and the `VACUUM INTO` rebuild, so scratch use never
+//! exceeds the need admitted. The scratch volume lives in the user's
+//! temporary folder or in a configured private folder.
+//!
 //! Secret exclusion (M06-T02). The seal removes credential rows, the
 //! credential unit's status row, pairing and collector authority, then
 //! vacuums the copy, so free pages copied from the live catalogue cannot
@@ -104,6 +117,7 @@ use super::{
     PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE, RestoredMembers, SCHEMA_22_NOOP_DIRECTORY,
     SCHEMA_VERSION, STREAMED_BACKUP_KIND, Sha256, StagedTree, StoreError, StreamedMembers,
     admit_known_capacity, admit_staging_capacity, allocation_block_bytes, available_bytes,
+    held_available_bytes,
     backup_format,
     backup_admission::{self, AdmittedDirectory},
     encrypted_scratch::EncryptedScratch,
@@ -235,7 +249,18 @@ pub(super) fn clear_pack_pins(connection: &Connection) -> Result<(), rusqlite::E
 pub(super) const PACK_PIN_LEASE_MS: i64 = 6 * 60 * 60 * 1000;
 
 #[cfg(test)]
-pub(super) use test_hooks::{Action as HookAction, clear_hook, force_scratch_above, set_hook};
+pub(super) use test_hooks::{
+    Action as HookAction, clear_hook, force_default_scratch, force_scratch_above, set_hook,
+};
+
+/// The default scratch location: the user's temporary folder.
+fn default_scratch_directory() -> PathBuf {
+    #[cfg(test)]
+    if let Some(folder) = test_hooks::DEFAULT_SCRATCH.with(|slot| slot.borrow().clone()) {
+        return folder;
+    }
+    std::env::temp_dir()
+}
 
 /// The size above which a run copies through the encrypted scratch volume;
 /// tests lower it to take that path with small catalogues.
@@ -262,6 +287,16 @@ pub struct EncryptedBackupRequest<'a> {
     /// shipped `backup` command sets it; the service's schedule keeps the
     /// rule that no other account may write there.
     pub private_destination: bool,
+    /// The most scratch a run may use, in bytes (M06-T21). A run whose
+    /// scratch need is above it is refused before any scratch is attached or
+    /// anything copied; so is one whose catalogue grows past it by the time
+    /// the publication gate is taken. `None` sets no budget.
+    pub scratch_budget_bytes: Option<u64>,
+    /// The approved folder for the encrypted scratch volume (M06-T21): an
+    /// existing private folder of the Hub's user (no access for other
+    /// accounts by mode or ACL), outside the live data directory and the
+    /// destination. `None` is the user's temporary folder.
+    pub scratch_directory: Option<&'a Path>,
     pub(crate) kdf: KdfParams,
     pub(crate) chunk_bytes: usize,
 }
@@ -274,6 +309,8 @@ impl<'a> EncryptedBackupRequest<'a> {
             keep: None,
             cancel: None,
             private_destination: false,
+            scratch_budget_bytes: None,
+            scratch_directory: None,
             kdf: DEFAULT_KDF,
             chunk_bytes: DEFAULT_CHUNK_BYTES,
         }
@@ -295,6 +332,36 @@ pub struct EncryptedBackupReport {
     /// Set when rotation failed; the new generation is still good (it was
     /// authenticated in full as the object the run wrote before rotation).
     pub rotation_error: Option<String>,
+    /// The three space needs the run measured before it started (M06-T21).
+    pub space_needs: EncryptedBackupSpaceNeeds,
+}
+
+/// The three separate space needs of an encrypted backup (M06-T21), measured
+/// before it starts. `catalogue_bytes` is the live catalogue as it is now.
+/// `scratch_bytes` is what its encrypted copy takes in `scratch_directory`:
+/// none below the in-memory cap; above it, the copy and its rebuilt sealed
+/// file side by side, each with room to grow by a quarter, the copy's WAL
+/// (256 MiB) and the admission headroom (5% and 8 MiB), about 2.625 times the
+/// catalogue plus 277 MiB. `destination_bytes` is the archive's room at the
+/// destination: the catalogue, every pack and their records, with the same
+/// headroom. Packs never pass through scratch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedBackupSpaceNeeds {
+    pub catalogue_bytes: u64,
+    pub scratch_bytes: u64,
+    pub scratch_directory: PathBuf,
+    pub scratch_budget_bytes: Option<u64>,
+    pub destination_bytes: u64,
+    pub destination: PathBuf,
+}
+
+impl EncryptedBackupSpaceNeeds {
+    /// Whether the scratch need fits the budget (always, without one).
+    pub fn within_scratch_budget(&self) -> bool {
+        self.scratch_budget_bytes
+            .is_none_or(|budget| self.scratch_bytes <= budget)
+    }
 }
 
 fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), DataRecoveryError> {
@@ -305,8 +372,9 @@ fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), DataRecoveryError> {
     }
 }
 
-/// A test seam: stages are "scratch_copied" (the encrypted image, under the
-/// gate), "catalogue_copied" (under the gate), "catalogue_sealed", "write", "record", "before_publish" and
+/// A test seam: stages are "space_measured" (the scratch folder, after the
+/// needs are measured and before any scratch exists), "scratch_copied" (the
+/// encrypted image, under the gate), "catalogue_copied" (under the gate), "catalogue_sealed", "write", "record", "before_publish" and
 /// "rotate_remove". Production builds compile this to nothing.
 #[cfg(test)]
 fn hook(stage: &str, path: &Path) -> Result<(), DataRecoveryError> {
@@ -744,6 +812,48 @@ fn scratch_capacity(image_bytes: u64) -> Result<u64, DataRecoveryError> {
         .ok_or(DataRecoveryError::CapacityOverflow)
 }
 
+/// The scratch a catalogue of `image_bytes` needs (M06-T21): none on the
+/// in-memory path; above it, the volume and its admission headroom.
+pub(super) fn scratch_need(image_bytes: u64) -> Result<u64, DataRecoveryError> {
+    if image_bytes <= scratch_threshold() {
+        return Ok(0);
+    }
+    staging_required_bytes(scratch_capacity(image_bytes)?)
+}
+
+/// Refuse a scratch need above the configured budget.
+fn refuse_over_budget(
+    catalogue: u64,
+    required: u64,
+    budget: Option<u64>,
+) -> Result<(), DataRecoveryError> {
+    match budget {
+        Some(budget) if required > budget => Err(DataRecoveryError::ScratchBudgetExceeded {
+            catalogue,
+            required,
+            budget,
+        }),
+        _ => Ok(()),
+    }
+}
+
+/// What the scratch volume was prepared for: the catalogue measured before
+/// the gate, and the budget.
+#[derive(Clone, Copy)]
+struct ScratchLimit {
+    planned_bytes: u64,
+    budget: Option<u64>,
+}
+
+/// A scratch volume prepared before the gate and attached under it: the
+/// admitted folder, held open (REV-CX-B3-STORAGE F3), the volume's capacity
+/// and its limit.
+struct PreparedScratch {
+    place: AdmittedDirectory,
+    capacity: u64,
+    limit: ScratchLimit,
+}
+
 /// Open a file database on the scratch volume with bounded memory: a fixed
 /// page cache and in-memory statement journals (small: the seal's deletes).
 fn open_scratch_database(path: &Path) -> Result<Connection, DataRecoveryError> {
@@ -764,17 +874,39 @@ fn open_scratch_database(path: &Path) -> Result<Connection, DataRecoveryError> {
 
 /// Copy the live catalogue with the online backup API into a file on the
 /// encrypted scratch volume (M06-T07). Its journal and WAL live there too.
-pub(super) fn copy_catalogue_into_scratch(
+///
+/// Under the gate the catalogue is measured again (M06-T21): one whose
+/// scratch need has grown past the budget, or which has outgrown the room
+/// the volume was prepared with, is refused before the volume is attached or
+/// anything copied (REV-CX-B3-STORAGE F4), and a copy that grows past that
+/// room stops.
+fn copy_catalogue_into_scratch(
     store: &HubStore,
-    scratch: &EncryptedScratch,
-) -> Result<Connection, DataRecoveryError> {
+    prepared: &PreparedScratch,
+) -> Result<(Connection, EncryptedScratch), DataRecoveryError> {
+    let limit = prepared.limit;
     let source = store.open()?;
-    let (page_size, _) = catalogue_geometry(&source)?;
+    let (page_size, image_bytes) = catalogue_geometry(&source)?;
+    refuse_over_budget(image_bytes, scratch_need(image_bytes)?, limit.budget)?;
+    let room = limit
+        .planned_bytes
+        .checked_add(limit.planned_bytes / 4)
+        .ok_or(DataRecoveryError::CapacityOverflow)?;
+    let too_large = || {
+        invalid(format!(
+            "the Hub catalogue grew past the {room} bytes its backup scratch was prepared \
+             for; nothing more was copied"
+        ))
+    };
+    if image_bytes > room {
+        return Err(too_large());
+    }
+    let scratch = EncryptedScratch::create_in(&prepared.place, prepared.capacity)?;
+    #[cfg(test)]
+    hook("scratch_attached", &scratch.image())?;
     let mut copy = open_scratch_database(&scratch.path(SCRATCH_COPY))?;
-    step_backup(&source, &mut copy, page_size, u64::MAX, || {
-        DataRecoveryError::CapacityOverflow
-    })?;
-    Ok(copy)
+    step_backup(&source, &mut copy, page_size, room, too_large)?;
+    Ok((copy, scratch))
 }
 
 /// The catalogue copy taken under the gate.
@@ -980,14 +1112,14 @@ struct Snapshot<'a> {
 
 fn take_snapshot(
     store: &HubStore,
-    scratch: Option<EncryptedScratch>,
+    scratch: Option<PreparedScratch>,
     admitted_pin_rows: u64,
 ) -> Result<Snapshot<'_>, DataRecoveryError> {
     let gate = store.begin_backup_snapshot()?;
     check_backup_admission(&gate)?;
     let catalogue = match scratch {
-        Some(scratch) => {
-            let copy = copy_catalogue_into_scratch(store, &scratch)?;
+        Some(prepared) => {
+            let (copy, scratch) = copy_catalogue_into_scratch(store, &prepared)?;
             #[cfg(test)]
             hook("scratch_copied", &scratch.image())?;
             CatalogueCopy::Scratch(copy, scratch)
@@ -1007,6 +1139,129 @@ fn take_snapshot(
     })
 }
 
+/// Admit the run's destination as `create_encrypted_backup` does, and the
+/// live data directory it must lie outside.
+fn admit_run_destination<'s>(
+    store: &'s HubStore,
+    request: &EncryptedBackupRequest<'_>,
+) -> Result<(AdmittedDirectory, &'s Path), DataRecoveryError> {
+    // The destination is opened as named (never through a link at its end)
+    // and every check applies to the directory opened (M06-T14).
+    let access = if request.private_destination {
+        backup_admission::DestinationAccess::OwnerOnly
+    } else {
+        backup_admission::DestinationAccess::NoForeignWrite
+    };
+    let admitted = backup_admission::admit_destination(request.destination, access)?;
+    let live_data = store
+        .database_path()
+        .parent()
+        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?;
+    backup_admission::refuse_inside(&admitted, live_data)?;
+    Ok((admitted, live_data))
+}
+
+/// The scratch location (M06-T21): the configured folder, admitted now and
+/// held, or the user's temporary folder (resolved, not yet admitted: a run
+/// admits it only when it needs scratch, before any scratch operation).
+fn scratch_location(
+    request: &EncryptedBackupRequest<'_>,
+    destination: &AdmittedDirectory,
+    live_data: &Path,
+) -> Result<(PathBuf, Option<AdmittedDirectory>), DataRecoveryError> {
+    match request.scratch_directory {
+        Some(directory) => {
+            let admitted = admit_scratch(directory, destination, live_data)?;
+            Ok((admitted.path.clone(), Some(admitted)))
+        }
+        None => {
+            let directory = default_scratch_directory();
+            Ok((directory.canonicalize().unwrap_or(directory), None))
+        }
+    }
+}
+
+/// Admit a scratch folder, the configured one or the default alike
+/// (REV-CX-B3-STORAGE F2): a private folder of the Hub's user (no access for
+/// other accounts, by mode or ACL, where the volume enforces ownership),
+/// opened as named and not a link, outside the live data directory and the
+/// destination. The folder stays held for every later use (F3).
+fn admit_scratch(
+    directory: &Path,
+    destination: &AdmittedDirectory,
+    live_data: &Path,
+) -> Result<AdmittedDirectory, DataRecoveryError> {
+    let refused = |message: &'static str| {
+        move |error: DataRecoveryError| match error {
+            DataRecoveryError::InvalidBackup(_) => invalid(message),
+            other => other,
+        }
+    };
+    let admitted = backup_admission::admit_destination(
+        directory,
+        backup_admission::DestinationAccess::OwnerOnly,
+    )
+    .map_err(refused(
+        "the backup scratch folder must be an existing private folder of the Hub's user \
+         (no access for other accounts by its mode or by an access control list), not a \
+         symbolic link",
+    ))?;
+    backup_admission::refuse_inside(&admitted, live_data).map_err(refused(
+        "the backup scratch folder must not be inside the live Hub data directory",
+    ))?;
+    backup_admission::refuse_inside(&admitted, &destination.path).map_err(refused(
+        "the backup scratch folder must not be inside the backup destination",
+    ))?;
+    Ok(admitted)
+}
+
+/// The three needs, and the live pack count for pin-row admission.
+fn measure_space_needs(
+    store: &HubStore,
+    request: &EncryptedBackupRequest<'_>,
+    destination: &Path,
+    scratch_directory: PathBuf,
+) -> Result<(EncryptedBackupSpaceNeeds, u64), DataRecoveryError> {
+    let catalogue_bytes = live_catalogue_bytes(store)?;
+    // The live packs, counted one entry at a time, must fit the destination
+    // as an archive with the catalogue as it is now (REV-CX-M06-T10
+    // finding 2).
+    let (live_packs, live_pack_bytes) = count_live_packs(store)?;
+    let destination_bytes = staging_required_bytes(archive_bytes_bound(
+        live_packs.saturating_add(1),
+        checked_capacity_add(live_pack_bytes, catalogue_bytes)?,
+        MANIFEST_ESTIMATE_BYTES,
+        request.chunk_bytes,
+    )?)?;
+    Ok((
+        EncryptedBackupSpaceNeeds {
+            catalogue_bytes,
+            scratch_bytes: scratch_need(catalogue_bytes)?,
+            scratch_directory,
+            scratch_budget_bytes: request.scratch_budget_bytes,
+            destination_bytes,
+            destination: destination.to_path_buf(),
+        },
+        live_packs,
+    ))
+}
+
+/// The three space needs a backup with `request` would have now (M06-T21),
+/// for the command line and the app to show before a run starts. It admits
+/// the destination and the scratch folder as a run does, and writes nothing.
+pub fn encrypted_backup_space_needs(
+    store: &HubStore,
+    request: &EncryptedBackupRequest<'_>,
+) -> Result<EncryptedBackupSpaceNeeds, DataRecoveryError> {
+    let (admitted, live_data) = admit_run_destination(store, request)?;
+    let (scratch_directory, configured) = scratch_location(request, &admitted, live_data)?;
+    let needs = measure_space_needs(store, request, &admitted.path, scratch_directory)?.0;
+    if needs.scratch_bytes > 0 && configured.is_none() {
+        admit_scratch(&needs.scratch_directory, &admitted, live_data)?;
+    }
+    Ok(needs)
+}
+
 /// Create one encrypted backup generation. Success is reported only once the
 /// complete published file has authenticated as the object this run wrote,
 /// on every destination; otherwise the run fails with `InvalidBackup` whose
@@ -1017,20 +1272,9 @@ pub fn create_encrypted_backup(
 ) -> Result<EncryptedBackupReport, DataRecoveryError> {
     let cancel = request.cancel.as_deref();
     cancelled(cancel)?;
-    // The destination is opened as named (never through a link at its end)
-    // and every check applies to the directory opened (M06-T14).
-    let access = if request.private_destination {
-        backup_admission::DestinationAccess::OwnerOnly
-    } else {
-        backup_admission::DestinationAccess::NoForeignWrite
-    };
-    let admitted: AdmittedDirectory = backup_admission::admit_destination(request.destination, access)?;
+    let (admitted, live_data) = admit_run_destination(store, request)?;
     let destination = admitted.path.clone();
-    let live_data = store
-        .database_path()
-        .parent()
-        .ok_or_else(|| invalid("live Hub catalogue has no data-directory parent"))?;
-    backup_admission::refuse_inside(&admitted, live_data)?;
+    let (scratch_directory, configured_scratch) = scratch_location(request, &admitted, live_data)?;
     // The memory-hard derivation runs, and frees its memory, before the run
     // takes the gate or copies anything.
     let key = SealingKey::derive(request.password, request.kdf, request.chunk_bytes)?;
@@ -1042,30 +1286,51 @@ pub fn create_encrypted_backup(
     retention::clear_abandoned_runs(store, &admitted, request.password, source_installation_id)?;
     cancelled(cancel)?;
     store.catalogue_check()?;
+    // The three needs (M06-T21), measured before anything is attached or
+    // copied: a scratch need above the budget stops the run here.
+    let (space_needs, live_packs) =
+        measure_space_needs(store, request, &destination, scratch_directory)?;
+    let image_bytes = space_needs.catalogue_bytes;
+    refuse_over_budget(
+        image_bytes,
+        space_needs.scratch_bytes,
+        request.scratch_budget_bytes,
+    )?;
+    hook("space_measured", &space_needs.scratch_directory)?;
     // A catalogue above the in-memory cap goes through the encrypted scratch
-    // volume, prepared before the gate (attaching takes a moment).
-    let image_bytes = live_catalogue_bytes(store)?;
-    let scratch = if image_bytes > scratch_threshold() {
-        let capacity = scratch_capacity(image_bytes)?;
-        admit_staging_capacity(&std::env::temp_dir(), capacity)?;
-        Some(EncryptedScratch::create(capacity)?)
+    // volume. Its folder is admitted (the default one too, REV-CX-B3-STORAGE
+    // F2) and its free space checked before the gate, through the held
+    // folder (F3); the volume is attached under the gate once the catalogue
+    // has been measured again (F4).
+    let scratch = if space_needs.scratch_bytes > 0 {
+        let place = match configured_scratch {
+            Some(place) => place,
+            None => admit_scratch(&space_needs.scratch_directory, &admitted, live_data)?,
+        };
+        admit_known_capacity(
+            &place.path,
+            space_needs.scratch_bytes,
+            held_available_bytes(&place)?,
+        )?;
+        Some(PreparedScratch {
+            place,
+            capacity: scratch_capacity(image_bytes)?,
+            limit: ScratchLimit {
+                planned_bytes: image_bytes,
+                budget: request.scratch_budget_bytes,
+            },
+        })
     } else {
         None
     };
     cancelled(cancel)?;
-    // Before the gate and before any pin row or archive byte: the live
-    // packs, counted one entry at a time, must fit the destination as an
-    // archive (with the catalogue as it is now), and their pin rows the live
-    // data volume (REV-CX-M06-T10 finding 2).
-    let (live_packs, live_pack_bytes) = count_live_packs(store)?;
-    admit_archive(
+    // Before the gate and before any pin row or archive byte: the archive
+    // must fit the destination, and the pin rows the live data volume
+    // (REV-CX-M06-T10 finding 2).
+    admit_known_capacity(
         &destination,
-        archive_bytes_bound(
-            live_packs.saturating_add(1),
-            checked_capacity_add(live_pack_bytes, image_bytes)?,
-            MANIFEST_ESTIMATE_BYTES,
-            request.chunk_bytes,
-        )?,
+        space_needs.destination_bytes,
+        available_bytes(&destination)?,
     )?;
     admit_pin_rows(store, live_packs)?;
     let Snapshot {
@@ -1218,6 +1483,7 @@ pub fn create_encrypted_backup(
         archive_bytes,
         rotated_generations,
         rotation_error,
+        space_needs,
     })
 }
 
@@ -1970,6 +2236,14 @@ pub(super) mod test_hooks {
         static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
         pub(super) static CRASHED: Cell<bool> = const { Cell::new(false) };
         pub(super) static SCRATCH_ABOVE: Cell<Option<u64>> = const { Cell::new(None) };
+        pub(super) static DEFAULT_SCRATCH: RefCell<Option<std::path::PathBuf>> =
+            const { RefCell::new(None) };
+    }
+
+    /// Stand in `folder` for the user's temporary folder as the default
+    /// scratch location on this thread (`None` restores it).
+    pub fn force_default_scratch(folder: Option<std::path::PathBuf>) {
+        DEFAULT_SCRATCH.with(|slot| *slot.borrow_mut() = folder);
     }
 
     /// Take the encrypted scratch path for catalogues above `bytes` on this
@@ -1986,6 +2260,7 @@ pub(super) mod test_hooks {
         HOOK.with(|slot| *slot.borrow_mut() = None);
         CRASHED.with(|flag| flag.set(false));
         SCRATCH_ABOVE.with(|threshold| threshold.set(None));
+        DEFAULT_SCRATCH.with(|slot| *slot.borrow_mut() = None);
     }
 
     pub(super) fn call(stage: &str, path: &Path) -> Action {

@@ -33,6 +33,8 @@ final class BackupSettingsView: NSView {
     let passwordField = NSSecureTextField(string: "")
     let saveButton = HubActionButton(title: HubL10n.text("hub.backup.saveSchedule", fallback: "Save schedule"), target: nil, action: nil)
     let noteLabel = NSTextField(wrappingLabelWithString: "")
+    /// The three space needs of a backup and the scratch budget (M06-T21).
+    let spaceLabel = NSTextField(wrappingLabelWithString: "")
 
     private(set) var runState: HubBackupRunState = .idle
     private(set) var status: HubBackupStatus?
@@ -322,6 +324,10 @@ final class BackupSettingsView: NSView {
             HubL10n.text("hub.backup.detail", fallback: "Encrypted copies of the Hub's history. The recovery password stays in an owner-only file on this Mac."))
         detail.font = HubTypography.caption
         detail.textColor = HubPalette.mutedForeground
+        spaceLabel.stringValue = HubL10n.text("hub.backup.spaceNeeds", fallback: "Each backup needs room in three places, checked separately before it starts: the catalogue; scratch for its encrypted copy, about 2.6 times the catalogue plus 277 MiB, in the temporary folder or backup.scratch_directory; and this folder, which holds every pack. A backup whose scratch need is above backup.scratch_budget_bytes stops before it copies anything, and the last good backup stays.")
+        spaceLabel.identifier = NSUserInterfaceItemIdentifier("hub.backup.space")
+        spaceLabel.font = HubTypography.caption
+        spaceLabel.textColor = HubPalette.mutedForeground
 
         rowsStack.orientation = .vertical
         rowsStack.alignment = .leading
@@ -405,7 +411,7 @@ final class BackupSettingsView: NSView {
         noteLabel.textColor = HubPalette.mutedForeground
 
         let divider = HubModalChrome.divider()
-        let contents = NSStackView(views: [title, detail, rowsStack, blockedLabel, runRow, divider,
+        let contents = NSStackView(views: [title, detail, spaceLabel, rowsStack, blockedLabel, runRow, divider,
                                            scheduleTitle, enabledCheckbox, cadenceRow, folderRow, passwordRow, noteLabel])
         contents.orientation = .vertical
         contents.alignment = .leading
@@ -428,7 +434,7 @@ final class BackupSettingsView: NSView {
             contents.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
             divider.widthAnchor.constraint(equalTo: contents.widthAnchor)
         ])
-        for view in [detail, blockedLabel, noteLabel, folderRow, rowsStack] {
+        for view in [detail, spaceLabel, blockedLabel, noteLabel, folderRow, rowsStack] {
             view.widthAnchor.constraint(lessThanOrEqualTo: contents.widthAnchor).isActive = true
         }
         show(settings: settings)
