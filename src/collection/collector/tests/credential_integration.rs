@@ -35,6 +35,9 @@ struct AuthFake {
     /// A vehicle action is counted and then answered with an unreadable body,
     /// as if its answer were lost after the car acted.
     lose_answer: Arc<AtomicBool>,
+    /// A vehicle action is counted and then answered with this HTTP status
+    /// (0 = off), as a gateway would after forwarding it.
+    action_status: Arc<AtomicUsize>,
 }
 
 impl AuthFake {
@@ -78,6 +81,10 @@ async fn fake_products(
 /// A vehicle action: counted, and answered as a wake-up is.
 async fn fake_wake(State(fake): State<AuthFake>, headers: HeaderMap) -> axum::response::Response {
     fake.actions.fetch_add(1, Ordering::SeqCst);
+    let status = fake.action_status.load(Ordering::SeqCst);
+    if status != 0 {
+        return (StatusCode::from_u16(status as u16).unwrap(), "{}").into_response();
+    }
     if fake.lose_answer.load(Ordering::SeqCst) {
         return (StatusCode::OK, "{\"response\":").into_response();
     }
@@ -97,6 +104,10 @@ async fn fake_wake(State(fake): State<AuthFake>, headers: HeaderMap) -> axum::re
 /// A vehicle command (DEC-246): counted with the wake-ups, and accepted.
 async fn fake_command(State(fake): State<AuthFake>) -> axum::response::Response {
     fake.actions.fetch_add(1, Ordering::SeqCst);
+    let status = fake.action_status.load(Ordering::SeqCst);
+    if status != 0 {
+        return (StatusCode::from_u16(status as u16).unwrap(), "{}").into_response();
+    }
     if fake.lose_answer.load(Ordering::SeqCst) {
         return (StatusCode::OK, "{\"response\":").into_response();
     }
