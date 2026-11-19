@@ -1298,3 +1298,70 @@ fn failed_batch_flush_rolls_back_pending_rows_and_poisons_the_capture() {
         Err(SourceDbProjectionStateError::WriteBatchFailed)
     ));
 }
+
+/// Source release 4.5.0 backfills elevation on ended drives and rewrites their
+/// ascent and descent, including drives the Hub imported long before. The
+/// next capture must classify such a closed drive as changed and keep the new
+/// values in its changed payload, so the update replaces the stale row.
+#[test]
+fn backfilled_ascent_and_descent_on_an_imported_closed_drive_is_a_change() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut seed = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("seed state");
+    let imported = drive(7, Some(10.0));
+    let imported_digest = seed.record_drive(&imported).expect("imported digest");
+    let mut prior = MemoryPrior::default();
+    prior.rows.insert(
+        (SourceDbProjectionStateEntity::Drive.ordinal(), 7),
+        SourceDbProjectionStateDigestRow {
+            entity: SourceDbProjectionStateEntity::Drive,
+            id: 7,
+            car_id: 1,
+            digest: imported_digest,
+        },
+    );
+
+    let mut backfilled = imported.clone();
+    backfilled.ascent = Some(120);
+    backfilled.descent = Some(95);
+    let next_dir = tempfile::tempdir().expect("next directory");
+    let mut next = SourceDbProjectionState::create(
+        next_dir.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("next state");
+    assert_eq!(
+        next.record_if_changed(
+            &mut prior,
+            SourceDbProjectionStateEntity::Drive,
+            backfilled.id,
+            backfilled.car_id,
+            &backfilled,
+        )
+        .expect("backfilled drive"),
+        SourceDbProjectionStateChange::NewOrChanged
+    );
+    next.seal().expect("seal");
+    assert_eq!(next.stats().changed_row_count, 1);
+    let changed = next.changed_page(None, 10).expect("changed page");
+    assert_eq!(changed.rows.len(), 1);
+    assert_eq!(changed.rows[0].state.id, 7);
+    assert_ne!(changed.rows[0].state.digest, imported_digest);
+    let payload: serde_json::Value =
+        serde_json::from_slice(&changed.rows[0].canonical_payload).expect("changed payload");
+    assert_eq!(payload["ascent"], 120);
+    assert_eq!(payload["descent"], 95);
+}

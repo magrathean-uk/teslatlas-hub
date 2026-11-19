@@ -10,6 +10,7 @@ use crate::{
     source_db_schema::{
         MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_1_1_SOURCE_REVISION, SOURCE_DB_V4_MIGRATION_COUNT,
         SOURCE_DB_V4_MIGRATION_SET_SHA256, V4_1_1_REVIEWED_SOURCE_SET, V4_2_REVIEWED_SOURCE_SET,
+        V4_4_REVIEWED_SOURCE_SET,
     },
     updates_logical::decode_updates_logical_stream,
 };
@@ -628,14 +629,81 @@ fn registered_binding(store: &HubStore, selected_car_id: i64) -> ProjectionBindi
 }
 
 fn v4_2_production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
+    earlier_set_production_source(car_id, &V4_2_REVIEWED_SOURCE_SET)
+}
+
+fn earlier_set_production_source(
+    car_id: i16,
+    set: &'static ReviewedSourceSet,
+) -> DirectUpdatesSourceV2_2 {
     let mut source = production_source(car_id);
-    source.schema.observed_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
-    source.schema.observed_migration_count = V4_2_REVIEWED_SOURCE_SET.migration_count;
-    source.schema.minimum_supported_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
-    source.schema.maximum_validated_migration_version = V4_2_REVIEWED_SOURCE_SET.newest_migration;
-    source.schema.pinned_source_revision = V4_2_REVIEWED_SOURCE_SET.source_revision;
-    source.schema.pinned_migration_set_sha256 = V4_2_REVIEWED_SOURCE_SET.migration_set_sha256;
+    source.schema.observed_migration_version = set.newest_migration;
+    source.schema.observed_migration_count = set.migration_count;
+    source.schema.minimum_supported_migration_version = set.newest_migration;
+    source.schema.maximum_validated_migration_version = set.newest_migration;
+    source.schema.pinned_source_revision = set.source_revision;
+    source.schema.pinned_migration_set_sha256 = set.migration_set_sha256;
     source
+}
+
+/// A store published under the v4.4.0 set still verifies after the v4.5.0
+/// pin, a v4.4.0 capture is refused for new publications, and a current
+/// capture publishes a successor over it.
+#[test]
+fn store_published_under_the_v4_4_set_verifies_and_publishes_a_current_successor() {
+    let temp = crate::private_tempdir().expect("store root");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([46; 32]);
+    let binding = registered_binding(&store, 7);
+
+    let earlier = {
+        let gate = store.try_acquire_publication_gate().expect("gate");
+        let head = production_updates_head(&store, binding.vehicle_id).expect("head");
+        publish_production_updates_schema_22_admitting(
+            &store,
+            &cursor_key,
+            &binding,
+            earlier_set_production_source(7, &V4_4_REVIEWED_SOURCE_SET),
+            &gate,
+            &head,
+            None,
+            &V4_4_REVIEWED_SOURCE_SET,
+        )
+        .expect("the earlier release publishes under the v4.4 set")
+    };
+    assert_eq!(earlier.source_witness.observed_migration_count, 107);
+    let earlier_pair = schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+        .expect("the v4.4 pair still verifies after the upgrade");
+
+    let error = publish_production_updates_schema_22(
+        &store,
+        &cursor_key,
+        &binding,
+        earlier_set_production_source(7, &V4_4_REVIEWED_SOURCE_SET),
+    )
+    .expect_err("a v4.4 capture is no longer admitted for new publications");
+    assert!(
+        error
+            .message
+            .contains("superseded reviewed source set 4.4.0")
+    );
+    assert_eq!(
+        schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+            .expect("pair survives the refused capture"),
+        earlier_pair
+    );
+
+    let successor =
+        publish_production_updates_schema_22(&store, &cursor_key, &binding, production_source(7))
+            .expect("a current capture publishes a successor over the v4.4 store");
+    assert!(successor.sequence > earlier.sequence);
+    assert_eq!(
+        successor.source_witness.source_revision,
+        SOURCE_DB_V4_SOURCE_REVISION
+    );
+    assert_eq!(successor.source_witness.observed_migration_count, 108);
+    schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
+        .expect("the successor pair verifies");
 }
 
 /// Review REV-M03-T08 finding 1: a store published by the earlier release

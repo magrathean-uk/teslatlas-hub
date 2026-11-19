@@ -4090,7 +4090,7 @@ final class HubController {
             throw HubActionError.commandFailed(
                 historyOnly
                     ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed source database schema before checking compatibility.")
-                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.4.0 or later before checking compatibility.")
+                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.5.0 or later before checking compatibility.")
             )
         }
         try Self.validateMigrationSource(source)
@@ -4153,7 +4153,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.4.0 or later before importing.")
+                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.5.0 or later before importing.")
             )))
             return
         }
@@ -5440,7 +5440,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.")
+                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.5.0 or later before importing from a direct PostgreSQL source.")
             )))
             return
         }

@@ -355,7 +355,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         checkboxWithTitle: HubL10n.text("hub.OnboardingWindowController.200.1857", fallback: "Use a local PostgreSQL snapshot (history only)"), target: nil, action: nil
     )
     private let migrationVersionAcknowledgement = NSButton(
-        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."),
+        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import."),
         target: nil,
         action: nil
     )
@@ -710,7 +710,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationUseLocalHistory.identifier = NSUserInterfaceItemIdentifier("onboarding.local-history")
         migrationVersionAcknowledgement.title = ""
         migrationVersionAcknowledgement.setAccessibilityLabel(
-            HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+            HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
         )
         migrationVersionAcknowledgement.controlSize = .regular
         migrationVersionAcknowledgement.target = self
@@ -1286,7 +1286,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                             (HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), migrationCarID),
                             (HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow)]), note,
             wrappingCheckbox(migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."))])
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import."))])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1309,7 +1309,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         views.append(wrappingCheckbox(
             migrationVersionAcknowledgement,
-            title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+            title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
         ))
         migrationKeyViews = [migrationVersionAcknowledgement]
 
@@ -1472,7 +1472,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             migrationSuccessCard(host: migrationServer.stringValue),
             wrappingCheckbox(
                 migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
             )
         ])
         stack.orientation = .vertical
@@ -2532,8 +2532,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             setBusy(false)
             compatibility = HubSourceCheckResult(
                 compatible: false,
-                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "A schema check cannot establish the source application release. Confirm that the running server is at release 4.4.0 or later, then continue."),
-                reasonCode: "v4_4_version_unconfirmed",
+                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "A schema check cannot establish the source application release. Confirm that the running server is at release 4.5.0 or later, then continue."),
+                reasonCode: "v4_5_version_unconfirmed",
                 requiredVersion: HubSourceCheckResult.requiredSourceRelease
             )
             render()

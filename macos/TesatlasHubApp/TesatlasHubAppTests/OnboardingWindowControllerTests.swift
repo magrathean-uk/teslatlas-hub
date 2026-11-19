@@ -1298,7 +1298,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let connectedText = labels(in: connected.window?.contentView).map(\.stringValue)
         XCTAssertTrue(connectedText.contains("Connected to server.local"))
         XCTAssertTrue(connectedText.contains("Found a source database ready to import."))
-        XCTAssertTrue(connectedText.contains("I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."))
+        XCTAssertTrue(connectedText.contains("I confirm that the source application is at release 4.5.0 or later and will not be updated during the import."))
         XCTAssertTrue(buttons(in: connected.window?.contentView).contains { $0.title == "Import Data" })
 
         let verifyText = labels(in: verify.window?.contentView).map(\.stringValue)
@@ -2070,7 +2070,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             SourceServerImporter.classifyVersionForTests(ociVersion: "4.1.1"),
             .tooOld("4.1.1")
         )
-        // Releases before 4.4.0 carry the earlier reviewed schema set, which
+        // Releases before 4.5.0 carry an earlier reviewed schema set, which
         // this Hub no longer admits: guided import asks for an update first.
         XCTAssertEqual(
             SourceServerImporter.classifyVersionForTests(ociVersion: "4.2.0"),
@@ -2082,11 +2082,19 @@ final class OnboardingWindowControllerTests: XCTestCase {
         )
         XCTAssertEqual(
             SourceServerImporter.classifyVersionForTests(ociVersion: "4.4.0"),
-            .supported("4.4.0")
+            .tooOld("4.4.0")
         )
         XCTAssertEqual(
             SourceServerImporter.classifyVersionForTests(ociVersion: "4.4"),
-            .supported("4.4")
+            .tooOld("4.4")
+        )
+        XCTAssertEqual(
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.5.0"),
+            .supported("4.5.0")
+        )
+        XCTAssertEqual(
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.5"),
+            .supported("4.5")
         )
         XCTAssertEqual(
             SourceServerImporter.classifyVersionForTests(ociVersion: "4.5.1"),
