@@ -220,6 +220,18 @@ pub(super) async fn drives(
         .into_iter()
         .map(|drive| PublicDrive::from_projection(vehicle_id, drive))
         .collect();
+    if requests_hub_http_1_4(&headers) {
+        let Some(items) = with_elevation_coverage(&state, vehicle_id, items) else {
+            return service_unavailable(DRIVE_HISTORY_TEXT.unavailable);
+        };
+        return serve_public_page(
+            &headers,
+            items,
+            has_more,
+            |last| query.next_cursor(cursor_key, last),
+            &DRIVE_HISTORY_TEXT,
+        );
+    }
     serve_public_page(
         &headers,
         items,
@@ -227,6 +239,43 @@ pub(super) async fn drives(
         |last| query.next_cursor(cursor_key, last),
         &DRIVE_HISTORY_TEXT,
     )
+}
+
+/// Whether the request selects hub-http-v1@1.4.0 (issue #32): exactly one
+/// [`HUB_HTTP_PROFILE_HEADER`] whose value is the 1.4.0 identifier. Anything
+/// else keeps the exact 1.3.0 items.
+fn requests_hub_http_1_4(headers: &HeaderMap) -> bool {
+    let mut values = headers.get_all(HUB_HTTP_PROFILE_HEADER).iter();
+    matches!(
+        (values.next(), values.next()),
+        (Some(value), None) if value.as_bytes() == HUB_HTTP_PROFILE_1_4.as_bytes()
+    )
+}
+
+/// The 1.4.0 drive items with their stored elevation coverage, or `None` when
+/// the store cannot answer.
+fn with_elevation_coverage(
+    state: &AppState,
+    vehicle_id: Uuid,
+    items: Vec<PublicDrive>,
+) -> Option<Vec<PublicDriveWithCoverage>> {
+    let ids: Vec<i64> = items.iter().map(|drive| drive.id).collect();
+    match state.store.drive_elevation_coverage(vehicle_id, &ids) {
+        Ok(coverage) => Some(
+            items
+                .into_iter()
+                .zip(coverage)
+                .map(|(drive, coverage)| PublicDriveWithCoverage {
+                    drive,
+                    elevation_coverage: coverage.as_str(),
+                })
+                .collect(),
+        ),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load drive elevation coverage");
+            None
+        }
+    }
 }
 
 pub(super) async fn drive(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
@@ -243,6 +292,15 @@ pub(super) async fn drive(State(state): State<AppState>, uri: Uri, headers: Head
         .store
         .materialised_closed_drive_for_vehicle(vehicle_id, drive_id)
     {
+        Ok(Some(drive)) if requests_hub_http_1_4(&headers) => {
+            let item = PublicDrive::from_projection(vehicle_id, drive);
+            match with_elevation_coverage(&state, vehicle_id, vec![item])
+                .and_then(|mut items| items.pop())
+            {
+                Some(item) => public_item_response(&item, &DRIVE_HISTORY_TEXT),
+                None => service_unavailable(DRIVE_HISTORY_TEXT.unavailable),
+            }
+        }
         Ok(Some(drive)) => public_item_response(
             &PublicDrive::from_projection(vehicle_id, drive),
             &DRIVE_HISTORY_TEXT,

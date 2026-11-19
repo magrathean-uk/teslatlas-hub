@@ -1,0 +1,28 @@
+{
+  "$defs": {
+    "drive_1_4_0": {
+      "allOf": [
+        {
+          "$ref": "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/drive"
+        }
+      ],
+      "properties": {
+        "elevation_coverage": {
+          "$ref": "#/$defs/elevation_coverage"
+        }
+      },
+      "required": [
+        "elevation_coverage"
+      ]
+    },
+    "elevation_coverage": {
+      "enum": [
+        "complete",
+        "partial",
+        "unknown"
+      ]
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.4.0:drive-elevation-coverage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

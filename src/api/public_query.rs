@@ -191,6 +191,41 @@ impl PageItem for PublicDrive {
     }
 }
 
+/// Request header by which a client selects hub-http-v1@1.4.0 (issue #32).
+/// Without it, or with any other value, the Hub serves the exact 1.3.0 items.
+pub(crate) const HUB_HTTP_PROFILE_HEADER: &str = "x-teslatlas-http-profile";
+/// The one value of [`HUB_HTTP_PROFILE_HEADER`] that selects the 1.4.0 items.
+pub(crate) const HUB_HTTP_PROFILE_1_4: &str = "hub-http-v1@1.4.0";
+
+/// One drive item of hub-http-v1@1.4.0: the 1.3.0 item plus the additive
+/// `elevation_coverage` member (`complete`, `partial` or `unknown`; absent in
+/// older payloads, which means unknown). The ascent and descent keep their
+/// 1.3.0 values and null semantics.
+#[derive(Debug)]
+pub(crate) struct PublicDriveWithCoverage {
+    pub(crate) drive: PublicDrive,
+    pub(crate) elevation_coverage: &'static str,
+}
+
+impl serde::Serialize for PublicDriveWithCoverage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(&self.drive).map_err(serde::ser::Error::custom)?;
+        if let Some(map) = value.as_object_mut() {
+            map.insert(
+                "elevation_coverage".to_owned(),
+                serde_json::Value::from(self.elevation_coverage),
+            );
+        }
+        value.serialize(serializer)
+    }
+}
+
+impl PageItem for PublicDriveWithCoverage {
+    fn page_key(&self) -> (i64, i64) {
+        self.drive.page_key()
+    }
+}
+
 /// `elevation_provenance` of hub-http-v1@1.3.0. The Hub only holds a truthful
 /// record for terrain-derived elevation, so `source` is always `terrain`.
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]

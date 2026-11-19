@@ -2013,3 +2013,37 @@ fn astra_p07_f02_a_same_class_fall_is_refused_between_other_class_readings() {
     ]);
     assert_eq!(result.delta.drives[0].distance_km, None);
 }
+
+#[test]
+fn design_later_32_coverage_reads_the_walks_own_validity_rule() {
+    let complete = [Some(100), Some(104), Some(108)];
+    assert_eq!(
+        elevation_totals_and_coverage(complete),
+        (elevation_totals(complete), ElevationCoverage::Complete)
+    );
+    // A missing or out-of-range elevation leaves numeric totals partial, with
+    // the same numbers the calculation gives.
+    for gap in [None, Some(K_ELEV_MAX + 1), Some(K_ELEV_MIN - 1)] {
+        let partial = [Some(100), gap, Some(104), Some(108)];
+        let (totals, coverage) = elevation_totals_and_coverage(partial);
+        assert_eq!(totals, elevation_totals(partial));
+        assert_eq!(totals, elevation_totals(complete));
+        assert_eq!(coverage, ElevationCoverage::Partial);
+    }
+    // Fewer than two usable readings: no totals and unknown coverage.
+    for insufficient in [vec![], vec![Some(100)], vec![None, Some(100), Some(20_000)]] {
+        assert_eq!(
+            elevation_totals_and_coverage(insufficient),
+            ((None, None), ElevationCoverage::Unknown)
+        );
+    }
+    for coverage in [
+        ElevationCoverage::Complete,
+        ElevationCoverage::Partial,
+        ElevationCoverage::Unknown,
+    ] {
+        let stored = (coverage != ElevationCoverage::Unknown).then_some(coverage.as_str());
+        assert_eq!(ElevationCoverage::from_stored(stored), coverage);
+    }
+    assert_eq!(ElevationCoverage::from_stored(Some("other")), ElevationCoverage::Unknown);
+}

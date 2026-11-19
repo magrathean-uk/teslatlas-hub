@@ -503,7 +503,7 @@ const TERRAIN_DRIVE_POSITIONS_SQL: &str = "SELECT position_id, position_json
 /// Recompute a drive's ascent and descent after terrain elevation arrives later
 /// (C1 R52, R85) and for a drive that was open across the upgrade (C1 R93).
 ///
-/// It calls the one shared function, [`crate::lifecycle::elevation_totals`],
+/// It calls the one shared function, [`crate::lifecycle::elevation_totals_and_coverage`],
 /// over the drive's materialised positions in `(date_ms, position_id)` order,
 /// the order the live fold emits them in. It writes only that drive's
 /// `materialised_drives` row, and only `ascent`, `descent` and `drive_json`
@@ -545,8 +545,10 @@ fn recompute_terrain_drive(
     // the live fold emits them in (C1 R51, R52); the table has no date column,
     // so the order is fixed here, by the date and then the primary key.
     triples.sort_unstable_by_key(|(date_ms, position_id, _)| (*date_ms, *position_id));
-    let (ascent, descent) =
-        crate::lifecycle::elevation_totals(triples.iter().map(|(_, _, elevation)| *elevation));
+    let ((ascent, descent), coverage) = crate::lifecycle::elevation_totals_and_coverage(
+        triples.iter().map(|(_, _, elevation)| *elevation),
+    );
+    write_drive_elevation_coverage(transaction, vehicle_id, drive_id, coverage)?;
     let drive_json: String = transaction
         .query_row(
             "SELECT drive_json FROM materialised_drives
@@ -591,9 +593,12 @@ fn recompute_terrain_drive_pair_with_change(
 ) -> Result<bool, StoreError> {
     let vehicle_key = vehicle_id.to_string();
     let before = stored_drive_totals(transaction, &vehicle_key, drive_id)?;
+    let coverage_before = stored_drive_elevation_coverage(transaction, &vehicle_key, drive_id)?;
     recompute_terrain_drive(transaction, &vehicle_key, drive_id)?;
     let after = stored_drive_totals(transaction, &vehicle_key, drive_id)?;
-    if (before.0, before.1) == (after.0, after.1) {
+    let coverage_after = stored_drive_elevation_coverage(transaction, &vehicle_key, drive_id)?;
+    // Issue #32: a coverage change alone also publishes the drive.
+    if (before.0, before.1) == (after.0, after.1) && coverage_before == coverage_after {
         return Ok(false);
     }
     let car: i64 = transaction
@@ -613,6 +618,72 @@ fn recompute_terrain_drive_pair_with_change(
         &after.2,
     )?;
     Ok(true)
+}
+
+/// Write the side coverage of one Hub-derived drive (issue #32) in the
+/// transaction that writes its totals. Unknown is stored as no row, so a drive
+/// never recomputed, or one whose copied totals are kept, reads unknown.
+fn write_drive_elevation_coverage(
+    transaction: &Transaction<'_>,
+    vehicle_id: &str,
+    drive_id: i64,
+    coverage: crate::lifecycle::ElevationCoverage,
+) -> Result<(), StoreError> {
+    match coverage {
+        crate::lifecycle::ElevationCoverage::Unknown => transaction.execute(
+            "DELETE FROM drive_elevation_coverage WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_id, drive_id],
+        ),
+        known => transaction.execute(
+            "INSERT INTO drive_elevation_coverage(vehicle_id, drive_id, coverage)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(vehicle_id, drive_id) DO UPDATE SET coverage = excluded.coverage",
+            params![vehicle_id, drive_id, known.as_str()],
+        ),
+    }
+    .map_err(StoreError::LifecycleWrite)?;
+    Ok(())
+}
+
+/// The stored side coverage of one drive (issue #32); no row is unknown.
+fn stored_drive_elevation_coverage(
+    connection: &rusqlite::Connection,
+    vehicle_id: &str,
+    drive_id: i64,
+) -> Result<crate::lifecycle::ElevationCoverage, StoreError> {
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT coverage FROM drive_elevation_coverage
+             WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_id, drive_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    Ok(crate::lifecycle::ElevationCoverage::from_stored(
+        stored.as_deref(),
+    ))
+}
+
+impl HubStore {
+    /// The elevation coverage of the given drives of one vehicle, as served by
+    /// hub-http-v1@1.4.0 (issue #32). A drive without stored coverage is
+    /// unknown.
+    pub(crate) fn drive_elevation_coverage(
+        &self,
+        vehicle_id: Uuid,
+        drive_ids: &[i64],
+    ) -> Result<Vec<crate::lifecycle::ElevationCoverage>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open_read_only_connection()?;
+        let vehicle_key = vehicle_id.to_string();
+        drive_ids
+            .iter()
+            .map(|drive_id| stored_drive_elevation_coverage(&connection, &vehicle_key, *drive_id))
+            .collect()
+    }
 }
 
 /// The stored `(ascent, descent)` and `drive_json` of one materialised drive.

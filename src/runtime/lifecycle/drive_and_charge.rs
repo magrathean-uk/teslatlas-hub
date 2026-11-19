@@ -190,8 +190,7 @@ impl ElevationWalk {
     /// are ignored; the first valid value sets the reference. Arithmetic is
     /// saturating.
     pub(crate) fn step(&mut self, elevation_m: Option<i64>) {
-        let Some(elevation) = elevation_m.filter(|value| (K_ELEV_MIN..=K_ELEV_MAX).contains(value))
-        else {
+        let Some(elevation) = Self::usable(elevation_m) else {
             return;
         };
         self.count = self.count.saturating_add(1);
@@ -207,6 +206,12 @@ impl ElevationWalk {
             self.descent_m = self.descent_m.saturating_add(change.saturating_neg());
             self.reference_m = Some(elevation);
         }
+    }
+
+    /// The walk's elevation-validity rule: present and inside
+    /// `K_ELEV_MIN..=K_ELEV_MAX`. Coverage (issue #32) reads the same rule.
+    pub(crate) fn usable(elevation_m: Option<i64>) -> Option<i64> {
+        elevation_m.filter(|value| (K_ELEV_MIN..=K_ELEV_MAX).contains(value))
     }
 
     /// `(ascent, descent)`: `(None, None)` with fewer than two valid readings,
@@ -859,14 +864,65 @@ fn finalize_drive(
 /// `recompute_terrain_drive`. The elevations are the drive's stored positions
 /// in `(date_ms, id)` order. `(None, None)` with fewer than two valid
 /// readings; each total saturates at [`K_SMALLINT_MAX`].
+#[cfg(test)]
 pub(crate) fn elevation_totals(
     elevations: impl IntoIterator<Item = Option<i64>>,
 ) -> (Option<i64>, Option<i64>) {
+    elevation_totals_and_coverage(elevations).0
+}
+
+/// Elevation coverage of a drive's ascent and descent (issue #32,
+/// hub-http-v1@1.4.0 `elevation_coverage`). Absent metadata means unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ElevationCoverage {
+    /// Every position the totals read has a usable elevation.
+    Complete,
+    /// The totals are numeric, but some position lacks a usable elevation.
+    Partial,
+    /// No numeric totals, or coverage cannot be established.
+    Unknown,
+}
+
+impl ElevationCoverage {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial => "partial",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// The stored side value; anything other than the two stored states,
+    /// including no row, is unknown.
+    pub(crate) fn from_stored(value: Option<&str>) -> Self {
+        match value {
+            Some("complete") => Self::Complete,
+            Some("partial") => Self::Partial,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// [`elevation_totals`] with its coverage (issue #32): complete only when every
+/// position passes the walk's own validity rule ([`ElevationWalk::usable`]),
+/// partial when the totals are numeric but some position fails it, and
+/// unknown when the walk has fewer than two usable readings.
+pub(crate) fn elevation_totals_and_coverage(
+    elevations: impl IntoIterator<Item = Option<i64>>,
+) -> ((Option<i64>, Option<i64>), ElevationCoverage) {
     let mut walk = ElevationWalk::default();
+    let mut gap = false;
     for elevation in elevations {
+        gap |= ElevationWalk::usable(elevation).is_none();
         walk.step(elevation);
     }
-    walk.totals()
+    let totals = walk.totals();
+    let coverage = match (totals.0, gap) {
+        (None, _) => ElevationCoverage::Unknown,
+        (Some(_), true) => ElevationCoverage::Partial,
+        (Some(_), false) => ElevationCoverage::Complete,
+    };
+    (totals, coverage)
 }
 
 fn finalize_charge(

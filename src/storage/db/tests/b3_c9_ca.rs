@@ -1770,3 +1770,103 @@ fn c9_r39_interleaved_drives_recompute_once_after_positions() {
     );
     assert_eq!(b3_c8_sb::export_revision(&store, vehicle), 1);
 }
+
+fn design_later_32_elevations(store: &HubStore, vehicle: Uuid, elevations: &[Option<i64>]) {
+    let connection = store.open().unwrap();
+    for (index, elevation) in elevations.iter().enumerate() {
+        connection
+            .execute(
+                "UPDATE materialised_positions
+                 SET position_json = json_set(position_json, '$.elevation', ?3)
+                 WHERE vehicle_id = ?1 AND position_id = ?2",
+                params![vehicle.to_string(), index as i64 + 1, elevation],
+            )
+            .unwrap();
+    }
+}
+
+fn design_later_32_recompute(store: &HubStore, vehicle: Uuid) -> bool {
+    let mut connection = store.open().unwrap();
+    let transaction = connection.transaction().unwrap();
+    let changed = recompute_terrain_drive_with_change(&transaction, vehicle, 1).unwrap();
+    transaction.commit().unwrap();
+    changed
+}
+
+fn design_later_32_coverage(store: &HubStore, vehicle: Uuid) -> crate::lifecycle::ElevationCoverage {
+    store.drive_elevation_coverage(vehicle, &[1]).unwrap()[0]
+}
+
+#[test]
+fn design_later_32_coverage_is_published_with_totals_and_on_coverage_only_changes() {
+    use crate::lifecycle::ElevationCoverage;
+    let (_dir, store, vehicle) = fixture();
+    let positions: Vec<_> = (1..=4).map(|id| position(id, 1)).collect();
+    seed(&store, vehicle, &positions);
+    // Never recomputed: unknown.
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Unknown);
+    let start = mutations(&store, vehicle).len();
+
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Partial);
+    let totals = |store: &HubStore| -> (Option<i64>, Option<i64>) {
+        store
+            .open()
+            .unwrap()
+            .query_row(
+                "SELECT ascent, descent FROM materialised_drives WHERE drive_id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    };
+    let partial_totals = totals(&store);
+    assert_eq!(partial_totals, (Some(20), Some(0)));
+    assert_eq!(mutations(&store, vehicle).len(), start + 1);
+
+    // Filling the gap without changing the totals still publishes the drive.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(101), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(totals(&store), partial_totals);
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Complete);
+    let log = mutations(&store, vehicle);
+    assert_eq!(log.len(), start + 2);
+    assert_eq!((log[start + 1].0.as_str(), log[start + 1].1), ("drive", 1));
+    // The drive row and its sync payload keep their shape: coverage is side
+    // metadata only.
+    assert!(log[start + 1].2.get("elevation_coverage").is_none());
+    let drive_json: String = store
+        .open()
+        .unwrap()
+        .query_row("SELECT drive_json FROM materialised_drives WHERE drive_id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(!drive_json.contains("coverage"));
+
+    // Nothing changed: nothing is published.
+    assert!(!design_later_32_recompute(&store, vehicle));
+    assert_eq!(mutations(&store, vehicle).len(), start + 2);
+
+    // An invalid elevation is partial again; too few usable readings are
+    // unknown and leave no stored coverage.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(20_000), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Partial);
+    design_later_32_elevations(&store, vehicle, &[None, None, None, Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Unknown);
+
+    // Coverage is read from a fresh connection and follows the drive's deletion.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(101), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    let reopened = store;
+    assert_eq!(design_later_32_coverage(&reopened, vehicle), ElevationCoverage::Complete);
+    reopened
+        .open()
+        .unwrap()
+        .execute("DELETE FROM materialised_drives WHERE drive_id = 1", [])
+        .unwrap();
+    assert_eq!(design_later_32_coverage(&reopened, vehicle), ElevationCoverage::Unknown);
+}

@@ -36,7 +36,8 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     seam_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
-        backup_pack_pins_table(connection)
+        backup_pack_pins_table(connection)?;
+        drive_elevation_coverage_table(connection)
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }
@@ -161,6 +162,50 @@ fn backup_pack_pins_table(connection: &Connection) -> Result<(), StoreError> {
     if schema_version(&transaction)? == SCHEMA_VERSION && !present(&transaction)? {
         transaction
             .execute_batch(BACKUP_PACK_PINS_SCHEMA)
+            .map_err(StoreError::Migrate)?;
+    }
+    transaction.commit().map_err(StoreError::Migrate)
+}
+
+/// Side metadata of issue #32: the elevation coverage of a Hub-derived drive's
+/// ascent and descent, beside `materialised_drives` and never inside its
+/// `drive_json`, so the sync payloads and pack rows keep their shape. No row is
+/// unknown; deleting the drive deletes its coverage.
+const DRIVE_ELEVATION_COVERAGE_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS drive_elevation_coverage (
+    vehicle_id TEXT NOT NULL,
+    drive_id INTEGER NOT NULL,
+    coverage TEXT NOT NULL CHECK (coverage IN ('complete', 'partial')),
+    PRIMARY KEY (vehicle_id, drive_id)
+) STRICT, WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS drive_elevation_coverage_follows_drive
+AFTER DELETE ON materialised_drives
+BEGIN
+    DELETE FROM drive_elevation_coverage
+    WHERE vehicle_id = OLD.vehicle_id AND drive_id = OLD.drive_id;
+END;";
+
+fn drive_elevation_coverage_table(connection: &Connection) -> Result<(), StoreError> {
+    let present = |connection: &Connection| -> Result<bool, StoreError> {
+        connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM sqlite_schema
+                 WHERE (type = 'table' AND name = 'drive_elevation_coverage')
+                    OR (type = 'trigger' AND name = 'drive_elevation_coverage_follows_drive')) = 2",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Migrate)
+    };
+    if present(connection)? {
+        return Ok(());
+    }
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(StoreError::Migrate)?;
+    admit_writable_catalogue(&transaction)?;
+    if schema_version(&transaction)? == SCHEMA_VERSION && !present(&transaction)? {
+        transaction
+            .execute_batch(DRIVE_ELEVATION_COVERAGE_SCHEMA)
             .map_err(StoreError::Migrate)?;
     }
     transaction.commit().map_err(StoreError::Migrate)
