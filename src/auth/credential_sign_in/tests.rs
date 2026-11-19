@@ -215,3 +215,31 @@ fn source_credential_disabled_status_reports_refused_pairs_unusable() {
     }
     assert!(credential_owner_message("unknown_origin", None, None, None).is_some_and(|text| text.contains("own login")));
 }
+
+/// M09-T22 round 2: the generic sign-in begins a pending row for any slot
+/// with an unbounded write authority and redeems without the Fleet scope
+/// check, so its type, its methods and its export exist only in test builds;
+/// a release or plain debug library offers neither its begin nor its redeem.
+#[test]
+fn generic_sign_in_attempt_is_absent_outside_test_builds() {
+    fn gate(source: &str, item: &str) -> String {
+        let at = source.find(item).unwrap_or_else(|| panic!("{item} present"));
+        let line_start = source[..at].rfind('\n').unwrap_or(0);
+        let mut gates = Vec::new();
+        for line in source[..line_start].lines().rev() {
+            let line = line.trim();
+            if line.starts_with("#[cfg(") { gates.push(line.to_owned()); }
+            else if !(line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")) { break; }
+        }
+        assert_eq!(gates.len(), 1, "{item} has exactly one cfg gate: {gates:?}");
+        gates.remove(0)
+    }
+    let protocol = include_str!("protocol.rs");
+    let module = include_str!("../credential_sign_in.rs");
+    let vault = include_str!("../credential_vault.rs");
+    for (source, item) in [(protocol, "pub struct SignInAttempt<"), (protocol, "impl<'a> SignInAttempt<'a> {"), (module, "pub use protocol::SignInAttempt;"),
+        (vault, "fn begin_sign_in("), (vault, "fn store_hub_grant("), (vault, "fn finish_hub_grant_aftercare(")] {
+        assert_eq!(gate(source, item), "#[cfg(any(test, feature = \"journey-doubles\"))]", "{item} is gated to test builds");
+    }
+    assert_eq!(module.matches("SignInAttempt").count(), 1, "the generic attempt is exported only by its gated line");
+}

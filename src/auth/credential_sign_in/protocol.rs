@@ -3,13 +3,23 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::de::{self, Deserializer as _, MapAccess, Visitor};
 use sha2::{Digest, Sha256};
-use std::{fmt, time::{Duration, SystemTime, UNIX_EPOCH}};
-use zeroize::{Zeroize, Zeroizing};
-use crate::{CredentialVaultEntry, fleet_api::{FleetClientId, FleetRegion, WireSecret}};
+use std::fmt;
+use zeroize::Zeroize;
+use crate::fleet_api::{FleetClientId, FleetRegion, WireSecret};
 use super::observe::{SecretBuffer, SecretText};
-use super::{CredentialCommandError, super::{credential_envelope::CredentialSlot, credential_vault::{CredentialStoreError, RedeemedGrant, SignInError, SignInRefusalCode, SignInSession}}};
+use super::{CredentialCommandError, super::{credential_envelope::CredentialSlot, credential_vault::{CredentialStoreError, SignInError, SignInSession}}};
+// The generic sign-in below (`SignInAttempt`) is compiled into test builds only (M09-T22).
+#[cfg(any(test, feature = "journey-doubles"))]
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(any(test, feature = "journey-doubles"))]
+use zeroize::Zeroizing;
+#[cfg(any(test, feature = "journey-doubles"))]
+use crate::CredentialVaultEntry;
+#[cfg(any(test, feature = "journey-doubles"))]
+use super::super::credential_vault::{RedeemedGrant, SignInRefusalCode};
 
 pub const FLEET_SIGN_IN_SCOPE: &str = "openid offline_access vehicle_device_data vehicle_location";
+#[cfg(any(test, feature = "journey-doubles"))]
 const ANSWER_CAP: usize = 65_536;
 
 fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError::SignIn(error).into() }
@@ -19,6 +29,7 @@ fn failure(error: SignInError) -> CredentialCommandError { CredentialStoreError:
 fn escape_free(line: &[u8], error: SignInError) -> Result<crate::fleet_api::EscapeFreeJson<'_>, CredentialCommandError> {
     crate::fleet_api::json_without_escapes(line).map_err(|_| failure(error))
 }
+#[cfg(any(test, feature = "journey-doubles"))]
 fn wiped_copy(text: &str) -> Zeroizing<String> { Zeroizing::new(text.to_owned()) }
 
 /// Encodes into the wiping destination without an intermediate form string.
@@ -265,6 +276,7 @@ fn secret_object(bytes: &[u8], keys: &[&str]) -> Result<Vec<WireSecret>, ()> {
     Ok(values)
 }
 
+#[cfg(any(test, feature = "journey-doubles"))]
 fn decoded_component(value: &str) -> Result<SecretText, CredentialCommandError> {
     let mut bytes = SecretBuffer::new("redirect_query", value.len());
     let mut input = value.bytes();
@@ -282,12 +294,17 @@ fn decoded_component(value: &str) -> Result<SecretText, CredentialCommandError> 
     Ok(SecretText::copy("redirect_component", text))
 }
 
+/// The generic sign-in for any slot, without the Fleet begin's window permit
+/// or the exchanges' scope checks: test builds only (M09-T22). The service
+/// begins and redeems through the Owner and Fleet exchanges.
+#[cfg(any(test, feature = "journey-doubles"))]
 pub struct SignInAttempt<'a> {
     entry: &'a CredentialVaultEntry,
     settings: SignInSettings,
     session: SignInSession,
 }
 
+#[cfg(any(test, feature = "journey-doubles"))]
 impl<'a> SignInAttempt<'a> {
     pub fn begin(entry: &'a CredentialVaultEntry, settings: SignInSettings) -> Result<Self, CredentialCommandError> {
         let session = entry.vault().begin_sign_in(settings.slot)?;
@@ -331,6 +348,12 @@ impl<'a> SignInAttempt<'a> {
         }
     }
 
+    /// Redeems an answer line for any slot. Test builds only (M09-T22): the
+    /// service redeems through the Owner exchange and the Fleet exchange, which
+    /// check the scope; this generic path does not, so no release or plain debug
+    /// build of the library offers it.
+    #[cfg(any(test, feature = "journey-doubles"))]
+    #[doc(hidden)]
     pub async fn redeem(self, line: &[u8], mut publish: impl FnMut(&str) -> Result<(), CredentialCommandError>) -> Result<(), CredentialCommandError> {
         let code = self.redirect_code(line)?;
         let mut body = SecretBuffer::new("request_body", 1024);
