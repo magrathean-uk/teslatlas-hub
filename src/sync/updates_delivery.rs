@@ -2206,17 +2206,28 @@ pub fn schema_22_signed_artifacts(
     vehicle_id: Uuid,
     cursor_key: &CursorKey,
 ) -> Result<(Vec<u8>, Vec<u8>), UpdatesDeliveryError> {
+    // Hold the shared artefact pin from manifest selection until the selected
+    // sidecar's bytes are owned, so cleanup for a later successor cannot
+    // unlink the exact sidecar this read selected.
+    let pin = store.pin_schema_22_artifacts_for_read()?;
     let manifest = store
         .manifest_for_vehicle(vehicle_id)?
         .ok_or_else(|| reject("schema 2.2 manifest is not catalogued"))?;
     if manifest.schema != HUB_PROJECTION_SCHEMA_V3 {
         return Err(reject("catalogued manifest is not schema 2.2"));
     }
+    #[cfg(test)]
+    run_schema_22_read_after_selection_hook(&manifest)?;
     let manifest_bytes =
         serde_json::to_vec(&manifest).map_err(|error| reject(error.to_string()))?;
-    let noop_bytes = store
-        .schema_22_noop_for_snapshot(vehicle_id, manifest.snapshot_id)?
-        .ok_or_else(|| reject("schema 2.2 no-op is not catalogued"))?;
+    let noop_bytes = match pin.as_ref() {
+        Some(pin) => {
+            store.schema_22_noop_for_snapshot_pinned(pin, vehicle_id, manifest.snapshot_id)?
+        }
+        None => None,
+    }
+    .ok_or_else(|| reject("schema 2.2 no-op is not catalogued"))?;
+    drop(pin);
     let noop: SignedNoOpState =
         serde_json::from_slice(&noop_bytes).map_err(|error| reject(error.to_string()))?;
     if serde_json::to_vec(&noop).map_err(|error| reject(error.to_string()))? != noop_bytes {
@@ -2225,6 +2236,33 @@ pub fn schema_22_signed_artifacts(
     validate_schema_22_pair(&manifest, &noop)?;
     validate_schema_22_cursor_key(&manifest, cursor_key)?;
     Ok((manifest_bytes, noop_bytes))
+}
+
+#[cfg(test)]
+type Schema22ReadHook = Box<dyn FnMut(&SyncManifest) -> Result<(), UpdatesDeliveryError>>;
+
+#[cfg(test)]
+thread_local! {
+    static SCHEMA_22_READ_AFTER_SELECTION: std::cell::RefCell<Option<Schema22ReadHook>> =
+        std::cell::RefCell::new(None);
+}
+
+/// Test seam: run `hook` on this thread after a schema-2.2 read selects its
+/// manifest and before it opens the sidecar. An error stands for a cancelled
+/// read.
+#[cfg(test)]
+fn set_schema_22_read_after_selection_hook(hook: Option<Schema22ReadHook>) {
+    SCHEMA_22_READ_AFTER_SELECTION.with(|slot| *slot.borrow_mut() = hook);
+}
+
+#[cfg(test)]
+fn run_schema_22_read_after_selection_hook(
+    manifest: &SyncManifest,
+) -> Result<(), UpdatesDeliveryError> {
+    SCHEMA_22_READ_AFTER_SELECTION.with(|slot| match slot.borrow_mut().as_mut() {
+        Some(hook) => hook(manifest),
+        None => Ok(()),
+    })
 }
 
 fn validate_schema_22_cursor_key(

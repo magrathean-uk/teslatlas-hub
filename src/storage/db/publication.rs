@@ -1,5 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/// A short, per-store, cross-process pin on the schema-2.2 no-op directory.
+/// It is an advisory `flock` on the directory's own descriptor, so every
+/// process (and every independent open in this process) contends on it. A
+/// reader holds it shared from manifest selection until it owns the selected
+/// sidecar's bytes; cleanup holds it exclusive around its unlink phase. The
+/// lock is never upgraded or taken recursively, and dropping the value (also
+/// on an early return or unwind) releases it. Lock order: the publication
+/// gate, then this pin; readers take this pin only.
+pub(crate) struct Schema22ArtifactPin {
+    directory: SharedSchema22NoOpDirectory,
+}
+
+impl Schema22ArtifactPin {
+    fn acquire(
+        directory: SharedSchema22NoOpDirectory,
+        operation: FlockOperation,
+    ) -> Result<Self, StoreError> {
+        flock(&directory.file, operation)
+            .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
+        Ok(Self { directory })
+    }
+}
+
+impl Drop for Schema22ArtifactPin {
+    fn drop(&mut self) {
+        // Closing the descriptor releases the lock as well; unlocking first
+        // keeps the release independent of any duplicated descriptor.
+        let _ = flock(&self.directory.file, FlockOperation::Unlock);
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static SCHEMA_22_CLEANUP_BEFORE_EXCLUSIVE_PIN: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
+        std::cell::RefCell::new(None);
+}
+
+/// Test seam: run `hook` on this thread just before schema-2.2 cleanup waits
+/// for the exclusive artefact pin.
+#[cfg(test)]
+pub(crate) fn set_schema_22_cleanup_before_exclusive_pin_hook(hook: Option<Box<dyn FnMut()>>) {
+    SCHEMA_22_CLEANUP_BEFORE_EXCLUSIVE_PIN.with(|slot| *slot.borrow_mut() = hook);
+}
+
 impl HubStore {
     pub fn publish_manifest(&self, manifest: &SyncManifest) -> Result<(), StoreError> {
         if manifest.schema == HUB_PROJECTION_SCHEMA_V3 {
@@ -426,7 +470,7 @@ impl HubStore {
         let directory = self.open_schema_22_noop_directory(true)?;
         let prefix = format!("{vehicle_id}.");
         let temporary_prefix = format!(".{vehicle_id}.");
-        let mut removed = false;
+        let mut doomed = Vec::new();
         let entries = Dir::read_from(&directory.file)
             .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
         for entry in entries {
@@ -465,16 +509,28 @@ impl HubStore {
             if final_snapshot.is_some() && final_snapshot == keep_snapshot_id {
                 continue;
             }
-            unlinkat(&directory.file, name, AtFlags::empty())
+            doomed.push(name.to_owned());
+        }
+        if doomed.is_empty() {
+            return Ok(());
+        }
+        // A reader that selected one of these snapshots holds the shared pin
+        // until it owns that sidecar's bytes; the unlink phase waits for it.
+        #[cfg(test)]
+        SCHEMA_22_CLEANUP_BEFORE_EXCLUSIVE_PIN.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().as_mut() {
+                hook();
+            }
+        });
+        let pin = Schema22ArtifactPin::acquire(directory, FlockOperation::LockExclusive)?;
+        for name in &doomed {
+            unlinkat(&pin.directory.file, name.as_str(), AtFlags::empty())
                 .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
-            removed = true;
         }
-        if removed {
-            directory
-                .file
-                .sync_all()
-                .map_err(StoreError::AccessSchema22NoOp)?;
-        }
+        pin.directory
+            .file
+            .sync_all()
+            .map_err(StoreError::AccessSchema22NoOp)?;
         Ok(())
     }
 
@@ -628,6 +684,32 @@ impl HubStore {
         };
         let name = schema_22_noop_filename(vehicle_id, snapshot_id);
         self.schema_22_noop_bytes_in_directory(&directory, name.as_str())
+    }
+
+    /// Take the shared schema-2.2 artefact pin for one read of a selected
+    /// manifest and its sidecar. `None` means no sidecar directory exists, so
+    /// there is nothing cleanup could remove.
+    pub(crate) fn pin_schema_22_artifacts_for_read(
+        &self,
+    ) -> Result<Option<Schema22ArtifactPin>, StoreError> {
+        let directory = match self.open_schema_22_noop_directory(false) {
+            Ok(directory) => directory,
+            Err(StoreError::Schema22NoOpNotFound) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Schema22ArtifactPin::acquire(directory, FlockOperation::LockShared).map(Some)
+    }
+
+    /// Read a sidecar through a held pin, returning owned bytes so the pin can
+    /// be dropped before the caller validates them.
+    pub(crate) fn schema_22_noop_for_snapshot_pinned(
+        &self,
+        pin: &Schema22ArtifactPin,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let name = schema_22_noop_filename(vehicle_id, snapshot_id);
+        self.schema_22_noop_bytes_in_directory(&pin.directory, name.as_str())
     }
 
     fn schema_22_noop_bytes_in_directory(

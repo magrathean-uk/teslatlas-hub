@@ -732,3 +732,272 @@ fn unknown_source_revision_is_refused_for_captures_and_witnesses() {
             .is_none()
     );
 }
+
+// Issue #100: a schema-2.2 read pins the selected manifest/no-op pair until it
+// owns the sidecar bytes, and successor cleanup waits for that pin.
+
+struct Schema22Race {
+    _temp: tempfile::TempDir,
+    store: HubStore,
+    cursor_key: CursorKey,
+    binding: ProjectionBinding,
+    snapshot_a: Uuid,
+    pair_a: (Vec<u8>, Vec<u8>),
+}
+
+fn schema_22_race_store() -> Schema22Race {
+    let temp = crate::private_tempdir().expect("store root");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([45; 32]);
+    let binding = registered_binding(&store, 7);
+    let published = publish_successor(&store, &cursor_key, &binding, "A");
+    let pair_a = schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key).expect("A");
+    Schema22Race {
+        _temp: temp,
+        store,
+        cursor_key,
+        binding,
+        snapshot_a: published.snapshot_id,
+        pair_a,
+    }
+}
+
+fn publish_successor(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: &ProjectionBinding,
+    version: &str,
+) -> ProductionUpdatesPublication {
+    let mut source = production_source(7);
+    source.updates[1].version = Some(version.into());
+    publish_production_updates_schema_22(store, cursor_key, binding, source)
+        .expect("publish successor")
+}
+
+fn noop_directory(store: &HubStore) -> PathBuf {
+    store
+        .database_path()
+        .parent()
+        .expect("data root")
+        .join("packs/noop")
+}
+
+fn sidecar_path(store: &HubStore, vehicle_id: Uuid, snapshot_id: Uuid) -> PathBuf {
+    noop_directory(store).join(format!("{vehicle_id}.{snapshot_id}.json"))
+}
+
+/// Whether another open of the no-op directory can take the exclusive pin now.
+fn exclusive_pin_is_free(store: &HubStore) -> bool {
+    use rustix::fs::{FlockOperation, Mode, OFlags, flock, open};
+    let fd = open(
+        noop_directory(store).as_path(),
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .expect("open no-op directory");
+    match flock(&fd, FlockOperation::NonBlockingLockExclusive) {
+        Ok(()) => {
+            flock(&fd, FlockOperation::Unlock).expect("unlock");
+            true
+        }
+        Err(rustix::io::Errno::WOULDBLOCK) => false,
+        Err(error) => panic!("probe the artefact pin: {error}"),
+    }
+}
+
+/// Run a read on its own thread that pauses after selecting its manifest,
+/// reporting the selected snapshot and waiting for `resume`.
+fn paused_reader<'scope>(
+    scope: &'scope std::thread::Scope<'scope, '_>,
+    race: &'scope Schema22Race,
+    selected: std::sync::mpsc::Sender<Uuid>,
+    resume: std::sync::mpsc::Receiver<()>,
+) -> std::thread::ScopedJoinHandle<'scope, Result<(Vec<u8>, Vec<u8>), UpdatesDeliveryError>> {
+    scope.spawn(move || {
+        set_schema_22_read_after_selection_hook(Some(Box::new(move |manifest| {
+            selected.send(manifest.snapshot_id).expect("report selection");
+            resume.recv().expect("resume");
+            Ok(())
+        })));
+        let result = schema_22_signed_artifacts(&race.store, race.binding.vehicle_id, &race.cursor_key);
+        set_schema_22_read_after_selection_hook(None);
+        result
+    })
+}
+
+/// Start C's publication on its own thread, reporting when its cleanup is
+/// about to wait for the exclusive pin.
+fn successor_cleanup<'scope>(
+    scope: &'scope std::thread::Scope<'scope, '_>,
+    race: &'scope Schema22Race,
+    waiting: std::sync::mpsc::Sender<()>,
+) -> std::thread::ScopedJoinHandle<'scope, ProductionUpdatesPublication> {
+    scope.spawn(move || {
+        crate::db::set_schema_22_cleanup_before_exclusive_pin_hook(Some(Box::new(move || {
+            let _ = waiting.send(());
+        })));
+        let published = publish_successor(&race.store, &race.cursor_key, &race.binding, "C");
+        crate::db::set_schema_22_cleanup_before_exclusive_pin_hook(None);
+        published
+    })
+}
+
+#[test]
+fn design_later_100_paused_reader_keeps_selected_pair_across_successor_cleanup() {
+    let race = schema_22_race_store();
+    let path_a = sidecar_path(&race.store, race.binding.vehicle_id, race.snapshot_a);
+    let (published_c, read) = std::thread::scope(|scope| {
+        let (selected_tx, selected_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let reader = paused_reader(scope, &race, selected_tx, resume_rx);
+        assert_eq!(selected_rx.recv().expect("selection"), race.snapshot_a);
+
+        // B keeps A as the prior current pair, so it needs no unlink phase.
+        publish_successor(&race.store, &race.cursor_key, &race.binding, "B");
+        assert!(path_a.exists(), "B's cleanup keeps the prior current A");
+
+        let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();
+        let cleanup = successor_cleanup(scope, &race, waiting_tx);
+        waiting_rx.recv().expect("C cleanup reaches its unlink phase");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!cleanup.is_finished(), "C cleanup waits for the reader pin");
+        assert!(path_a.exists(), "A survives while its reader holds the pin");
+
+        resume_tx.send(()).expect("resume reader");
+        let read = reader.join().expect("reader thread");
+        (cleanup.join().expect("cleanup thread"), read)
+    });
+    assert_eq!(read.expect("A's pair"), race.pair_a);
+    // The returned bytes are owned: A's sidecar no longer exists once C
+    // finishes, and the current pair is C's.
+    assert!(!path_a.exists(), "C's cleanup removed A after the pin dropped");
+    let current = schema_22_signed_artifacts(&race.store, race.binding.vehicle_id, &race.cursor_key)
+        .expect("C pair");
+    let manifest: SyncManifest = serde_json::from_slice(&current.0).expect("manifest");
+    assert_eq!(manifest.snapshot_id, published_c.snapshot_id);
+    assert!(exclusive_pin_is_free(&race.store));
+}
+
+#[test]
+fn design_later_100_concurrent_readers_share_the_pin_and_a_cancelled_read_releases_it() {
+    let race = schema_22_race_store();
+    std::thread::scope(|scope| {
+        let (first_tx, first_rx) = std::sync::mpsc::channel();
+        let (second_tx, second_rx) = std::sync::mpsc::channel();
+        let (resume_first_tx, resume_first_rx) = std::sync::mpsc::channel();
+        let (resume_second_tx, resume_second_rx) = std::sync::mpsc::channel();
+        let first = paused_reader(scope, &race, first_tx, resume_first_rx);
+        let second = paused_reader(scope, &race, second_tx, resume_second_rx);
+        // Both readers hold the shared pin at once; only cleanup is excluded.
+        assert_eq!(first_rx.recv().expect("first selection"), race.snapshot_a);
+        assert_eq!(second_rx.recv().expect("second selection"), race.snapshot_a);
+        assert!(!exclusive_pin_is_free(&race.store));
+        resume_first_tx.send(()).expect("resume first");
+        resume_second_tx.send(()).expect("resume second");
+        assert_eq!(first.join().expect("first").expect("first pair"), race.pair_a);
+        assert_eq!(second.join().expect("second").expect("second pair"), race.pair_a);
+    });
+    assert!(exclusive_pin_is_free(&race.store));
+
+    // A read abandoned after selection leaves no pin behind.
+    let cancelled = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                set_schema_22_read_after_selection_hook(Some(Box::new(|_| {
+                    Err(reject("read cancelled after selection"))
+                })));
+                let result = schema_22_signed_artifacts(
+                    &race.store,
+                    race.binding.vehicle_id,
+                    &race.cursor_key,
+                );
+                set_schema_22_read_after_selection_hook(None);
+                result
+            })
+            .join()
+            .expect("cancelled reader")
+    });
+    assert!(cancelled.expect_err("cancelled").message.contains("cancelled"));
+    assert!(exclusive_pin_is_free(&race.store));
+    publish_successor(&race.store, &race.cursor_key, &race.binding, "B");
+    publish_successor(&race.store, &race.cursor_key, &race.binding, "C");
+    assert!(!sidecar_path(&race.store, race.binding.vehicle_id, race.snapshot_a).exists());
+}
+
+#[test]
+fn design_later_100_pinned_read_still_fails_closed_and_releases_the_pin() {
+    let race = schema_22_race_store();
+    let vehicle_id = race.binding.vehicle_id;
+    let path_a = sidecar_path(&race.store, vehicle_id, race.snapshot_a);
+
+    let wrong_key = CursorKey::from_bytes([46; 32]);
+    schema_22_signed_artifacts(&race.store, vehicle_id, &wrong_key)
+        .expect_err("wrong signing key fails closed");
+    assert!(exclusive_pin_is_free(&race.store));
+
+    let original = fs::read(&path_a).expect("A sidecar");
+    let value: serde_json::Value = serde_json::from_slice(&original).expect("A JSON");
+    fs::write(&path_a, serde_json::to_vec_pretty(&value).expect("pretty")).expect("rewrite");
+    let error = schema_22_signed_artifacts(&race.store, vehicle_id, &race.cursor_key)
+        .expect_err("non-canonical sidecar fails closed");
+    assert!(error.message.contains("canonical"));
+    assert!(exclusive_pin_is_free(&race.store));
+    fs::write(&path_a, &original).expect("restore");
+
+    let aside = race._temp.path().join("aside.json");
+    fs::rename(&path_a, &aside).expect("move A aside");
+    std::os::unix::fs::symlink(&aside, &path_a).expect("symlink");
+    schema_22_signed_artifacts(&race.store, vehicle_id, &race.cursor_key)
+        .expect_err("symlinked sidecar is refused");
+    assert!(exclusive_pin_is_free(&race.store));
+    fs::remove_file(&path_a).expect("remove symlink");
+    fs::rename(&aside, &path_a).expect("restore A");
+
+    fs::remove_file(&path_a).expect("remove A");
+    let error = schema_22_signed_artifacts(&race.store, vehicle_id, &race.cursor_key)
+        .expect_err("absent sidecar fails closed");
+    assert!(error.message.contains("not catalogued"));
+    assert!(exclusive_pin_is_free(&race.store));
+}
+
+#[test]
+fn design_later_100_cleanup_waits_for_a_pin_held_by_another_process() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let race = schema_22_race_store();
+    let path_a = sidecar_path(&race.store, race.binding.vehicle_id, race.snapshot_a);
+    publish_successor(&race.store, &race.cursor_key, &race.binding, "B");
+
+    let mut holder = Command::new("/usr/bin/perl")
+        .args([
+            "-e",
+            r#"use Fcntl qw(:flock O_RDONLY); sysopen(my $f, $ARGV[0], O_RDONLY) or die "open: $!"; flock($f, LOCK_SH) or die "lock: $!"; $| = 1; print "locked\n"; <STDIN>;"#,
+        ])
+        .arg(noop_directory(&race.store))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn pin holder");
+    let mut line = String::new();
+    BufReader::new(holder.stdout.as_mut().expect("holder stdout"))
+        .read_line(&mut line)
+        .expect("holder reports");
+    assert_eq!(line, "locked\n");
+
+    let published_c = std::thread::scope(|scope| {
+        let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();
+        let cleanup = successor_cleanup(scope, &race, waiting_tx);
+        waiting_rx.recv().expect("C cleanup reaches its unlink phase");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!cleanup.is_finished(), "cleanup waits for the other process");
+        assert!(path_a.exists(), "A survives while another process pins it");
+        drop(holder.stdin.take());
+        assert!(holder.wait().expect("holder exits").success());
+        cleanup.join().expect("cleanup thread")
+    });
+    assert!(!path_a.exists());
+    let current = schema_22_signed_artifacts(&race.store, race.binding.vehicle_id, &race.cursor_key)
+        .expect("C pair");
+    let manifest: SyncManifest = serde_json::from_slice(&current.0).expect("manifest");
+    assert_eq!(manifest.snapshot_id, published_c.snapshot_id);
+}
