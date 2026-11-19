@@ -1130,6 +1130,9 @@ where
         }
         abort_and_clear_manual_probe_streams_without_egress(&mut streams).await;
     }
+    // #86: the streams go quiet before the wait, with no unsubscribe until the
+    // credential outcome is known.
+    quiet_all_streams(&mut streams);
     #[cfg(test)]
     supervised_test_log(LoopEvent::CleanupWaiting);
     // The retained admission is watched while the credential unit is waited for

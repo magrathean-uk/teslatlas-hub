@@ -355,6 +355,8 @@ enum LoopEvent {
     /// An orderly stop signal was sent to the stream run of the car (Tesla id), at the
     /// synchronous send of the stop, whether or not the run ever polls for it.
     StopSignalSent { vehicle: u64 },
+    /// The quiet stop (#86) was sent to the stream run of the car (Tesla id).
+    QuietStopSent { vehicle: u64 },
     /// A failed account list was folded into the scheduler (the discovery failure the
     /// loop logs and backs off from).
     DiscoveryFailed,

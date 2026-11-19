@@ -193,12 +193,20 @@ impl TestSeams {
 /// passed, the signal fires, so every phase ends and the run does not retry.
 /// Unlike an ordinary shutdown, a window end leaves the Hub no authority to
 /// send: the socket is dropped with no further write (no unsubscribe, no Close).
+///
+/// The quiet stop (#86) comes before the ordinary signal while the collector waits
+/// for its credential unit: a subscribed session stops reading and sending (no
+/// Ping, no unsubscribe, no Close) and the run starts no new attempt. The ordinary
+/// signal then ends the session as usual, or the window's end drops the socket.
+/// A dropped quiet sender is no stop.
 pub(super) struct Shutdown {
     receiver: oneshot::Receiver<()>,
     fired: bool,
     window: Option<SendPermit>,
     /// The window ended the attempt; nothing more may be written.
     window_ended: bool,
+    quiet: Option<oneshot::Receiver<()>>,
+    quiet_fired: bool,
 }
 
 impl Shutdown {
@@ -208,6 +216,55 @@ impl Shutdown {
             fired: false,
             window: None,
             window_ended: false,
+            quiet: None,
+            quiet_fired: false,
+        }
+    }
+
+    fn with_quiet(mut self, quiet: oneshot::Receiver<()>) -> Self {
+        self.quiet = Some(quiet);
+        self
+    }
+
+    /// Waits for the ordinary signal (or the window's end) or the quiet stop,
+    /// whichever comes first: `true` is the quiet stop, which stays fired. Cancel
+    /// safe: the receivers are polled in place, so a `select!` branch that wins
+    /// first loses no signal.
+    async fn wait_or_quiet(&mut self) -> bool {
+        if self.fired {
+            return false;
+        }
+        if self.quiet_fired {
+            return true;
+        }
+        let Some(quiet) = self.quiet.as_mut() else {
+            self.wait().await;
+            return false;
+        };
+        let quieted = tokio::select! {
+            biased;
+            cut = signal_or_window_end(&mut self.receiver, self.window.as_ref()) => {
+                Err(cut)
+            }
+            received = quiet => Ok(received.is_ok()),
+        };
+        match quieted {
+            Err(cut) => {
+                self.window_ended |= cut;
+                self.fired = true;
+                false
+            }
+            Ok(received) => {
+                // A completed receiver is never polled again.
+                self.quiet = None;
+                if received {
+                    self.quiet_fired = true;
+                    true
+                } else {
+                    self.wait().await;
+                    false
+                }
+            }
         }
     }
 
@@ -260,22 +317,34 @@ impl Shutdown {
         if self.fired {
             return;
         }
-        match &self.window {
-            None => {
-                let _ = (&mut self.receiver).await;
-            }
-            Some(permit) => {
-                tokio::select! {
-                    biased;
-                    _ = &mut self.receiver => {}
-                    cut = permit.ended() => {
-                        tracing::debug!(?cut, "the collection window ended the stream");
-                        self.window_ended = true;
-                    }
+        if signal_or_window_end(&mut self.receiver, self.window.as_ref()).await {
+            self.window_ended = true;
+        }
+        self.fired = true;
+    }
+}
+
+/// The ordinary signal or the window's end, whichever comes first: `true` is the
+/// window's end. Cancel safe.
+async fn signal_or_window_end(
+    receiver: &mut oneshot::Receiver<()>,
+    window: Option<&SendPermit>,
+) -> bool {
+    match window {
+        None => {
+            let _ = receiver.await;
+            false
+        }
+        Some(permit) => {
+            tokio::select! {
+                biased;
+                _ = receiver => false,
+                cut = permit.ended() => {
+                    tracing::debug!(?cut, "the collection window ended the stream");
+                    true
                 }
             }
         }
-        self.fired = true;
     }
 }
 
@@ -1009,13 +1078,26 @@ impl TeslaStreamSupervisor {
     /// error that makes continuing impossible or unsafe (R12). Every other
     /// condition ends one session or check and is retried by the schedules of
     /// section 4, so C3 does not have to rebuild the supervisor.
+    #[cfg(test)]
     pub(crate) async fn run(
         self,
         shutdown: oneshot::Receiver<()>,
     ) -> Result<(), StreamSupervisorError> {
+        self.run_with_quiet_stop(shutdown, None).await
+    }
+
+    /// The run with a quiet stop (#86): see `Shutdown`.
+    pub(crate) async fn run_with_quiet_stop(
+        self,
+        shutdown: oneshot::Receiver<()>,
+        quiet: Option<oneshot::Receiver<()>>,
+    ) -> Result<(), StreamSupervisorError> {
         // R50: revoked at run start and whenever the run ends, even by an abort.
         let _gate = GateGuard::new(self.power_gate.clone());
         let mut shutdown = Shutdown::new(shutdown);
+        if let Some(quiet) = quiet {
+            shutdown = shutdown.with_quiet(quiet);
+        }
         let audit = RunAudit::new(
             self.audit_store.clone(),
             self.vehicle_id,
@@ -1031,8 +1113,19 @@ impl TeslaStreamSupervisor {
         };
         let mut delay = start_delay(self.draw());
         loop {
-            if until(&mut shutdown, sleep(delay)).await.is_none() {
-                return Ok(());
+            let stopped = tokio::select! {
+                biased;
+                quiet = shutdown.wait_or_quiet() => Some(quiet),
+                () = sleep(delay) => None,
+            };
+            match stopped {
+                None => {}
+                Some(false) => return Ok(()),
+                // After the quiet stop no new attempt starts.
+                Some(true) => {
+                    shutdown.wait().await;
+                    return Ok(());
+                }
             }
             match self.attempt(&mut shutdown, &audit, &mut run).await {
                 Outcome::Stop(result) => return result,
@@ -1238,6 +1331,7 @@ impl TeslaStreamSupervisor {
     ) -> Live<T> {
         enum Wake<T> {
             Shutdown,
+            Quiet,
             Done(T),
             Message(Option<Result<Message, WebSocketError>>),
             Dead,
@@ -1249,7 +1343,7 @@ impl TeslaStreamSupervisor {
             let ping_at = clocks.next_ping();
             let wake = tokio::select! {
                 biased;
-                () = shutdown.wait() => Wake::Shutdown,
+                quiet = shutdown.wait_or_quiet() => if quiet { Wake::Quiet } else { Wake::Shutdown },
                 value = &mut work => Wake::Done(value),
                 message = socket.next() => Wake::Message(message),
                 () = sleep_until(dead_at) => Wake::Dead,
@@ -1257,6 +1351,14 @@ impl TeslaStreamSupervisor {
             };
             match wake {
                 Wake::Shutdown => return Live::Shutdown,
+                // The quiet stop: the work may settle, nothing is read or sent.
+                Wake::Quiet => {
+                    return tokio::select! {
+                        biased;
+                        () = shutdown.wait() => Live::Shutdown,
+                        value = &mut work => Live::Done(value),
+                    };
+                }
                 Wake::Done(value) => return Live::Done(value),
                 Wake::Dead => {
                     *end_reason = "dead_socket";
@@ -1806,6 +1908,7 @@ impl TeslaStreamSupervisor {
     ) -> SessionEnd {
         enum Wake {
             Shutdown,
+            Quiet,
             Message(Option<Result<Message, WebSocketError>>),
             DeadSocket,
             Silence,
@@ -1821,7 +1924,7 @@ impl TeslaStreamSupervisor {
             let stable_at = state.clocks.stable_at();
             let wake = tokio::select! {
                 biased;
-                () = shutdown.wait() => Wake::Shutdown,
+                quiet = shutdown.wait_or_quiet() => if quiet { Wake::Quiet } else { Wake::Shutdown },
                 message = socket.next() => Wake::Message(message),
                 () = sleep_until(dead_at) => Wake::DeadSocket,
                 () = sleep_until(silent_at) => Wake::Silence,
@@ -1835,6 +1938,12 @@ impl TeslaStreamSupervisor {
             };
             match wake {
                 Wake::Shutdown => return SessionEnd::shutdown(),
+                // #86: nothing is read or sent until the ordinary signal, which ends
+                // the session as usual, or the window's end, which drops the socket.
+                Wake::Quiet => {
+                    shutdown.wait().await;
+                    return SessionEnd::shutdown();
+                }
                 Wake::DeadSocket => {
                     state.end_reason = "dead_socket";
                     // No inbound frame of any kind for three ping intervals (or

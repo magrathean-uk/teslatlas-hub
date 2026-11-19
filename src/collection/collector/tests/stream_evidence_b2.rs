@@ -362,6 +362,7 @@ async fn stream_audit_failure_is_logged_once_without_a_durable_row() {
                     sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                     events: receiver,
                     _shutdown: None,
+                    quiet: None,
                     task: Some(task),
                 }];
                 while !streams[0].task.as_ref().is_some_and(JoinHandle::is_finished) {
@@ -486,6 +487,7 @@ async fn r36_a_stopped_run_keeps_its_queued_telemetry() {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
         });
         for step in 0..3 {

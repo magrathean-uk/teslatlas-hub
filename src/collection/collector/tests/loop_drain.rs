@@ -1686,6 +1686,7 @@ async fn two_stops_preserve_the_third_stream(seam: Arc<SupervisedCollectorTestSe
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
         });
         // Every run keeps delivering a frame every 50 ms for as long as its queue
@@ -1934,6 +1935,7 @@ fn hung_stream_runtime(
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
         },
         events,

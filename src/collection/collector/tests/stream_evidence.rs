@@ -774,6 +774,7 @@ async fn ct71_no_second_run_starts_while_the_previous_run_has_not_ended() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
     }];
     let auth_value = crate::legacy_auth::LegacyAuth::for_test(
@@ -853,6 +854,7 @@ async fn ct71_a_stop_waits_for_the_timeout_then_aborts_and_returns_only_after_th
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
     }];
     tokio::task::yield_now().await;
@@ -886,6 +888,7 @@ async fn r36_frames_queued_when_a_stream_is_stopped_are_stored() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
     }];
     let base = StreamBed::now_ms();
@@ -949,6 +952,7 @@ async fn t13_the_audit_failure_shows_in_status_and_readiness_even_when_the_store
                 sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                 events: receiver,
                 _shutdown: None,
+                quiet: None,
                 task: Some(task),
             }];
             while !streams[0].task.as_ref().is_some_and(JoinHandle::is_finished) {
@@ -1200,6 +1204,7 @@ impl StreamBed {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: None,
         };
         Self {
@@ -1414,6 +1419,7 @@ async fn a_run_that_ends_with_an_error_is_spaced_and_leaves_the_collector_runnin
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: Some(task),
         }];
         while !streams[0]
@@ -1463,6 +1469,7 @@ async fn a_credential_authority_failure_still_stops_the_collector() {
         sensitive_access_failure: Arc::new(AtomicBool::new(true)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: Some(task),
     }];
     while !streams[0]
@@ -1508,6 +1515,7 @@ async fn a_panicked_or_cancelled_run_is_spaced_like_any_other_error() {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: Some(task),
         }];
         while !streams[0]

@@ -445,6 +445,51 @@ async fn b2_owner_denial_before_final_frames_skips_the_orderly_stop() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn p05_f05_streams_go_quiet_before_the_credential_wait() {
+    // #86. An ordinary stop inside an open window while the credential manager is
+    // held: the stream run gets the quiet stop before the shutdown waits for the
+    // manager, and no orderly stop signal (which may unsubscribe) until the manager
+    // is released. The run is then stopped as before.
+    let runs = Arc::new(HungRuns::default());
+    let mut bed = DrainBed::start_with_admission(1, true, |_, seam| {
+        seam.inject_stream_runs(runs.factory());
+    })
+    .await;
+    let seam = Arc::clone(&bed.seam);
+    bed.wait_for("the stream run", || seam.stream_admissions() >= 1).await;
+    bed.wait_for("the loop's iterations", || seam.loop_iterations() >= 3).await;
+    let manager = Arc::clone(&bed.manager);
+    let held = manager.lock().await;
+    let _ = bed.shutdown.take().expect("shutdown").send(());
+    bed.wait_for("the shutdown waits for the held cleanup", || {
+        seam.loop_log().contains(&LoopEvent::CleanupWaiting)
+    })
+    .await;
+    let log = seam.loop_log();
+    let quiet = log
+        .iter()
+        .position(|event| matches!(event, LoopEvent::QuietStopSent { .. }))
+        .unwrap_or_else(|| panic!("no quiet stop: {log:?}"));
+    let waiting = log
+        .iter()
+        .position(|event| *event == LoopEvent::CleanupWaiting)
+        .expect("waiting");
+    assert!(quiet < waiting, "{log:?}");
+    assert_eq!(signals_sent(&seam), 0, "no orderly stop while the manager is held");
+    assert!(
+        bed.task.as_ref().is_some_and(|task| !task.is_finished()),
+        "the cleanup is still held"
+    );
+    drop(held);
+    let mut task = bed.task.take().expect("task");
+    let result = join_supervised_restart_task("the supervisor ends", &mut task).await;
+    bed.server.abort();
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(signals_sent(&seam), 1, "the orderly stop follows the wait");
+    assert!(runs.ended.load(Ordering::SeqCst), "the run was joined");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn b2_a_renewal_denial_during_the_final_stream_stop_survives_the_admission_recovering() {
     // R-P2F3-1. The final stop of the streams is held at its drain (an acknowledged
     // gate). A distinct final frame is queued. The renewal then meets the denial (and
@@ -603,6 +648,7 @@ async fn b2_a_stop_whose_fence_is_set_before_its_queued_flush_writes_no_frame() 
                     sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                     events: receiver,
                     _shutdown: Some(shutdown),
+                    quiet: None,
                     task: Some(task),
                 }];
                 let base_ms = current_epoch_millis().expect("clock") - 60_000;
@@ -741,6 +787,7 @@ async fn b2_a_fence_set_between_two_frame_commits_of_the_queued_flush_writes_no_
                     sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                     events: receiver,
                     _shutdown: Some(shutdown),
+                    quiet: None,
                     task: Some(task),
                 }];
                 let mut cache = HashMap::new();
@@ -820,6 +867,7 @@ async fn b2_a_fence_set_between_two_frame_commits_of_a_finished_streams_tail_wri
                     sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                     events: receiver,
                     _shutdown: Some(shutdown),
+                    quiet: None,
                     task: Some(task),
                 }];
                 let base_ms = current_epoch_millis().expect("clock") - 60_000;
