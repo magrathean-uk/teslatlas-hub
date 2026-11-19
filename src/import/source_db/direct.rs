@@ -47,8 +47,8 @@ use crate::{
     source_db_reader::{
         SourceDbReadLimits, SourceDbReaderError, SourceDbSchemaInfo, SourceReadBudget,
         binary_copy_sql, charge_copy_types, decode_binary_charge, decode_binary_position,
-        open_bounded_copy, open_exported_snapshot_lease, open_snapshot_capture_lane,
-        position_copy_types,
+        PostgresFailure, open_bounded_copy, open_exported_snapshot_lease,
+        open_snapshot_capture_lane, position_copy_types,
         query_bounded, read_addresses, read_car_and_car_settings_v2_2, read_cars,
         read_charging_processes, read_drives, read_geofences, read_open_session,
         read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
@@ -2494,8 +2494,8 @@ pub enum SourceDbDirectError {
     },
     #[error(transparent)]
     Reader(#[from] SourceDbReaderError),
-    #[error(transparent)]
-    Postgres(#[from] tokio_postgres::Error),
+    #[error("{}", PostgresFailure(.0))]
+    Postgres(tokio_postgres::Error),
     #[error(transparent)]
     Projection(#[from] SourceDbProjectionError),
     #[error(transparent)]
@@ -2506,6 +2506,12 @@ pub enum SourceDbDirectError {
     ProjectionState(#[from] SourceDbProjectionStateError),
     #[error(transparent)]
     Store(#[from] StoreError),
+}
+
+impl From<tokio_postgres::Error> for SourceDbDirectError {
+    fn from(error: tokio_postgres::Error) -> Self {
+        Self::Postgres(error)
+    }
 }
 
 #[cfg(test)]
