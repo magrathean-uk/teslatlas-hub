@@ -330,14 +330,11 @@ fn ensure_vehicle_stream(
 }
 
 /// Stop one car's stream (shutdown signal, at most 5 s for the run to end, then an
-/// abort) and remove its runtime. It returns only once the task has ended, so no
-/// second run for the car starts before its previous run has. The events still
-/// queued when the task ended are returned, never dropped: the caller stores the
-/// frames among them (C3 R36, lossless storage).
-async fn disconnect_vehicle_stream(
-    streams: &mut Vec<VehicleStreamRuntime>,
-    vehicle_id: VehicleId,
-) -> Vec<StreamEvent> {
+/// abort). It returns only once the task has ended, so no second run for the car
+/// starts before its previous run has. The events still queued when the task ended
+/// stay in its runtime, never dropped: the caller stores the frames among them and
+/// removes the runtime (C3 R36, lossless storage).
+async fn disconnect_vehicle_stream(streams: &mut [VehicleStreamRuntime], vehicle_id: VehicleId) {
     for stream in streams
         .iter_mut()
         .filter(|stream| stream.vehicle_id == vehicle_id)
@@ -352,22 +349,20 @@ async fn disconnect_vehicle_stream(
     }
     let deadline = Instant::now() + STREAM_SHUTDOWN_TIMEOUT;
     join_or_abort_selected_at(streams, &[vehicle_id], deadline).await;
-    // The task has ended, so its bounded queue is stable: take what it holds.
-    let mut queued = Vec::new();
-    for stream in streams
-        .iter_mut()
-        .filter(|stream| stream.vehicle_id == vehicle_id)
-    {
-        while let Some(event) = stream.next_event() {
-            queued.push(event);
-        }
-    }
-    streams.retain(|stream| stream.vehicle_id != vehicle_id);
-    queued
+}
+
+/// Remove the runtimes of the stopped `selected` cars, except one that holds a frame
+/// the closed window refused (issue #85): it stays, with the rest of its queue, for
+/// the shutdown stop to store.
+fn remove_stopped_streams(streams: &mut Vec<VehicleStreamRuntime>, selected: &[VehicleId]) {
+    streams.retain(|stream| {
+        !selected.contains(&stream.vehicle_id) || stream.held_frame.is_some()
+    });
 }
 
 /// Store the frames among events a stopped stream left queued (C3 R36: frames
-/// already queued when a stream is stopped are stored too). The control events
+/// already queued when a stream is stopped are stored too). A frame the closed window
+/// refuses is held, and the frames behind it stay queued (issue #85). The control events
 /// among them (healthy, outage, offline, rejection) describe a run that is over
 /// and change nothing.
 ///
@@ -379,25 +374,27 @@ async fn disconnect_vehicle_stream(
 fn store_queued_stream_frames(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
-    vehicle_id: VehicleId,
-    queued: Vec<StreamEvent>,
+    stream: &mut VehicleStreamRuntime,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
     write_fence: Option<&RunWriteGuard>,
 ) -> Result<(), CollectorError> {
-    for event in queued {
+    while let Some(event) = stream.next_event() {
         if let StreamEvent::Telemetry { update, queued_at } = event {
             if frame_writes_fenced(write_fence) {
                 return Err(CollectorError::SensitiveAccessUnavailable);
             }
-            process_stream_telemetry_inner(
+            if let Err(error) = process_stream_telemetry_inner(
                 store,
                 scheduler,
-                vehicle_id,
+                stream.vehicle_id,
                 &update,
                 queued_at,
                 projection_car_ids,
                 false,
-            )?;
+            ) {
+                stream.hold_refused_frame(&error, update, queued_at);
+                return Err(error);
+            }
         }
     }
     Ok(())
@@ -411,8 +408,19 @@ async fn stop_vehicle_stream(
     vehicle_id: VehicleId,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
 ) -> Result<(), CollectorError> {
-    let queued = disconnect_vehicle_stream(streams, vehicle_id).await;
-    store_queued_stream_frames(store, scheduler, vehicle_id, queued, projection_car_ids, None)
+    disconnect_vehicle_stream(streams, vehicle_id).await;
+    let mut result = Ok(());
+    for stream in streams
+        .iter_mut()
+        .filter(|stream| stream.vehicle_id == vehicle_id)
+    {
+        let stored = store_queued_stream_frames(store, scheduler, stream, projection_car_ids, None);
+        if result.is_ok() {
+            result = stored;
+        }
+    }
+    remove_stopped_streams(streams, &[vehicle_id]);
+    result
 }
 
 /// Poll the tasks of the `selected` cars' runs where they are, and be ready once none
@@ -607,18 +615,14 @@ async fn stop_vehicle_streams(
         return Err(CollectorError::SensitiveAccessUnavailable);
     }
     let mut result = Ok(());
-    for id in &selected {
-        let mut queued = Vec::new();
-        for stream in streams.iter_mut().filter(|stream| stream.vehicle_id == *id) {
-            while let Some(event) = stream.next_event() {
-                queued.push(event);
-            }
-        }
+    for stream in streams
+        .iter_mut()
+        .filter(|stream| selected.contains(&stream.vehicle_id))
+    {
         let stored = store_queued_stream_frames(
             store,
             scheduler,
-            *id,
-            queued,
+            stream,
             projection_car_ids,
             budget.write_fence.as_ref(),
         );
@@ -626,7 +630,7 @@ async fn stop_vehicle_streams(
             result = stored;
         }
     }
-    streams.retain(|stream| !selected.contains(&stream.vehicle_id));
+    remove_stopped_streams(streams, &selected);
     result
 }
 
@@ -653,8 +657,9 @@ async fn stop_all_streams_and_store(
         budget,
     )
     .await;
-    // A runtime that held no task is gone with the rest.
-    streams.clear();
+    // A runtime that held no task is gone with the rest; one holding a frame the
+    // closed window refused stays for the shutdown stop (issue #85).
+    streams.retain(|stream| stream.held_frame.is_some());
     result
 }
 

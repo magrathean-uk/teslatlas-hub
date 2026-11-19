@@ -577,6 +577,109 @@ fn p05_f04_a_dequeued_frame_survives_the_window_close() {
     }));
 }
 
+/// Issue #85, review round 2: the final queue collection of an ordinary per-car stop
+/// (`stop_vehicle_streams` from reconciliation, and the single-car
+/// `stop_vehicle_stream`) keeps the frame the closed window refused and the frames
+/// behind it in the runtime, so the shutdown stop stores each of them once.
+#[test]
+fn p05_f04_a_stopped_stream_keeps_its_refused_frames_for_the_shutdown_stop() {
+    for single in [false, true] {
+        let (_temporary, bed) = GuardBed::new();
+        let window = crate::fleet_api::egress::test_support::TestWindow::open(60);
+        let endpoint = "ws://127.0.0.1:9/p05-f04-final/streaming/";
+        let _route = window.route(endpoint);
+        let permit = crate::fleet_api::egress::ask(
+            endpoint,
+            crate::fleet_api::egress::Provider::Legacy,
+            crate::fleet_api::egress::PermitKind::Stream,
+        )
+        .expect("an open window permits the run");
+        bed.guard.window().hold(permit);
+        let (mut core, mut cache) = p3bf2_frame_rig(&bed);
+        let (sender, receiver) = mpsc::channel(8);
+        // The producer has finished: no task is left to join.
+        let mut streams = vec![VehicleStreamRuntime {
+            vehicle_id: core_id(1),
+            power_gate: Arc::new(StreamPowerGate::default()),
+            sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+            events: receiver,
+            _shutdown: None,
+            task: None,
+            held_frame: None,
+        }];
+        let base = current_epoch_millis().expect("clock") - 60_000;
+        let send = |offset: i64, speed: i64| {
+            sender
+                .try_send(StreamEvent::Telemetry {
+                    update: Box::new(frame(base + offset, Some("D"), Some(speed), Some(10))),
+                    queued_at: Instant::now(),
+                })
+                .expect("queued");
+        };
+        let seam = Arc::new(SupervisedCollectorTestSeam::default());
+        let commits = |offset: i64| commits_of_the_frame(&seam, base + offset);
+        guard_block_on(SUPERVISED_COLLECTOR_TEST_SEAM.scope(Arc::clone(&seam), async {
+            send(0, 30);
+            drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+                .await
+                .expect("the first frame is stored inside the window");
+            assert_eq!(commits(0), 1, "the first frame is stored");
+            send(1_000, 40);
+            send(2_000, 50);
+            window.close();
+            let mut budget = DrainBudget::new(Instant::now());
+            let mut pending = StreamDrainResult::default();
+            let result = if single {
+                stop_vehicle_stream(
+                    &bed.store,
+                    &mut core.scheduler,
+                    &mut streams,
+                    core_id(1),
+                    &mut cache,
+                )
+                .await
+            } else {
+                stop_vehicle_streams(
+                    &bed.store,
+                    &mut core.scheduler,
+                    &mut streams,
+                    &[core_id(1)],
+                    &mut cache,
+                    &mut pending,
+                    &mut budget,
+                )
+                .await
+            };
+            assert!(
+                matches!(result, Err(CollectorError::CollectionWindowClosed(_))),
+                "single {single}: {:?}",
+                result.as_ref().err()
+            );
+            assert_eq!((commits(1_000), commits(2_000)), (0, 0), "the closed window wrote nothing");
+            assert_eq!(streams.len(), 1, "single {single}: the runtime is kept");
+            assert!(streams[0].held_frame.is_some(), "single {single}: the refused frame is kept");
+            core.scheduler.guard_writes_with(bed.guard.for_shutdown());
+            budget.guard_writes_with(bed.guard.for_shutdown());
+            stop_all_streams_and_store(
+                &bed.store,
+                &mut core.scheduler,
+                &mut streams,
+                &mut cache,
+                &mut pending,
+                &mut budget,
+            )
+            .await
+            .expect("the shutdown stop stores the kept frames");
+            assert!(streams.is_empty());
+            assert_eq!(
+                (commits(0), commits(1_000), commits(2_000)),
+                (1, 1, 1),
+                "single {single}: each frame stored once"
+            );
+        }));
+    }
+}
+
 #[test]
 fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() {
     // The drain boundaries used to look at the fence only; now the admission counts.
@@ -607,11 +710,9 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
     let (mut core, _cache) = p3bf2_frame_rig(&second);
     second.deny_the_admission();
     let mut cache = HashMap::new();
-    let result = store_queued_stream_frames(
-        &second.store,
-        &mut core.scheduler,
-        core_id(1),
-        vec![StreamEvent::Telemetry {
+    let (sender, receiver) = mpsc::channel(1);
+    sender
+        .try_send(StreamEvent::Telemetry {
             update: Box::new(frame(
                 current_epoch_millis().expect("clock") - 60_000,
                 Some("P"),
@@ -619,7 +720,21 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
                 Some(0),
             )),
             queued_at: Instant::now(),
-        }],
+        })
+        .expect("queued");
+    let mut stream = VehicleStreamRuntime {
+        vehicle_id: core_id(1),
+        power_gate: Arc::new(StreamPowerGate::default()),
+        sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+        events: receiver,
+        _shutdown: None,
+        task: None,
+        held_frame: None,
+    };
+    let result = store_queued_stream_frames(
+        &second.store,
+        &mut core.scheduler,
+        &mut stream,
         &mut cache,
         Some(&second.guard),
     );

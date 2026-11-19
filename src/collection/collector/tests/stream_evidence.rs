@@ -860,14 +860,14 @@ async fn ct71_a_stop_waits_for_the_timeout_then_aborts_and_returns_only_after_th
     tokio::task::yield_now().await;
     assert!(!ended.load(Ordering::SeqCst));
     let started = tokio::time::Instant::now();
-    let queued = disconnect_vehicle_stream(&mut streams, id).await;
-    assert!(queued.is_empty());
+    disconnect_vehicle_stream(&mut streams, id).await;
+    assert!(streams[0].next_event().is_none());
     assert!(
         tokio::time::Instant::now() - started >= STREAM_SHUTDOWN_TIMEOUT,
         "it waited for the whole timeout"
     );
     assert!(ended.load(Ordering::SeqCst), "the task had ended when it returned");
-    assert!(streams.is_empty(), "and the runtime is gone");
+    assert!(streams[0].task.is_none(), "and its handle is joined");
 }
 
 #[tokio::test]
