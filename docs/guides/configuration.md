@@ -78,7 +78,7 @@ the listed method. The common request headers are `Authorization`,
 | Routes | Method | Additional request headers |
 | --- | --- | --- |
 | `/healthz`, `/readyz`, `/.well-known/teslatlas-hub`, `/v1/vehicles` | GET | None |
-| `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives` | GET | None |
+| `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives`, `/v1/vehicles/{vehicle_id}/charges`, `/v1/vehicles/{vehicle_id}/drives/{session_id}`, `/v1/vehicles/{vehicle_id}/charges/{session_id}`, `/v1/vehicles/{vehicle_id}/drives/{session_id}/positions`, `/v1/vehicles/{vehicle_id}/charges/{session_id}/samples` | GET | None |
 | `/v1/pairings/{pairing_id}/claim`, `/v1/device/rotate`, `/v1/device/revoke` | POST | None |
 | `/v1/vehicles/{vehicle_id}/sync/manifest`, `/v1/vehicles/{vehicle_id}/sync/noop` | GET | `X-Teslatlas-Supported-Schemas`, `X-Teslatlas-Sync-Capability`, `X-Teslatlas-Sync-Profile` |
 | `/v1/packs/sha256/{object_name}` | GET | `Range`, `If-Range` |
