@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Previous-process producers only. No live vault connection is used to seed.
+#[cfg(any(test, feature = "journey-doubles"))]
 use super::*;
 
 #[cfg(test)]

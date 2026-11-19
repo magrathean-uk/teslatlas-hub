@@ -890,6 +890,8 @@ impl CredentialVault {
         state.barrier()
     }
     /// TRANSITIONAL: the V2 sign-in scope calls this after its preconditions.
+    /// Unbounded, so test builds only (M09-T22): the service begins under a permit.
+    #[cfg(any(test, feature = "journey-doubles"))]
     pub(in crate::auth) fn begin_sign_in(&self, slot: CredentialSlot) -> Result<SignInSession, CredentialStoreError> {
         self.begin_sign_in_under(slot, WriteAuthority::UNBOUNDED)
     }
@@ -953,6 +955,8 @@ impl CredentialVault {
     /// as it was and an existing pair is untouched; a pair committed whose
     /// barrier then fails is `sign_in_stored_unconfirmed`, never a plain
     /// refusal, because the commit may have replaced the stored pair.
+    /// Unbounded, so test builds only (M09-T22).
+    #[cfg(any(test, feature = "journey-doubles"))]
     pub(in crate::auth) fn store_hub_grant(&self, grant: RedeemedGrant) -> Result<StoredHubGrant, CredentialStoreError> {
         self.store_hub_grant_under(grant, WriteAuthority::UNBOUNDED)
     }
@@ -1038,6 +1042,8 @@ impl CredentialVault {
         state.barrier()?; Ok(StoredHubGrant::new(slot, generation))
     }
     /// TRANSITIONAL: V2 owns release and service restart after this call.
+    /// Unbounded, so test builds only (M09-T22).
+    #[cfg(any(test, feature = "journey-doubles"))]
     pub(in crate::auth) fn finish_hub_grant_aftercare(&self, stored: StoredHubGrant) -> Result<(), CredentialStoreError> {
         self.finish_hub_grant_aftercare_under(stored, WriteAuthority::UNBOUNDED)
     }
