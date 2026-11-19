@@ -88,6 +88,10 @@ const K_RETRY_AFTER_MAX: Duration = Duration::from_secs(3_600);
 /// list requests a day.
 const K_BILLING_PROBE: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// Lists in a row that failed before the account row says the inventory is
+/// unavailable (P04-F01); one list that is accepted clears it.
+const K_INVENTORY_FAILURES: u32 = 3;
+
 /// The longest a persisted pause probe deadline loads as (C3 R2, R51,
 /// `K_PAUSE_PROBE`): an hour is at most 24 requests a day, and only while the
 /// car is listed online.
@@ -1061,6 +1065,13 @@ struct AccountRecord {
     state_since_ms: i64,
     /// While set and in the future no request is sent (R43, R45, R47).
     wait: Option<(Instant, WaitReason)>,
+    /// The provider's own deadline (a 429's Retry-After), kept when a longer
+    /// authentication or store wait replaces `wait`, so it holds again once that
+    /// wait ends and is stored independently (P04-F06).
+    provider_until: Option<Instant>,
+    /// The end of the transport back-off, kept the same way and stored so a restart
+    /// keeps the step and the deadline (P04-F07).
+    transport_until: Option<Instant>,
     consecutive_429: u32,
     consecutive_unreachable: u32,
     /// Authentication outcomes in a row that were not a stop (C3 R47); the count
@@ -1100,6 +1111,9 @@ impl AccountRecord {
             since_ms: self.state_since_ms,
             rate_limited_until: None,
             next_probe: self.next_billing_probe,
+            unreachable_until: None,
+            consecutive_unreachable: 0,
+            inventory_unavailable: false,
         }
     }
 
@@ -1109,6 +1123,8 @@ impl AccountRecord {
             state_reason: "collecting",
             state_since_ms: wall_ms,
             wait: None,
+            provider_until: None,
+            transport_until: None,
             consecutive_429: 0,
             consecutive_unreachable: 0,
             auth_failures: 0,

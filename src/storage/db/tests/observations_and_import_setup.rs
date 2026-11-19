@@ -1614,8 +1614,8 @@ fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
                 "INSERT INTO ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "
-             (vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256)
-             VALUES (?1, 'position', 2, ?2, ?3, ?4)"
+             (vehicle_id, entity_ordinal, entity_id, car_id, projection_sha256)
+             VALUES (?1, 2, ?2, ?3, ?4)"
             ))
             .expect("insert prior positions");
         for id in 2_i64..=30_001 {
@@ -1721,38 +1721,17 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "
                     SET car_id = ?1
-                  WHERE vehicle_id = ?2 AND entity_ordinal = ?3 AND entity_id = ?4"
+                  WHERE vehicle_id = ?2 AND entity_ordinal = ?3 AND entity_id IN (77, 78)"
             ),
             params![
                 binding.selected_car_id + 1,
                 vehicle.vehicle_id.to_string(),
                 i64::from(SourceDbProjectionStateEntity::Position.ordinal()),
-                77_i64,
             ],
         )
-        .expect("inject wrong car row");
-    connection
-        .execute_batch("PRAGMA ignore_check_constraints = ON")
-        .expect("allow malformed test row");
-    connection
-        .execute(
-            concat!(
-                "UPDATE ",
-                crate::db::import_table_names::import_projection_state_rows_table!(),
-                "
-                    SET entity = 'drive'
-                  WHERE vehicle_id = ?1 AND entity_ordinal = ?2 AND entity_id = ?3"
-            ),
-            params![
-                vehicle.vehicle_id.to_string(),
-                i64::from(SourceDbProjectionStateEntity::Position.ordinal()),
-                78_i64,
-            ],
-        )
-        .expect("inject mismatched entity row");
-    connection
-        .execute_batch("PRAGMA ignore_check_constraints = OFF")
-        .expect("restore constraints");
+        .expect("inject wrong car rows");
+    // Schema v81 (M08-T30) keeps no entity text, so a row whose text and
+    // ordinal disagree can no longer be stored; the ordinal alone names it.
     drop(connection);
 
     let mut lookup = store

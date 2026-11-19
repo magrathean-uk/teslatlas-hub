@@ -103,12 +103,13 @@ impl CollectionAttentionCode {
 
 /// The healthy-detail words, in the order they are reported (C3 R13, R66). None
 /// of them is attention and none is a service reason.
-pub const COLLECTOR_DETAIL_CODES: [&str; 5] = [
+pub const COLLECTOR_DETAIL_CODES: [&str; 6] = [
     "collector_cap_warning",
     "collector_rate_limited",
     "collector_vehicle_paused",
     "collector_tesla_unreachable",
     "collector_gap_unnotified",
+    "collector_inventory_unavailable",
 ];
 
 /// The attention and healthy detail a test reads from the collector tables.
@@ -541,22 +542,34 @@ impl HubStore {
     fn collection_facts(&self, context: &ReadinessContext) -> Result<CollectionFacts, StoreError> {
         use crate::config::CollectorMode;
         let connection = self.open_read_only_connection()?;
-        let account: Option<(String, String, String, Option<i64>)> = connection
+        let account: Option<(String, String, String, Option<i64>, bool)> = connection
             .query_row(
-                "SELECT mode, state, reason_code, rate_limited_until_ms
+                "SELECT mode, state, reason_code, rate_limited_until_ms, inventory_unavailable
                    FROM collector_account_state WHERE singleton_id = 1",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()
             .map_err(StoreError::Query)?;
         let mut detail = Vec::new();
-        if let Some((_, state, reason, rate_limited_until)) = &account {
+        let mut inventory_failing = false;
+        if let Some((_, state, reason, rate_limited_until, inventory_unavailable)) = &account {
             if state == "collecting" && reason == "cap_warning" {
                 detail.push(COLLECTOR_DETAIL_CODES[0]);
             }
             if rate_limited_until.is_some_and(|until| until > context.now_ms) {
                 detail.push(COLLECTOR_DETAIL_CODES[1]);
+            }
+            if *inventory_unavailable && state == "collecting" {
+                inventory_failing = true;
             }
         }
         let count = |sql: &str| -> Result<i64, StoreError> {
@@ -588,6 +601,9 @@ impl HubStore {
             > 0
         {
             detail.push(COLLECTOR_DETAIL_CODES[4]);
+        }
+        if inventory_failing {
+            detail.push(COLLECTOR_DETAIL_CODES[5]);
         }
         drop(connection);
         let stored_mode = account.as_ref().map(|(mode, ..)| mode.as_str());

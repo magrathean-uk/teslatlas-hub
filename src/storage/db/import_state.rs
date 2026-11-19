@@ -183,18 +183,13 @@ fn source_db_inventory_entity(value: &str) -> Option<ProjectionDeltaEntity> {
     }
 }
 
+/// The entity of a stored state row, named by its ordinal alone (schema v81,
+/// M08-T30): the row keeps no entity text.
 fn stored_projection_state_entity(
-    name: &str,
     ordinal: i64,
 ) -> Result<SourceDbProjectionStateEntity, StoreError> {
-    let by_name: SourceDbProjectionStateEntity =
-        name.parse().map_err(StoreError::SourceDbProjectionState)?;
-    let by_ordinal = SourceDbProjectionStateEntity::from_ordinal(ordinal)
-        .map_err(StoreError::SourceDbProjectionState)?;
-    if by_name != by_ordinal {
-        return Err(StoreError::LineageCatalogConflict);
-    }
-    Ok(by_name)
+    SourceDbProjectionStateEntity::from_ordinal(ordinal)
+        .map_err(StoreError::SourceDbProjectionState)
 }
 
 fn projection_state_digest_from_blob(blob: Vec<u8>) -> Result<Sha256Digest, StoreError> {
@@ -493,7 +488,9 @@ fn legacy_projection_inventory_matches_state_in_transaction(
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 " AS state
                             WHERE state.vehicle_id = inventory.vehicle_id
-                              AND state.entity = inventory.entity
+                              AND state.entity_ordinal = ",
+                crate::db::import_table_names::import_state_entity_ordinal_sql!("inventory.entity"),
+                "
                               AND state.entity_id = inventory.entity_id
                        )
                 )
@@ -503,14 +500,16 @@ fn legacy_projection_inventory_matches_state_in_transaction(
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 " AS state
                      WHERE state.vehicle_id = ?1
-                       AND state.entity <> 'car'
+                       AND state.entity_ordinal <> 0
                        AND NOT EXISTS(
                            SELECT 1
                              FROM ",
                 crate::db::import_table_names::import_projection_rows_table!(),
                 " AS inventory
                             WHERE inventory.vehicle_id = state.vehicle_id
-                              AND inventory.entity = state.entity
+                              AND inventory.entity = ",
+                crate::db::import_table_names::import_state_entity_name_sql!("state.entity_ordinal"),
+                "
                               AND inventory.entity_id = state.entity_id
                        )
                 )"
@@ -740,32 +739,18 @@ fn replace_source_db_import_projection_state_from_attached_in_transaction(
                 "INSERT INTO ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "(
-                vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256
+                vehicle_id, entity_ordinal, entity_id, car_id, projection_sha256
              )
-             SELECT ?1,
-                    CASE entity_ordinal
-                        WHEN 0 THEN 'car'
-                        WHEN 1 THEN 'drive'
-                        WHEN 2 THEN 'position'
-                        WHEN 3 THEN 'charge'
-                        WHEN 4 THEN 'charge_sample'
-                        WHEN 5 THEN 'state'
-                        WHEN 6 THEN 'update'
-                    END,
-                    entity_ordinal, entity_id, car_id, projection_sha256
+             SELECT ?1, entity_ordinal, entity_id, car_id, projection_sha256
                FROM ",
                 crate::db::import_table_names::import_state_spool_alias!(),
                 ".current_rows
               WHERE true
               ORDER BY entity_ordinal ASC, entity_id ASC
              ON CONFLICT(vehicle_id, entity_ordinal, entity_id) DO UPDATE SET
-                entity = excluded.entity,
                 car_id = excluded.car_id,
                 projection_sha256 = excluded.projection_sha256
              WHERE ",
-                crate::db::import_table_names::import_projection_state_rows_table!(),
-                ".entity IS NOT excluded.entity
-                OR ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 ".car_id IS NOT excluded.car_id
                 OR ",
@@ -897,7 +882,9 @@ fn replace_source_db_import_projection_inventory_from_attached_in_transaction(
                 "INSERT INTO ",
                 crate::db::import_table_names::import_projection_rows_table!(),
                 "(vehicle_id, entity, entity_id)
-             SELECT vehicle_id, entity, entity_id
+             SELECT vehicle_id, ",
+                crate::db::import_table_names::import_state_entity_name_sql!("entity_ordinal"),
+                ", entity_id
                FROM ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "
@@ -1045,8 +1032,8 @@ pub(crate) fn replace_source_db_import_projection_state_in_transaction(
             "INSERT INTO ",
             crate::db::import_table_names::import_projection_state_rows_table!(),
             "(
-                vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+                vehicle_id, entity_ordinal, entity_id, car_id, projection_sha256
+             ) VALUES (?1, ?2, ?3, ?4, ?5)"
         ))
         .map_err(StoreError::LineageCatalog)?;
     let mut saw_car = false;
@@ -1067,7 +1054,6 @@ pub(crate) fn replace_source_db_import_projection_state_in_transaction(
             statement
                 .execute(params![
                     vehicle_key.as_str(),
-                    row.entity.as_str(),
                     i64::from(row.entity.ordinal()),
                     row.id,
                     row.car_id,

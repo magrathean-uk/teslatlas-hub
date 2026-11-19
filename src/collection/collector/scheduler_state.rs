@@ -102,6 +102,11 @@ struct AccountView {
     since_ms: i64,
     rate_limited_until: Option<Instant>,
     next_probe: Option<Instant>,
+    /// The end of the transport back-off, kept across a restart (P04-F07).
+    unreachable_until: Option<Instant>,
+    consecutive_unreachable: u32,
+    /// Repeated list failures have kept the inventory from loading (P04-F01).
+    inventory_unavailable: bool,
 }
 
 /// The persisted shape of one vehicle (C3 R4): the fields of
@@ -558,12 +563,18 @@ impl VehicleScheduler {
             let next_probe = row
                 .next_probe_ms
                 .map(|ms| deadline_from_wall(now, wall, ms, K_BILLING_PROBE));
+            let unreachable_until = row
+                .unreachable_until_ms
+                .map(|ms| deadline_from_wall(now, wall, ms, self.timing.max_backoff));
             self.persisted_account = AccountView {
                 state,
                 reason,
                 since_ms: row.since_ms,
                 rate_limited_until,
                 next_probe,
+                unreachable_until,
+                consecutive_unreachable: row.consecutive_unreachable,
+                inventory_unavailable: row.inventory_unavailable,
             };
             let same_configuration = row.mode == self.mode.code()
                 && row.config_fingerprint == snapshot.config_fingerprint;
@@ -571,9 +582,16 @@ impl VehicleScheduler {
                 self.account.state = state;
                 self.account.state_reason = reason;
                 self.account.state_since_ms = row.since_ms;
-                self.account.wait = rate_limited_until
-                    .filter(|until| *until > now)
-                    .map(|until| (until, WaitReason::RateLimited));
+                self.account.provider_until = rate_limited_until.filter(|until| *until > now);
+                self.account.transport_until = unreachable_until.filter(|until| *until > now);
+                self.account.consecutive_unreachable = row.consecutive_unreachable;
+                // A restart keeps the step of the inventory back-off too (P04-F01).
+                self.account.discovery_failures = if row.inventory_unavailable {
+                    K_INVENTORY_FAILURES
+                } else {
+                    0
+                };
+                self.account.wait = self.retained_wait(now);
                 self.account.next_billing_probe = next_probe;
             } else if state != AccountState::Collecting {
                 self.account.state = AccountState::Collecting;
@@ -886,12 +904,11 @@ impl VehicleScheduler {
             state: self.account.state,
             reason: self.account.state_reason,
             since_ms: self.account.state_since_ms,
-            rate_limited_until: self
-                .account
-                .wait
-                .filter(|(_, reason)| *reason == WaitReason::RateLimited)
-                .map(|(until, _)| until),
+            rate_limited_until: self.provider_deadline(),
             next_probe: self.account.next_billing_probe,
+            unreachable_until: self.transport_deadline(),
+            consecutive_unreachable: self.account.consecutive_unreachable,
+            inventory_unavailable: self.account.discovery_failures >= K_INVENTORY_FAILURES,
         }
     }
 
@@ -940,6 +957,11 @@ impl VehicleScheduler {
                     next_probe_ms: account_view
                         .next_probe
                         .map(|probe| wall_of_instant(now, wall, probe)),
+                    unreachable_until_ms: account_view
+                        .unreachable_until
+                        .map(|until| wall_of_instant(now, wall, until)),
+                    consecutive_unreachable: account_view.consecutive_unreachable,
+                    inventory_unavailable: account_view.inventory_unavailable,
                 },
             });
         }
@@ -1100,7 +1122,6 @@ impl VehicleScheduler {
     /// gaps become the tick's, a store back-off ends, and the baseline renews so a
     /// later failure rolls back only what is not yet committed.
     fn commit_succeeded(&mut self, tick: PendingTick, now: Instant) {
-        let _ = now;
         self.account.probe_time_of_the_tick = None;
         // The counter rows are the store's now, and so is the reservation they carry
         // (R27: sends rely only on a committed reservation).
@@ -1135,6 +1156,7 @@ impl VehicleScheduler {
                 .is_some_and(|(_, reason)| reason == WaitReason::Store)
             {
                 self.account.wait = None;
+                self.restore_retained_wait(now);
             }
             tracing::info!(
                 target: "collector.decision",

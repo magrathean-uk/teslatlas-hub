@@ -59,7 +59,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 80;
+pub const SCHEMA_VERSION: i32 = 82;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.54.0";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -1137,7 +1137,7 @@ pub struct SourceDbImportProjectionStateLookup {
 // that entity's range.
 const SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS: usize = 1_024;
 const SOURCE_DB_IMPORT_PROJECTION_STATE_PAGE_SQL: &str = concat!(
-    "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
+    "SELECT entity_ordinal, entity_id, car_id, projection_sha256
        FROM ",
     crate::db::import_table_names::import_projection_state_rows_table!(),
     "
@@ -1233,7 +1233,7 @@ impl SourceDbImportProjectionStateLookup {
         let mut statement = self
             .connection
             .prepare_cached(concat!(
-                "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
+                "SELECT entity_ordinal, entity_id, car_id, projection_sha256
                    FROM ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "
@@ -1254,11 +1254,10 @@ impl SourceDbImportProjectionStateLookup {
                 ],
                 |row| {
                     Ok((
-                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(0)?,
                         row.get::<_, i64>(1)?,
                         row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(3)?,
                     ))
                 },
             )
@@ -1266,12 +1265,12 @@ impl SourceDbImportProjectionStateLookup {
         let mut rows = Vec::with_capacity(SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS);
         let mut previous_id = None;
         for raw_row in raw_rows {
-            let (stored_name, stored_ordinal, stored_id, stored_car_id, digest) =
+            let (stored_ordinal, stored_id, stored_car_id, digest) =
                 raw_row.map_err(StoreError::LineageCatalog)?;
             if stored_id < lower_bound_id
                 || previous_id.is_some_and(|previous_id| stored_id <= previous_id)
                 || stored_car_id != self.header.selected_car_id
-                || stored_projection_state_entity(&stored_name, stored_ordinal)? != entity
+                || stored_projection_state_entity(stored_ordinal)? != entity
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
@@ -1344,24 +1343,23 @@ impl SourceDbImportProjectionStateLookup {
                 ],
                 |row| {
                     Ok((
-                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(0)?,
                         row.get::<_, i64>(1)?,
                         row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(3)?,
                     ))
                 },
             )
             .map_err(StoreError::LineageCatalog)?;
         let mut rows = Vec::new();
         for raw_row in raw_rows {
-            let (name, ordinal, id, car_id, digest) =
+            let (ordinal, id, car_id, digest) =
                 raw_row.map_err(StoreError::LineageCatalog)?;
             if id <= 0 || car_id != self.header.selected_car_id {
                 return Err(StoreError::LineageCatalogConflict);
             }
             rows.push(SourceDbProjectionStateDigestRow {
-                entity: stored_projection_state_entity(&name, ordinal)?,
+                entity: stored_projection_state_entity(ordinal)?,
                 id,
                 car_id,
                 digest: projection_state_digest_from_blob(digest)?,

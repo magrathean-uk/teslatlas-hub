@@ -66,6 +66,7 @@ include!("tests/cadence_wait.rs");
 include!("tests/scheduler.rs");
 include!("tests/scheduler_core.rs");
 include!("tests/durable_state.rs");
+include!("tests/retry_pacing.rs");
 include!("tests/error_policy.rs");
 include!("tests/holds_and_actions.rs");
 include!("tests/refusals.rs");

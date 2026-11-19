@@ -116,6 +116,9 @@ fn account(mode: &str, state: &str, reason: &str) -> CollectorAccountRow {
         since_ms: NOW_MS,
         rate_limited_until_ms: None,
         next_probe_ms: None,
+        unreachable_until_ms: None,
+        consecutive_unreachable: 0,
+        inventory_unavailable: false,
     }
 }
 
