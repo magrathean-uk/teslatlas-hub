@@ -363,6 +363,7 @@ async fn stream_audit_failure_is_logged_once_without_a_durable_row() {
                     events: receiver,
                     _shutdown: None,
                     task: Some(task),
+                    held_frame: None,
                 }];
                 while !streams[0].task.as_ref().is_some_and(JoinHandle::is_finished) {
                     tokio::task::yield_now().await;
@@ -487,6 +488,7 @@ async fn r36_a_stopped_run_keeps_its_queued_telemetry() {
             events: receiver,
             _shutdown: Some(shutdown),
             task: Some(task),
+            held_frame: None,
         });
         for step in 0..3 {
             events

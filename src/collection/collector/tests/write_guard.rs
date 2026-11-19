@@ -495,6 +495,88 @@ fn p3bf2_a_stream_frame_is_written_while_the_guard_allows() {
     assert!(bed.guard.audit().passed("stream-frame-intake") >= 1);
 }
 
+/// Issue #85 (P05-F04): a frame the drain takes off the queue after the collection
+/// window has closed is kept, not dropped, and the orderly stop stores every queued
+/// frame once, the refused one first.
+#[test]
+fn p05_f04_a_dequeued_frame_survives_the_window_close() {
+    let (_temporary, bed) = GuardBed::new();
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(60);
+    let endpoint = "ws://127.0.0.1:9/p05-f04/streaming/";
+    let _route = window.route(endpoint);
+    let permit = crate::fleet_api::egress::ask(
+        endpoint,
+        crate::fleet_api::egress::Provider::Legacy,
+        crate::fleet_api::egress::PermitKind::Stream,
+    )
+    .expect("an open window permits the run");
+    bed.guard.window().hold(permit);
+    let (mut core, mut cache) = p3bf2_frame_rig(&bed);
+    let (sender, receiver) = mpsc::channel(8);
+    let mut streams = vec![VehicleStreamRuntime {
+        vehicle_id: core_id(1),
+        power_gate: Arc::new(StreamPowerGate::default()),
+        sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+        events: receiver,
+        _shutdown: None,
+        task: None,
+        held_frame: None,
+    }];
+    let base = current_epoch_millis().expect("clock") - 60_000;
+    let send = |offset: i64, speed: i64| {
+        sender
+            .try_send(StreamEvent::Telemetry {
+                update: Box::new(frame(base + offset, Some("D"), Some(speed), Some(10))),
+                queued_at: Instant::now(),
+            })
+            .expect("queued");
+    };
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    let commits = |offset: i64| commits_of_the_frame(&seam, base + offset);
+    guard_block_on(SUPERVISED_COLLECTOR_TEST_SEAM.scope(Arc::clone(&seam), async {
+        send(0, 30);
+        drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+            .await
+            .expect("the first frame is stored inside the window");
+        assert_eq!(commits(0), 1, "the first frame is stored");
+        send(1_000, 40);
+        send(2_000, 50);
+        window.close();
+        let result =
+            drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+                .await;
+        assert!(
+            matches!(result, Err(CollectorError::CollectionWindowClosed(_))),
+            "{:?}",
+            result.as_ref().err()
+        );
+        assert_eq!((commits(1_000), commits(2_000)), (0, 0), "the closed window wrote nothing");
+        assert!(streams[0].held_frame.is_some(), "the dequeued frame is kept");
+        // The orderly stop writes under the shutdown guard, which keeps the admission
+        // check but not the window's.
+        core.scheduler.guard_writes_with(bed.guard.for_shutdown());
+        let mut budget = DrainBudget::new(Instant::now());
+        budget.guard_writes_with(bed.guard.for_shutdown());
+        let mut pending = StreamDrainResult::default();
+        stop_all_streams_and_store(
+            &bed.store,
+            &mut core.scheduler,
+            &mut streams,
+            &mut cache,
+            &mut pending,
+            &mut budget,
+        )
+        .await
+        .expect("the orderly stop stores the queued frames");
+        assert!(streams.is_empty());
+        assert_eq!(
+            (commits(0), commits(1_000), commits(2_000)),
+            (1, 1, 1),
+            "each frame stored once"
+        );
+    }));
+}
+
 #[test]
 fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() {
     // The drain boundaries used to look at the fence only; now the admission counts.

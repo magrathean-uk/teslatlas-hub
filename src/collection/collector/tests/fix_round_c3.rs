@@ -90,6 +90,7 @@ fn stream_with_producer(
         events: receiver,
         _shutdown: None,
         task: None,
+        held_frame: None,
     }];
     let delivered = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&delivered);
@@ -723,6 +724,7 @@ fn idle_stream() -> (Vec<VehicleStreamRuntime>, mpsc::Sender<StreamEvent>) {
         events: receiver,
         _shutdown: None,
         task: None,
+        held_frame: None,
     }];
     (streams, events)
 }

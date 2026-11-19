@@ -137,6 +137,34 @@ struct VehicleStreamRuntime {
     events: mpsc::Receiver<StreamEvent>,
     _shutdown: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<Result<(), crate::tesla_stream::StreamSupervisorError>>>,
+    /// A frame already received on `events` whose intake the closed collection window
+    /// refused (issue #85). It stays ahead of the queue until a later drain or the
+    /// orderly stop stores it, so a window close never drops a dequeued frame.
+    held_frame: Option<(Box<crate::tesla_stream::StreamUpdate>, Instant)>,
+}
+
+impl VehicleStreamRuntime {
+    /// The next event: a held frame first, then the queue.
+    fn next_event(&mut self) -> Option<StreamEvent> {
+        if let Some((update, queued_at)) = self.held_frame.take() {
+            return Some(StreamEvent::Telemetry { update, queued_at });
+        }
+        self.events.try_recv().ok()
+    }
+
+    /// Keep a dequeued frame whose intake the window refused (issue #85). Any other
+    /// failure settles the frame: a lost admission writes nothing more, and a store
+    /// fault is the run's error.
+    fn hold_refused_frame(
+        &mut self,
+        error: &CollectorError,
+        update: Box<crate::tesla_stream::StreamUpdate>,
+        queued_at: Instant,
+    ) {
+        if matches!(error, CollectorError::CollectionWindowClosed(_)) {
+            self.held_frame = Some((update, queued_at));
+        }
+    }
 }
 
 impl Drop for VehicleStreamRuntime {
@@ -216,6 +244,7 @@ fn ensure_vehicle_stream(
                 events: receiver,
                 _shutdown: Some(shutdown),
                 task: Some(task),
+                held_frame: None,
             });
             return true;
         }
@@ -295,6 +324,7 @@ fn ensure_vehicle_stream(
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     });
     true
 }
@@ -328,7 +358,7 @@ async fn disconnect_vehicle_stream(
         .iter_mut()
         .filter(|stream| stream.vehicle_id == vehicle_id)
     {
-        while let Ok(event) = stream.events.try_recv() {
+        while let Some(event) = stream.next_event() {
             queued.push(event);
         }
     }
@@ -580,7 +610,7 @@ async fn stop_vehicle_streams(
     for id in &selected {
         let mut queued = Vec::new();
         for stream in streams.iter_mut().filter(|stream| stream.vehicle_id == *id) {
-            while let Ok(event) = stream.events.try_recv() {
+            while let Some(event) = stream.next_event() {
                 queued.push(event);
             }
         }
@@ -1111,7 +1141,7 @@ fn schedule_stream_state_check(scheduler: &mut VehicleScheduler, id: VehicleId, 
 fn process_stream_event(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
-    stream: &VehicleStreamRuntime,
+    stream: &mut VehicleStreamRuntime,
     event: StreamEvent,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
     authentication_rejected: &mut bool,
@@ -1131,14 +1161,17 @@ fn process_stream_event(
             *authenticated = true;
             let recovery = scheduler.stream_healthy(vehicle_id, now);
             report_stream_recovery(scheduler, vehicle_id, recovery, now);
-            process_stream_telemetry_with_cache(
+            if let Err(error) = process_stream_telemetry_with_cache(
                 store,
                 scheduler,
                 vehicle_id,
                 &update,
                 queued_at,
                 projection_car_ids,
-            )?;
+            ) {
+                stream.hold_refused_frame(&error, update, queued_at);
+                return Err(error);
+            }
         }
         StreamEvent::VehicleOffline => {
             // The session has ended even when a targeted state check still
@@ -1223,7 +1256,7 @@ async fn drain_stream_events_while_stopping(
     for stream in streams.iter_mut() {
         let winding_down = stopping.contains(&stream.vehicle_id);
         for _ in 0..MAX_STREAM_EVENTS_PER_DRAIN {
-            let Ok(event) = stream.events.try_recv() else {
+            let Some(event) = stream.next_event() else {
                 break;
             };
             // Each frame is its own transaction: the run's loss fence is looked at
@@ -1232,8 +1265,8 @@ async fn drain_stream_events_while_stopping(
                 return Err(CollectorError::SensitiveAccessUnavailable);
             }
             if winding_down {
-                if let StreamEvent::Telemetry { update, queued_at } = event {
-                    process_stream_telemetry_inner(
+                if let StreamEvent::Telemetry { update, queued_at } = event
+                    && let Err(error) = process_stream_telemetry_inner(
                         store,
                         scheduler,
                         stream.vehicle_id,
@@ -1241,7 +1274,10 @@ async fn drain_stream_events_while_stopping(
                         queued_at,
                         projection_car_ids,
                         false,
-                    )?;
+                    )
+                {
+                    stream.hold_refused_frame(&error, update, queued_at);
+                    return Err(error);
                 }
                 continue;
             }
@@ -1259,7 +1295,7 @@ async fn drain_stream_events_while_stopping(
             // Once the producer has finished, its bounded queue is stable.
             // Drain every final event before consuming the JoinHandle so the
             // last telemetry and authentication transition reach the caller.
-            while let Ok(event) = stream.events.try_recv() {
+            while let Some(event) = stream.next_event() {
                 // The same per-frame look at the loss fence as above (R-P2F5-3).
                 if matches!(event, StreamEvent::Telemetry { .. }) && frame_writes_fenced(write_fence) {
                     return Err(CollectorError::SensitiveAccessUnavailable);

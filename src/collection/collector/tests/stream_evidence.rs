@@ -775,6 +775,7 @@ async fn ct71_no_second_run_starts_while_the_previous_run_has_not_ended() {
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     let auth_value = crate::legacy_auth::LegacyAuth::for_test(
         url::Url::parse("https://auth.tesla.com/oauth2/v3/token").unwrap(),
@@ -854,6 +855,7 @@ async fn ct71_a_stop_waits_for_the_timeout_then_aborts_and_returns_only_after_th
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     tokio::task::yield_now().await;
     assert!(!ended.load(Ordering::SeqCst));
@@ -887,6 +889,7 @@ async fn r36_frames_queued_when_a_stream_is_stopped_are_stored() {
         events: receiver,
         _shutdown: Some(shutdown),
         task: Some(task),
+        held_frame: None,
     }];
     let base = StreamBed::now_ms();
     for step in 0..3 {
@@ -950,6 +953,7 @@ async fn t13_the_audit_failure_shows_in_status_and_readiness_even_when_the_store
                 events: receiver,
                 _shutdown: None,
                 task: Some(task),
+                held_frame: None,
             }];
             while !streams[0].task.as_ref().is_some_and(JoinHandle::is_finished) {
                 tokio::task::yield_now().await;
@@ -1201,6 +1205,7 @@ impl StreamBed {
             events: receiver,
             _shutdown: None,
             task: None,
+            held_frame: None,
         };
         Self {
             _dir: dir,
@@ -1220,7 +1225,7 @@ impl StreamBed {
         process_stream_event(
             &self.store,
             &mut self.core.scheduler,
-            &self.runtime,
+            &mut self.runtime,
             event,
             &mut self.cache,
             &mut rejected,
@@ -1415,6 +1420,7 @@ async fn a_run_that_ends_with_an_error_is_spaced_and_leaves_the_collector_runnin
             events: receiver,
             _shutdown: None,
             task: Some(task),
+            held_frame: None,
         }];
         while !streams[0]
             .task
@@ -1464,6 +1470,7 @@ async fn a_credential_authority_failure_still_stops_the_collector() {
         events: receiver,
         _shutdown: None,
         task: Some(task),
+        held_frame: None,
     }];
     while !streams[0]
         .task
@@ -1509,6 +1516,7 @@ async fn a_panicked_or_cancelled_run_is_spaced_like_any_other_error() {
             events: receiver,
             _shutdown: None,
             task: Some(task),
+            held_frame: None,
         }];
         while !streams[0]
             .task
