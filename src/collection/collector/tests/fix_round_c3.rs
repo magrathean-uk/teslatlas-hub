@@ -89,6 +89,7 @@ fn stream_with_producer(
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     }];
@@ -723,6 +724,7 @@ fn idle_stream() -> (Vec<VehicleStreamRuntime>, mpsc::Sender<StreamEvent>) {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     }];

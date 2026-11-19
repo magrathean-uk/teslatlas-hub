@@ -354,6 +354,7 @@ async fn completed_stream_task_drains_final_events_and_is_reaped_once() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
         held_frame: None,
     }];
@@ -1615,6 +1616,7 @@ async fn a_stream_rejection_is_no_lease_state_until_the_credential_unit_signs_th
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
         held_frame: None,
     }];
@@ -1681,6 +1683,7 @@ async fn production_stream_queue_backpressures_and_drains_without_event_loss() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
         held_frame: None,
     }];

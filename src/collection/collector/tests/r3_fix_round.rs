@@ -1029,6 +1029,7 @@ async fn c4r3_n2_the_queued_frames_of_a_stopped_stream_do_not_mark_it_connected_
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
         held_frame: None,
     }];
@@ -1072,6 +1073,7 @@ async fn c4r3_n2_the_frames_drained_from_a_winding_down_run_do_not_mark_it_conne
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     }];
@@ -1111,6 +1113,7 @@ async fn c4r3_n2_the_frames_drained_from_a_winding_down_run_do_not_mark_it_conne
             receiver
         },
         _shutdown: None,
+        quiet: None,
         task: None,
         held_frame: None,
     }];

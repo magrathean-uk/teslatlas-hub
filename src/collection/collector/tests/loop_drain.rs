@@ -1686,6 +1686,7 @@ async fn two_stops_preserve_the_third_stream(seam: Arc<SupervisedCollectorTestSe
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
             held_frame: None,
         });
@@ -1935,6 +1936,7 @@ fn hung_stream_runtime(
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
             held_frame: None,
         },

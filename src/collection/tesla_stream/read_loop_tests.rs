@@ -594,6 +594,43 @@ async fn sc44_a_dead_socket_is_found_45_seconds_after_the_last_frame() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn p05_f05_a_quiet_stop_ends_reads_and_pings_without_an_unsubscribe() {
+    // #86. A subscribed session delivers one frame and then gets the quiet stop. The
+    // peer sends a second frame 5 s later, which is never read or delivered; for a
+    // minute no Ping and no unsubscribe reach the peer, the session does not end on
+    // its own and no new connection is opened. The ordinary stop then ends it as
+    // before: the unsubscribe and Close 1000 follow.
+    let peer = Peer::spawn(|conn| async move {
+        let mut ws = conn.ws().await;
+        ws.subscribe().await;
+        ws.send(&u(T0, V1)).await;
+        idle(&mut ws, secs(5)).await;
+        ws.send(&u(T0 + 1_000, V1)).await;
+        ws.drain().await;
+    })
+    .await;
+    let mut run = Rig::for_peer(&peer, Creds::offline("tok-1")).start();
+    assert_eq!(run.event().await, StreamEvent::Healthy);
+    expect_telemetry(&mut run, v1_update(T0)).await;
+    run.signal_quiet_stop();
+    expect_no_event_for(&mut run, secs(60)).await;
+    assert_eq!(peer.log.count("ping"), 0, "{:?}", peer.log.labels());
+    assert!(
+        wire_labels(&peer)
+            .iter()
+            .all(|label| label.contains("data:subscribe_oauth")),
+        "{:?}",
+        wire_labels(&peer)
+    );
+    assert_eq!(peer.log.count("accept"), 1, "{:?}", peer.log.labels());
+    run.shut_down().await.expect("shutdown");
+    peer.log.wait_for("close:", 1).await;
+    let wire = wire_labels(&peer);
+    assert_eq!(wire[1], UNSUBSCRIBE, "{wire:?}");
+    assert_eq!(wire[2], "close:1000", "{wire:?}");
+}
+
+#[tokio::test(start_paused = true)]
 async fn sc45_data_silence_after_motion_ends_the_session_after_the_configured_time() {
     let peer = streaming_peer(vec![u(T0, V1)]).await;
     let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));

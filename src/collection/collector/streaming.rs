@@ -136,6 +136,8 @@ struct VehicleStreamRuntime {
     sensitive_access_failure: Arc<AtomicBool>,
     events: mpsc::Receiver<StreamEvent>,
     _shutdown: Option<oneshot::Sender<()>>,
+    /// The quiet stop (#86), sent before the shutdown waits for the credential unit.
+    quiet: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<Result<(), crate::tesla_stream::StreamSupervisorError>>>,
     /// A frame already received on `events` whose intake the closed collection window
     /// refused (issue #85). It stays ahead of the queue until a later drain or the
@@ -243,6 +245,7 @@ fn ensure_vehicle_stream(
                 sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                 events: receiver,
                 _shutdown: Some(shutdown),
+                quiet: None,
                 task: Some(task),
                 held_frame: None,
             });
@@ -294,8 +297,9 @@ fn ensure_vehicle_stream(
     }
     let sensitive_access_failure = Arc::new(AtomicBool::new(false));
     let worker_sensitive_access_failure = Arc::clone(&sensitive_access_failure);
+    let (quiet, quiet_stop) = oneshot::channel();
     let task = tokio::spawn(async move {
-        let run = supervisor.run(stop);
+        let run = supervisor.run_with_quiet_stop(stop, Some(quiet_stop));
         tokio::pin!(run);
         let result = if let Some(refresh) = refresh_failure {
             tokio::select! {
@@ -323,10 +327,29 @@ fn ensure_vehicle_stream(
         sensitive_access_failure,
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: Some(quiet),
         task: Some(task),
         held_frame: None,
     });
     true
+}
+
+/// Sends every stream run the quiet stop (#86): a subscribed session stops reading
+/// and sending at once, and no new attempt starts. Nothing goes on the wire, so it
+/// may come before the credential unit's outcome is known; the ordinary stop
+/// follows once it is.
+fn quiet_all_streams(streams: &mut [VehicleStreamRuntime]) {
+    for stream in streams.iter_mut() {
+        if stream._shutdown.is_some() {
+            #[cfg(test)]
+            supervised_test_log(LoopEvent::QuietStopSent {
+                vehicle: stream.vehicle_id.get(),
+            });
+            if let Some(quiet) = stream.quiet.take() {
+                let _ = quiet.send(());
+            }
+        }
+    }
 }
 
 /// Stop one car's stream (shutdown signal, at most 5 s for the run to end, then an

@@ -1081,6 +1081,7 @@ impl Rig {
     pub(super) fn start(self) -> Running {
         let (events_tx, events) = mpsc::channel(self.capacity);
         let (shutdown, shutdown_rx) = oneshot::channel();
+        let (quiet, quiet_rx) = oneshot::channel();
         let hooked = Arc::new(StdMutex::new(Vec::new()));
         let hook_events = Arc::clone(&hooked);
         let hook_log = self.log.clone();
@@ -1135,10 +1136,11 @@ impl Rig {
                 }
                 hook_events.lock().expect("hook lock").push(event);
             }));
-        let task = tokio::spawn(supervisor.run(shutdown_rx));
+        let task = tokio::spawn(supervisor.run_with_quiet_stop(shutdown_rx, Some(quiet_rx)));
         Running {
             events,
             shutdown: Some(shutdown),
+            quiet: Some(quiet),
             task: Some(task),
             hooked,
             clock: self.clock,
@@ -1152,6 +1154,7 @@ impl Rig {
 pub(super) struct Running {
     pub(super) events: mpsc::Receiver<StreamEvent>,
     shutdown: Option<oneshot::Sender<()>>,
+    quiet: Option<oneshot::Sender<()>>,
     pub(super) task: Option<JoinHandle<Result<(), StreamSupervisorError>>>,
     /// Every admission hook event, in order.
     pub(super) hooked: Arc<StdMutex<Vec<AdmissionEvent>>>,
@@ -1178,6 +1181,13 @@ impl Running {
     pub(super) fn signal_shutdown(&mut self) {
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
+        }
+    }
+
+    /// Sends the quiet stop (#86).
+    pub(super) fn signal_quiet_stop(&mut self) {
+        if let Some(quiet) = self.quiet.take() {
+            let _ = quiet.send(());
         }
     }
 
