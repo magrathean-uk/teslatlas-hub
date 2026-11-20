@@ -1982,6 +1982,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     std::sync::Arc::clone(&authority),
                     collector_slot.clone(),
                 )?;
+                // One shutdown budget for the whole stop (issue #38): it
+                // starts on the first accepted stop, during the recovery
+                // wait too, and every stage below takes from it. Accepting
+                // the stop closes operator admission at once.
+                let shutdown_budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+                let stop_supervisor = supervisor.stopper();
                 let channel = operator::channel::ChannelServer::bind(
                     &config.data_dir,
                     std::sync::Arc::new(operator::authority::OperatorService::new(
@@ -2004,12 +2010,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         window_trust_authority(authority.host_id())?,
                         &config.data_dir,
                     )
-                    .with_recovery(std::sync::Arc::clone(&recovery))),
+                    .with_recovery(std::sync::Arc::clone(&recovery))
+                    .with_shutdown(std::sync::Arc::clone(&shutdown_budget))),
                 )?;
-                // One shutdown budget for the whole stop (issue #38): it
-                // starts on the first accepted stop, during the recovery
-                // wait too, and every stage below takes from it.
-                let shutdown_budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
                 let quiesce_backup = std::sync::Arc::clone(&backup_schedule);
                 let recovery_stop = if recovery.pending() {
                     tracing::warn!(
@@ -2029,6 +2032,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 if recovery_stop.is_some() {
                     shutdown_budget.begin();
                     quiesce_backup.request_stop();
+                    stop_supervisor(&shutdown_budget);
                 }
                 let control_budget = std::sync::Arc::clone(&shutdown_budget);
                 let server_config = config;
@@ -2069,9 +2073,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
                                 _ = sigterm.recv() => MacServeControl::Shutdown,
                             };
-                            // Accept the stop and quiesce new backups at once.
+                            // Accept the stop: operator admission closes
+                            // (the budget is stopping), new backups are
+                            // refused and the window supervisor stops its
+                            // collector, all before the listener drains.
                             control_budget.begin();
                             quiesce_backup.request_stop();
+                            stop_supervisor(&control_budget);
                             control
                         },
                     )

@@ -43,6 +43,9 @@ pub const NTP_SERVER: &str = "time.apple.com:123";
 const NTP_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub const WINDOW_CLOSED: &str = "window_closed";
+/// Refusal once the service has accepted a stop (issue #38): no new
+/// operator work is admitted while it drains.
+pub const SERVICE_STOPPING: &str = "service_stopping";
 pub const TRUST_DOCUMENT_MAX_BYTES: usize = 4096;
 
 /// Window dependencies for the running service: the system clock and the
@@ -393,6 +396,9 @@ pub struct OperatorService {
     recovery: Arc<RecoveryGate>,
     /// The collector's intake latency recorder (M04-T11), read only.
     intake: &'static IntakeRecorder,
+    /// The service's shutdown budget: once a stop is accepted only the
+    /// window status is answered (issue #38, review F2).
+    shutdown: Arc<crate::runtime::shutdown::ShutdownBudget>,
 }
 
 impl OperatorService {
@@ -413,7 +419,15 @@ impl OperatorService {
             window_dir: super::window_dir(data_dir),
             recovery: RecoveryGate::new(false),
             intake: IntakeRecorder::process_wide(),
+            shutdown: Arc::new(crate::runtime::shutdown::ShutdownBudget::system()),
         }
+    }
+
+    /// Refuses every request but the window status once `budget` has
+    /// accepted a stop.
+    pub fn with_shutdown(mut self, budget: Arc<crate::runtime::shutdown::ShutdownBudget>) -> Self {
+        self.shutdown = budget;
+        self
     }
 
     /// Answers with the intake latency figures of `recorder` (the process's own by
@@ -481,6 +495,12 @@ impl OperatorService {
 
 impl OperatorHandler for OperatorService {
     fn handle(&self, request: OperatorRequest) -> Result<Value, OperatorRefusal> {
+        if self.shutdown.is_stopping() && !matches!(request, OperatorRequest::WindowStatus) {
+            return Err(OperatorRefusal::new(
+                SERVICE_STOPPING,
+                "the Hub service is stopping; try again after it restarts",
+            ));
+        }
         if self.recovery.pending() {
             match request {
                 OperatorRequest::WindowStatus
@@ -800,6 +820,20 @@ impl SupervisorThread {
         Box::new(move || {
             if let Ok(sender) = sender.lock() {
                 let _ = sender.send(Signal::Reloaded);
+            }
+        })
+    }
+
+    /// Asks the supervisor to stop now, without waiting (issue #38, review
+    /// F2): called when the service accepts a stop, so the collector stops
+    /// while the listener drains. Its collector gets at most what is left of
+    /// `budget`'s work stages, and no more than [`COLLECTOR_STOP_WAIT`].
+    pub fn stopper(&self) -> Box<dyn Fn(&crate::runtime::shutdown::ShutdownBudget) + Send + Sync> {
+        let sender = Mutex::new(self.sender.clone());
+        Box::new(move |budget| {
+            let collector_wait = budget.remaining_for_work().min(COLLECTOR_STOP_WAIT);
+            if let Ok(sender) = sender.lock() {
+                let _ = sender.send(Signal::Stop(collector_wait));
             }
         })
     }
