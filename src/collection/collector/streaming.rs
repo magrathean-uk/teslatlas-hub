@@ -1211,10 +1211,12 @@ fn process_stream_event(
             note_stream_unhealthy(scheduler, vehicle_id, "transport_unavailable", now);
         }
         StreamEvent::ProtocolViolation => {
+            scheduler.stream_unusable(vehicle_id);
             note_stream_unhealthy(scheduler, vehicle_id, "protocol_violation", now);
         }
         StreamEvent::AuthRejected => {
             *authentication_rejected = true;
+            scheduler.stream_unusable(vehicle_id);
             note_stream_unhealthy(scheduler, vehicle_id, "authentication_rejected", now);
             #[cfg(test)]
             supervised_test_log(LoopEvent::RejectionProcessed);

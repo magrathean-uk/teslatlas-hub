@@ -357,6 +357,7 @@ const REASON_CODES: &[&str] = &[
     "idle_window_started",
     "suspended_idle",
     "suspension_ended_still_online",
+    "stream_unusable_polling",
     "reported_asleep",
     "reported_offline",
     "reported_online",
