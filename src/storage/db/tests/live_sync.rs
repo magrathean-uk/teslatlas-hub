@@ -1834,3 +1834,61 @@ fn import_delta_finalizer_rejects_row_semantics_the_writer_would_refuse() {
         multiple_open_states,
     );
 }
+
+/// #53: staging the import seam's sync reads the vehicle's waiting journal one
+/// batch at a time. A backlog of more than two batches is staged as three
+/// runs in revision order, and no read holds more than one batch of journal
+/// entries; before the fix the whole backlog was collected first.
+#[test]
+fn staged_seam_sync_reads_the_waiting_journal_one_batch_at_a_time() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _) = v2_base_manifest(&store);
+    let backlog = 2 * STAGED_SEAM_SYNC_LIMIT + 3;
+    let mut connection = store.open().expect("store connection");
+    let transaction = connection.transaction().expect("journal transaction");
+    {
+        let mut insert = transaction
+            .prepare(
+                "INSERT INTO sync_mutations
+                    (vehicle_id, revision, entity, entity_id, car_id, operation, payload_json)
+                 VALUES (?1, ?2, 'drive', ?2, ?3, 'tombstone', '{}')",
+            )
+            .expect("journal insert");
+        for revision in 1..=i64::try_from(backlog).expect("backlog") {
+            insert
+                .execute(params![
+                    vehicle.vehicle_id.to_string(),
+                    revision,
+                    binding.selected_car_id
+                ])
+                .expect("waiting mutation");
+        }
+    }
+    transaction.commit().expect("journal committed");
+
+    take_staged_seam_sync_peak_entries();
+    let staged = staged_seam_sync_in_transaction(&connection, vehicle.vehicle_id, &binding)
+        .expect("staged seam sync");
+    let peak = take_staged_seam_sync_peak_entries();
+    let limit = i64::try_from(STAGED_SEAM_SYNC_LIMIT).expect("limit");
+    assert_eq!(
+        staged
+            .iter()
+            .map(|batch| (batch.from_revision, batch.to_revision, batch.rows.tombstones.len()))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, limit, STAGED_SEAM_SYNC_LIMIT),
+            (limit + 1, 2 * limit, STAGED_SEAM_SYNC_LIMIT),
+            (2 * limit + 1, 2 * limit + 3, 3),
+        ]
+    );
+    assert_eq!(
+        staged_seam_sync_batch_count(&connection, vehicle.vehicle_id).expect("batch count"),
+        staged.len()
+    );
+    assert!(
+        peak <= STAGED_SEAM_SYNC_LIMIT,
+        "a staged-seam read held {peak} journal entries at once"
+    );
+}
