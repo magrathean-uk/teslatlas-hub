@@ -977,6 +977,8 @@ pub struct ProjectionReport {
 pub(crate) struct BrokenDriveTracker {
     car_id: i64,
     candidate_position_counts: HashMap<i64, u8>,
+    /// The repair candidate index (M03-T26), also bounded by drive rows.
+    capture: crate::import::broken_drive_repair::BrokenDriveCandidateCapture,
 }
 
 impl BrokenDriveTracker {
@@ -994,10 +996,47 @@ impl BrokenDriveTracker {
         Self {
             car_id,
             candidate_position_counts,
+            capture: crate::import::broken_drive_repair::BrokenDriveCandidateCapture::new(
+                drives, car_id,
+            ),
         }
     }
 
+    /// The tracker with the gap evidence a repair plan needs: the car's
+    /// charging processes and states, read once by the import.
+    pub(crate) fn new_with_evidence<'a>(
+        drives: &[SourceDbDrive],
+        car_id: i64,
+        states: impl IntoIterator<Item = &'a SourceDbState>,
+        processes: impl IntoIterator<Item = &'a SourceDbChargingProcess>,
+    ) -> Self {
+        let mut tracker = Self::new(drives, car_id);
+        for state in states {
+            tracker.capture.observe_state(state);
+        }
+        for process in processes {
+            tracker.capture.observe_charging_process(process);
+        }
+        tracker
+    }
+
+    pub(crate) fn observe_state(&mut self, state: &SourceDbState) {
+        self.capture.observe_state(state);
+    }
+
+    pub(crate) fn observe_charging_process(&mut self, process: &SourceDbChargingProcess) {
+        self.capture.observe_charging_process(process);
+    }
+
+    /// The captured candidate index; the broken count is unaffected.
+    pub(crate) fn into_candidate_index(
+        self,
+    ) -> crate::import::broken_drive_repair::BrokenDriveCandidateIndex {
+        self.capture.finish()
+    }
+
     pub(crate) fn observe(&mut self, position: &SourceDbPosition) {
+        self.capture.observe_position(position);
         if position.car_id != self.car_id {
             return;
         }
@@ -1462,7 +1501,12 @@ pub fn project_vehicle(
     }
     let projected_car = project_car(car, latest_firmware(&updates))?;
 
-    let mut broken_drives = BrokenDriveTracker::new(&source.drives, selected_car_id);
+    let mut broken_drives = BrokenDriveTracker::new_with_evidence(
+        &source.drives,
+        selected_car_id,
+        &source.states,
+        &source.charging_processes,
+    );
     let held_drive_id = handed_over_drive_id(&source.drives, selected_car_id);
     let detachment = PositionDetachmentPolicy::new(&source.drives, selected_car_id, held_drive_id);
     let mut expected_detached = 0_u64;

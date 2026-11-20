@@ -441,6 +441,8 @@ pub enum StoreError {
     InvalidStoredGeneration,
     #[error("stored count is invalid")]
     InvalidStoredCount,
+    #[error("a drive repair record is invalid: {0}")]
+    DriveRepairRecord(&'static str),
     #[error("{0} lifecycle session(s) require reconstruction")]
     QuarantinedLifecycle(usize),
     #[error("{}", unsupported_schema_message(*.0))]
@@ -775,6 +777,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::InvalidStoredUuid(..) => (),
                 StoreError::InvalidStoredGeneration => (),
                 StoreError::InvalidStoredCount => (),
+                StoreError::DriveRepairRecord(..) => (),
                 StoreError::QuarantinedLifecycle(..) => (),
                 StoreError::UnsupportedSchema(..) => (),
                 StoreError::PreSeamCollectedRows { .. } => (),
@@ -1063,6 +1066,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::InvalidStoredUuid(example()));
         check_store_error(StoreError::InvalidStoredGeneration);
         check_store_error(StoreError::InvalidStoredCount);
+        check_store_error(StoreError::DriveRepairRecord(example()));
         check_store_error(StoreError::QuarantinedLifecycle(example()));
         check_store_error(StoreError::UnsupportedSchema(example()));
         check_store_error(StoreError::PreSeamCollectedRows {

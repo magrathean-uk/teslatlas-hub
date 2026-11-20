@@ -91,3 +91,6 @@ mod source_key_guards;
 
 #[path = "tests/import_storage_cost.rs"]
 mod import_storage_cost;
+
+#[path = "tests/drive_repair.rs"]
+mod drive_repair;

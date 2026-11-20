@@ -2,4 +2,5 @@
 
 //! External data-source import boundaries.
 
+pub mod broken_drive_repair;
 pub mod source_db;

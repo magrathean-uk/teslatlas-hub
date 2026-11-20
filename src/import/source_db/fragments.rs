@@ -98,6 +98,8 @@ pub struct StagedProjectionPacks {
     /// A private current-run digest index, retained only until the caller
     /// atomically publishes or discards this candidate.
     pub(crate) projection_state: Option<SourceDbProjectionStateCapture>,
+    /// The repair candidate index captured with this candidate (M03-T26).
+    pub(crate) repair_candidates: Option<crate::import::broken_drive_repair::BrokenDriveCandidateIndex>,
     cleanup_on_drop: bool,
 }
 
@@ -129,8 +131,17 @@ impl StagedProjectionPacks {
             geofences,
             selected_car,
             projection_state,
+            repair_candidates: None,
             cleanup_on_drop: true,
         }
+    }
+
+    pub(crate) fn with_repair_candidates(
+        mut self,
+        index: crate::import::broken_drive_repair::BrokenDriveCandidateIndex,
+    ) -> Self {
+        self.repair_candidates = Some(index);
+        self
     }
 
     /// Published chunks are owned by the Hub catalogue, not this candidate.
@@ -355,7 +366,8 @@ fn write_staged_full_snapshot_once(
     };
 
     write_drive_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
-    write_position_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
+    let repair_candidates =
+        write_position_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
     write_charge_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
     let emitted_updates =
         write_staged_update_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
@@ -381,7 +393,8 @@ fn write_staged_full_snapshot_once(
         geofences,
         projection_state,
         selected_car,
-    ))
+    )
+    .with_repair_candidates(repair_candidates))
 }
 
 fn staged_geofences(stage: &SourceDbStage) -> Result<Vec<SourceDbGeofence>, SourceDbFragmentError> {
@@ -564,7 +577,7 @@ fn write_position_fragments(
     sink: &mut PackSink<'_>,
     limits: SourceDbFragmentLimits,
     report: &mut ProjectionReport,
-) -> Result<(), SourceDbFragmentError> {
+) -> Result<crate::import::broken_drive_repair::BrokenDriveCandidateIndex, SourceDbFragmentError> {
     let mut projected_drives = HashMap::new();
     let mut source_drives = Vec::new();
     for_each_page::<SourceDbDrive, _>(stage, SourceDbStageTable::Drives, |drive| {
@@ -575,6 +588,14 @@ fn write_position_fragments(
         Ok(())
     })?;
     let mut broken_drives = BrokenDriveTracker::new(&source_drives, car.id);
+    for_each_page::<SourceDbState, _>(stage, SourceDbStageTable::States, |state| {
+        broken_drives.observe_state(&state);
+        Ok(())
+    })?;
+    for_each_page::<SourceDbChargingProcess, _>(stage, SourceDbStageTable::ChargingProcesses, |process| {
+        broken_drives.observe_charging_process(&process);
+        Ok(())
+    })?;
     let held_drive_id = handed_over_drive_id(&source_drives, car.id);
     let detachment = Arc::new(PositionDetachmentPolicy::new(&source_drives, car.id, held_drive_id));
     let mut expected_detached = 0_u64;
@@ -625,7 +646,8 @@ fn write_position_fragments(
         return Err(SourceDbProjectionError::PositionDetachmentAccounting.into());
     }
     report.broken_drives = broken_drives.count();
-    accumulator.flush(sink)
+    accumulator.flush(sink)?;
+    Ok(broken_drives.into_candidate_index())
 }
 
 fn append_projected_positions(

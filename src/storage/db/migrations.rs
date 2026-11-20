@@ -34,6 +34,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     }
     credential_schema_rung(connection, credential_fresh)?;
     seam_schema_rung(connection)?;
+    drive_repair_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
         backup_pack_pins_table(connection)
