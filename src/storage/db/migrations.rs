@@ -36,6 +36,9 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     seam_schema_rung(connection)?;
     import_state_compaction_rung(connection)?;
     collector_retry_schema_rung(connection)?;
+    // The v83 drive repair rung stays last: it upgrades whatever v80, v81 or
+    // v82 store the earlier rungs leave.
+    drive_repair_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
         backup_pack_pins_table(connection)?;

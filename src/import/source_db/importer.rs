@@ -1159,6 +1159,9 @@ async fn import_pass(
         from_exclusive: capture_sequence,
         to_inclusive: capture_sequence,
     };
+    // M03-T26: no plan may use the previous repair index once this import
+    // can commit; the import records its own capture after it commits.
+    store.invalidate_drive_repair_index(vehicle.vehicle_id)?;
     let run_id = store.begin_import_generation(
         registered_source.source_id,
         vehicle.vehicle_id,
@@ -1452,6 +1455,13 @@ async fn import_pass(
                 &mut planned,
             )?;
             run_guard.disarm();
+            record_repair_candidates(
+                store,
+                registered_source.source_id,
+                vehicle.vehicle_id,
+                &mut direct,
+                request.imported_at_ms,
+            );
             let physical_seam = Some(planned.seam.packs.clone());
             return Ok(ImportPass::from(CapturedSourceDbImport {
                 report: SourceDbImportReport {
@@ -1534,6 +1544,13 @@ async fn import_pass(
         };
         direct.keep_chunks();
         run_guard.disarm();
+        record_repair_candidates(
+            store,
+            registered_source.source_id,
+            vehicle.vehicle_id,
+            &mut direct,
+            request.imported_at_ms,
+        );
         return Ok(ImportPass::from(CapturedSourceDbImport {
             report: SourceDbImportReport {
                 source_id: registered_source.source_id,
@@ -1663,6 +1680,13 @@ async fn import_pass(
     }
     direct.keep_chunks();
     run_guard.disarm();
+    record_repair_candidates(
+        store,
+        registered_source.source_id,
+        vehicle.vehicle_id,
+        &mut direct,
+        request.imported_at_ms,
+    );
     Ok(ImportPass::from(CapturedSourceDbImport {
         report: SourceDbImportReport {
             source_id: registered_source.source_id,
@@ -1784,6 +1808,9 @@ fn publish_staged_history_with_limits(
             .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?,
         None => store.reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?,
     };
+    // M03-T26: no plan may use the previous repair index once this import
+    // can commit; the import records its own capture after it commits.
+    store.invalidate_drive_repair_index(vehicle.vehicle_id)?;
     let mut import_run = ImportGenerationGuard {
         store,
         run_id: Some(store.begin_import_generation(
@@ -1969,6 +1996,13 @@ fn publish_staged_history_with_limits(
     }
     import_run.disarm();
     staged.keep_chunks();
+    record_repair_candidates(
+        store,
+        source.source_id,
+        vehicle.vehicle_id,
+        &mut staged,
+        request.imported_at_ms,
+    );
     Ok(SourceDbImportReport {
         source_id: source.source_id,
         vehicle_id: vehicle.vehicle_id,
@@ -2109,6 +2143,7 @@ fn publish_staged_history_successor(
     delta_packs.published();
     drop(delta_packs);
     run_guard.disarm();
+    record_repair_candidates(store, source_id, vehicle_id, &mut staged, request.imported_at_ms);
     Ok(SourceDbImportReport {
         source_id,
         vehicle_id,
@@ -2622,6 +2657,26 @@ fn reconcile_failed_full_snapshot_candidate(
 /// open drive, charge, or state tail. Retain no candidate pack and atomically
 /// make that reconciled tail durable before consuming the generation.
 #[allow(clippy::too_many_arguments)]
+/// M03-T26: keep the repair candidate index captured with a published or
+/// promoted import. The import has already committed and withdrew the
+/// previous index before it could commit, so a failure here leaves no index
+/// to plan from until a later import records one; it is logged without row
+/// values.
+fn record_repair_candidates(
+    store: &HubStore,
+    source_id: Uuid,
+    vehicle_id: Uuid,
+    packs: &mut StagedProjectionPacks,
+    at_ms: i64,
+) {
+    let Some(index) = packs.repair_candidates.take() else {
+        return;
+    };
+    if let Err(error) = store.record_drive_repair_index(source_id, vehicle_id, &index, at_ms) {
+        tracing::warn!(%error, "drive repair candidate index was not recorded");
+    }
+}
+
 fn promote_unchanged_direct_import(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -2638,7 +2693,7 @@ fn promote_unchanged_direct_import(
     // entry references before the no-publication generation promotion.
     direct.keep_chunks();
     discard_unpublished_chunks(store, publication_gate, &direct.chunks)?;
-    Ok(match materialisation {
+    let promoted = match materialisation {
         Some((car, drives)) => store.promote_import_generation_with_materialisation(
             run_id,
             source_id,
@@ -2651,7 +2706,9 @@ fn promote_unchanged_direct_import(
         None => {
             store.promote_import_generation(run_id, source_id, vehicle_id, car_id, updated_at_ms)?
         }
-    })
+    };
+    record_repair_candidates(store, source_id, vehicle_id, direct, updated_at_ms);
+    Ok(promoted)
 }
 
 fn transport_row_count(chunks: &[BuiltProjectionPack]) -> Result<u64, ProjectionPackError> {

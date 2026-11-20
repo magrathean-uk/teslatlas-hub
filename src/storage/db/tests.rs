@@ -94,3 +94,6 @@ mod import_storage_cost;
 
 #[path = "tests/catalogue_maintenance.rs"]
 mod catalogue_maintenance;
+
+#[path = "tests/drive_repair.rs"]
+mod drive_repair;

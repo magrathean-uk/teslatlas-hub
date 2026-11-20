@@ -592,6 +592,8 @@ impl HubStore {
         // so status and diagnosis lanes open it rather than refuse it. A v80
         // store (before the import state compaction rung, M08-T30) differs
         // only in the state rows' entity text and index, which no reader uses.
+        // A store below the head also lacks only the empty drive repair tables
+        // (M03-T26), which only the repair APIs read.
         if version != SCHEMA_VERSION
             && version != MIN_STORE_VERSION
             && version != CREDENTIAL_FORMAT_SCHEMA_VERSION

@@ -1122,6 +1122,8 @@ async fn write_from_session(
         DIRECT_MAX_RETAINED_STATE_ROWS,
     )
     .await?;
+    let mut broken_drives =
+        BrokenDriveTracker::new_with_evidence(&drives, selected_car_id, &states, &processes);
 
     // These are the typed PostgreSQL values, before THP1 projection drops the
     // drive odometer endpoints or validates the state text domain. Independent
@@ -1236,7 +1238,6 @@ async fn write_from_session(
         "prefetched source database related positions"
     );
 
-    let mut broken_drives = BrokenDriveTracker::new(&drives, selected_car_id);
     let detachment = PositionDetachmentPolicy::new(&drives, selected_car_id, open_session.drive.as_ref().map(|d| d.id));
     let projected_drives = write_drives(
         selected_car_id,
@@ -1272,6 +1273,7 @@ async fn write_from_session(
     )
     .await?;
     report.broken_drives = broken_drives.count();
+    let repair_candidates = broken_drives.into_candidate_index();
     let completed_before_charges = completed_before_positions
         .checked_add(source_counts.positions)
         .ok_or(SourceDbDirectError::DirectRetentionAccountingOverflow)?;
@@ -1357,7 +1359,8 @@ async fn write_from_session(
             imported_geofences,
             projection_state,
             selected_car,
-        ),
+        )
+        .with_repair_candidates(repair_candidates),
         materialised_car: projected_car,
         materialised_drives,
         materialised_charges,
