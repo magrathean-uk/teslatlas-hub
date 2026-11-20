@@ -1159,6 +1159,9 @@ async fn import_pass(
         from_exclusive: capture_sequence,
         to_inclusive: capture_sequence,
     };
+    // M03-T26: no plan may use the previous repair index once this import
+    // can commit; the import records its own capture after it commits.
+    store.invalidate_drive_repair_index(vehicle.vehicle_id)?;
     let run_id = store.begin_import_generation(
         registered_source.source_id,
         vehicle.vehicle_id,
@@ -1805,6 +1808,9 @@ fn publish_staged_history_with_limits(
             .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?,
         None => store.reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?,
     };
+    // M03-T26: no plan may use the previous repair index once this import
+    // can commit; the import records its own capture after it commits.
+    store.invalidate_drive_repair_index(vehicle.vehicle_id)?;
     let mut import_run = ImportGenerationGuard {
         store,
         run_id: Some(store.begin_import_generation(
@@ -2652,9 +2658,10 @@ fn reconcile_failed_full_snapshot_candidate(
 /// make that reconciled tail durable before consuming the generation.
 #[allow(clippy::too_many_arguments)]
 /// M03-T26: keep the repair candidate index captured with a published or
-/// promoted import. The import has already committed; a failure here leaves
-/// planning on the previous index, which every plan revalidates against the
-/// store, and is logged without row values.
+/// promoted import. The import has already committed and withdrew the
+/// previous index before it could commit, so a failure here leaves no index
+/// to plan from until a later import records one; it is logged without row
+/// values.
 fn record_repair_candidates(
     store: &HubStore,
     source_id: Uuid,

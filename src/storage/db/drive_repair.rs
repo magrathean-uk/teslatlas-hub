@@ -584,6 +584,22 @@ impl HubStore {
         Ok(report)
     }
 
+    /// Withdraws the vehicle's recorded index before an import may commit.
+    /// Planning needs the index head, so until the import records its own
+    /// capture (`record_drive_repair_index`), nothing is planned from evidence
+    /// an import may have made stale. Rows and attestations stay, so the next
+    /// recording still compares each row with its previous evidence.
+    pub fn invalidate_drive_repair_index(&self, vehicle_id: Uuid) -> Result<(), StoreError> {
+        let connection = self.open()?;
+        connection
+            .execute(
+                "DELETE FROM drive_repair_index_heads WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+            )
+            .map_err(StoreError::Query)?;
+        Ok(())
+    }
+
     /// One page of the stored index in source start order, after `after`.
     pub fn drive_repair_index_page(
         &self,

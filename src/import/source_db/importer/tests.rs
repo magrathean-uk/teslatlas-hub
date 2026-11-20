@@ -2749,6 +2749,52 @@ fn broken_drive_stage(source: &SourceDbHistory, directory: &Path) -> SourceDbSta
 }
 
 #[test]
+fn broken_drive_repair_plan_index_is_withdrawn_when_its_refresh_fails() {
+    let temporary = crate::private_tempdir().unwrap();
+    let database = temporary.path().join("hub");
+    let store = HubStore::initialize(&database).unwrap();
+    let cursor_key = CursorKey::from_bytes([72; 32]);
+    let request = SourceDbImportRequest {
+        new_import_source: false, source_key: "broken-drive-repair-index-refresh".into(),
+        scope: SourceDbImportScope::Selected(1), imported_at_ms: 1_700_000_000_000,
+    };
+    let mut source = history();
+    source.drives = vec![completed_drive(10)];
+    for id in [1, 2] {
+        let mut broken = completed_drive(id);
+        broken.start_date_ms = id * 100;
+        broken.end_date_ms = None;
+        broken.distance_km = None;
+        broken.duration_min = None;
+        source.drives.push(broken);
+    }
+    let first = broken_drive_stage(&source, &temporary.path().join("first"));
+    let prior = publish_staged_history(&store, &cursor_key, &request, &first).unwrap();
+    let now = 1_800_000_000_000;
+    assert!(store.plan_drive_repairs(prior.vehicle_id, now).unwrap().index_present);
+
+    // The next import commits, then its index write fails.
+    let raw = rusqlite::Connection::open(store.database_path()).unwrap();
+    raw.execute_batch(
+        "CREATE TRIGGER fail_repair_head BEFORE INSERT ON drive_repair_index_heads
+         BEGIN SELECT RAISE(ABORT, 'test index write failure'); END;",
+    )
+    .unwrap();
+    for id in [1, 2] {
+        source.positions.push(serde_json::from_value(serde_json::json!({
+            "id": 100 + id, "car_id": 1, "drive_id": id,
+            "date_ms": id * 100, "latitude": 51.0, "longitude": 0.0
+        })).unwrap());
+    }
+    let second = broken_drive_stage(&source, &temporary.path().join("second"));
+    let next = publish_staged_history(&store, &cursor_key, &request, &second).unwrap();
+    assert!(!next.skipped);
+    let report = store.plan_drive_repairs(prior.vehicle_id, now).unwrap();
+    assert!(!report.index_present, "no plan uses the index the import made stale");
+    assert!(report.planned_keys.is_empty());
+}
+
+#[test]
 fn broken_drive_staged_upgrade_emits_only_recovered_positions_without_rebuilding_base() {
     let temporary = crate::private_tempdir().unwrap();
     let store = HubStore::initialize(temporary.path().join("hub")).unwrap();

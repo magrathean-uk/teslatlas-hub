@@ -391,6 +391,32 @@ fn broken_drive_repair_plan_store_reindex_invalidates_attestations() {
 }
 
 #[test]
+fn broken_drive_repair_plan_store_plans_nothing_from_an_invalidated_index() {
+    let (_directory, store) = try_test_store().unwrap();
+    let rows = run(10, T0, 3);
+    seed_imported(&store, &rows);
+    store
+        .record_drive_repair_index(SOURCE, VEHICLE, &index(rows.clone()), NOW)
+        .unwrap();
+    store
+        .attest_unedited_drive_repair_candidates(VEHICLE, &ids(&rows), NOW)
+        .unwrap();
+    // An import withdraws the index before it can commit; until it records
+    // its own capture, nothing is planned from the old evidence.
+    store.invalidate_drive_repair_index(VEHICLE).unwrap();
+    let report = store.plan_drive_repairs(VEHICLE, NOW).unwrap();
+    assert!(!report.index_present);
+    assert!(report.planned_keys.is_empty());
+    // The recorded capture restores planning; unchanged rows keep their
+    // attestations.
+    let recorded = store
+        .record_drive_repair_index(SOURCE, VEHICLE, &index(rows.clone()), NOW)
+        .unwrap();
+    assert_eq!(recorded.unchanged, 4);
+    assert_eq!(store.plan_drive_repairs(VEHICLE, NOW).unwrap().planned_keys.len(), 1);
+}
+
+#[test]
 fn broken_drive_repair_plan_store_pages_runs_across_boundaries() {
     let (_directory, store) = try_test_store().unwrap();
     // 40 runs of five fragments and a destination: 240 rows over three
