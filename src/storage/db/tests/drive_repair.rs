@@ -319,6 +319,40 @@ fn broken_drive_repair_plan_store_refuses_foreign_or_protected_members() {
 }
 
 #[test]
+fn broken_drive_repair_plan_store_protects_any_destination_sample() {
+    let rows = run(10, T0, 3);
+    let attested = |store: &HubStore| {
+        seed_imported(store, &rows);
+        store
+            .record_drive_repair_index(SOURCE, VEHICLE, &index(rows.clone()), NOW)
+            .unwrap();
+        store
+            .attest_unedited_drive_repair_candidates(VEHICLE, &ids(&rows), NOW)
+            .unwrap();
+    };
+    // Position 131 is the last sample of destination drive 13. Protected
+    // before planning, it refuses the whole component.
+    let (_directory, store) = try_test_store().unwrap();
+    attested(&store);
+    store
+        .record_drive_edit_protection(VEHICLE, DriveRepairEntity::Position, 131, DriveProtectionReason::Protect, NOW)
+        .unwrap();
+    let report = store.plan_drive_repairs(VEHICLE, NOW).unwrap();
+    assert!(report.planned_keys.is_empty());
+    assert_eq!(report.counts.refused.get("protected"), Some(&3), "{:?}", report.counts);
+
+    // Protected after planning, it supersedes the planned component.
+    let (_directory, store) = try_test_store().unwrap();
+    attested(&store);
+    assert_eq!(store.plan_drive_repairs(VEHICLE, NOW).unwrap().planned_keys.len(), 1);
+    store
+        .record_drive_edit_protection(VEHICLE, DriveRepairEntity::Position, 131, DriveProtectionReason::Protect, NOW)
+        .unwrap();
+    let summary = store.drive_repair_summary(VEHICLE).unwrap();
+    assert_eq!((summary.planned, summary.superseded), (0, 1));
+}
+
+#[test]
 fn broken_drive_repair_plan_store_reindex_invalidates_attestations() {
     let (_directory, store) = try_test_store().unwrap();
     let rows = run(10, T0, 3);

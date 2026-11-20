@@ -430,6 +430,20 @@ impl RepairEligibility for StoreRepairEligibility<'_> {
         {
             return Ok(Some(RepairRefusal::Protected));
         }
+        // A protection on any sample of the destination protects the whole
+        // component, not only one on its first sample.
+        if matches!(role, MemberRole::Destination)
+            && self.exists(
+                "SELECT EXISTS(SELECT 1 FROM materialised_positions AS m
+                   JOIN drive_edit_protection AS p
+                     ON p.vehicle_id = m.vehicle_id AND p.entity = 'position'
+                    AND p.entity_id = m.position_id
+                  WHERE m.vehicle_id = ?1 AND m.drive_id = ?2)",
+                member.drive_id,
+            )?
+        {
+            return Ok(Some(RepairRefusal::Protected));
+        }
         match self.protection("drive", member.drive_id)? {
             Some((reason, Some(digest))) if reason == "attested_unedited" => {
                 if digest.as_slice() == member.input_digest().as_slice() {
@@ -755,6 +769,21 @@ impl HubStore {
                     )
                     .map_err(StoreError::Query)?;
             }
+            // Every destination sample is a member too, so protecting any of
+            // them later supersedes the component.
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO drive_repair_change_members(vehicle_id, entity,
+                         entity_id, component_key)
+                     SELECT vehicle_id, 'position', position_id, ?3 FROM materialised_positions
+                      WHERE vehicle_id = ?1 AND drive_id = ?2",
+                    params![
+                        vehicle,
+                        component.destination_drive_id,
+                        component.component_key.as_slice()
+                    ],
+                )
+                .map_err(StoreError::Query)?;
             report.planned_keys.push(component.component_key);
         }
         let totals = serde_json::to_string(&counts)
@@ -903,7 +932,7 @@ fn protection_digest(
     members: &[RepairInput],
 ) -> Result<[u8; 32], StoreError> {
     let mut hasher = Sha256::new();
-    hasher.update(b"tesatlas-hub/drive-repair-protection/v1\0");
+    hasher.update(b"tesatlas-hub/drive-repair-protection/v2\0");
     for member in members {
         let revision: i64 = transaction
             .query_row(
@@ -913,8 +942,25 @@ fn protection_digest(
                 |row| row.get(0),
             )
             .map_err(StoreError::Query)?;
+        // The member's own sample and every sample materialised under it.
+        let sample_revision: i64 = transaction
+            .query_row(
+                "SELECT COALESCE(MAX(p.revision), 0) FROM drive_edit_protection AS p
+                  WHERE p.vehicle_id = ?1 AND p.entity = 'position'
+                    AND (p.entity_id = ?3 OR p.entity_id IN (
+                        SELECT position_id FROM materialised_positions
+                         WHERE vehicle_id = ?1 AND drive_id = ?2))",
+                params![
+                    vehicle,
+                    member.drive_id,
+                    member.first_sample.map(|sample| sample.position_id)
+                ],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
         hasher.update(member.drive_id.to_be_bytes());
         hasher.update(revision.to_be_bytes());
+        hasher.update(sample_revision.to_be_bytes());
     }
     Ok(hasher.finalize().into())
 }
