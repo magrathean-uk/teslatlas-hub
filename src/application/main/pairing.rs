@@ -948,6 +948,9 @@ enum ServingAnswer {
     /// (credential store, catalogue, quarantine, unservable content, a stale or
     /// signed-out collector), or `unknown` when it named none.
     Refused(String),
+    /// The listener presented a TLS certificate other than the configured one.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    CertificateRefused,
 }
 
 #[cfg(any(test, target_os = "macos"))]
@@ -1013,7 +1016,9 @@ fn installed_service_pid() -> Result<Option<u32>, Box<dyn std::error::Error>> {
 }
 
 /// One bounded `/readyz` request to the configured listener (loopback for an
-/// all-interfaces bind), trusting only the configured certificate over TLS.
+/// all-interfaces bind), trusting over TLS only the exact configured certificate
+/// (pinned by its bytes and checked for the public URL's host), so an older
+/// CA-style LAN certificate is admitted and every other certificate is refused.
 #[cfg(target_os = "macos")]
 async fn serving_observation(
     config: &HubConfig,
@@ -1042,10 +1047,8 @@ async fn serving_observation(
         if pem.len() > MAX_TLS_CERTIFICATE_CHAIN_BYTES {
             return Err("the Hub certificate is too large".into());
         }
-        let certificates = reqwest::Certificate::from_pem_bundle(&pem)?;
-        if certificates.is_empty() {
-            return Err("the Hub certificate is empty".into());
-        }
+        let pinned = tesatlas_hub::crypto::pinned_listener_client_config(&pem)
+            .map_err(|_| "the Hub certificate is empty or unreadable")?;
         let mut endpoint = reqwest::Url::parse(&tls.public_url)?;
         let host = endpoint
             .host_str()
@@ -1053,7 +1056,7 @@ async fn serving_observation(
             .to_owned();
         builder = builder
             .https_only(true)
-            .tls_certs_only(certificates)
+            .tls_backend_preconfigured(pinned)
             .resolve(&host, address);
         endpoint
             .set_port(Some(address.port()))
@@ -1067,13 +1070,17 @@ async fn serving_observation(
         reqwest::Url::parse(&format!("http://{address}/readyz"))?
     };
     let client = builder.build()?;
-    let Ok(response) = client
+    let response = match client
         .get(endpoint)
         .header("accept-encoding", "identity")
         .send()
         .await
-    else {
-        return Ok(None);
+    {
+        Ok(response) => response,
+        Err(error) if tesatlas_hub::crypto::is_certificate_refusal(&error) => {
+            return Ok(Some(ServingAnswer::CertificateRefused));
+        }
+        Err(_) => return Ok(None),
     };
     let status = response.status().as_u16();
     let header = |name: &str| {
@@ -1101,6 +1108,11 @@ async fn serving_observation(
     ))
 }
 
+/// The plain reason `serving-check` gives when the listener's certificate is not
+/// the configured one (the App shows it as the hand-over's reason).
+#[cfg(target_os = "macos")]
+const SERVING_CERTIFICATE_REFUSED: &str = "the Hub service answers on its listener with a different TLS certificate from the one in its configuration; restart the Hub service, and if that does not help, renew the LAN certificate";
+
 /// `serving-check`: waits up to `wait` for the installed Hub job's process to hold
 /// the Hub lifetime lock and answer on its configured listener for exactly the
 /// configuration on disk, the same process in consecutive observations. It never
@@ -1117,6 +1129,7 @@ async fn check_serving(
     let mut last: Option<u32> = None;
     let mut consecutive = 0;
     let mut refused: Option<String>;
+    let mut certificate_refused: bool;
     loop {
         let observed = match installed_service_pid()? {
             None => None,
@@ -1138,9 +1151,17 @@ async fn check_serving(
                 consecutive = 0;
                 last = None;
                 refused = Some(reason);
+                certificate_refused = false;
+            }
+            Some((_, ServingAnswer::CertificateRefused)) => {
+                consecutive = 0;
+                last = None;
+                refused = None;
+                certificate_refused = true;
             }
             Some((pid, ServingAnswer::Serving(readiness))) => {
                 refused = None;
+                certificate_refused = false;
                 consecutive = if last == Some(pid) {
                     consecutive + 1
                 } else {
@@ -1158,6 +1179,7 @@ async fn check_serving(
                 consecutive = 0;
                 last = None;
                 refused = None;
+                certificate_refused = false;
             }
         }
         if Instant::now() + SERVING_POLL >= deadline {
@@ -1166,6 +1188,7 @@ async fn check_serving(
                     format!("the Hub service is running but cannot serve its history ({reason})")
                         .into()
                 }
+                None if certificate_refused => SERVING_CERTIFICATE_REFUSED.into(),
                 None => "the Hub service is not serving its configuration on its listener".into(),
             });
         }

@@ -2980,3 +2980,7 @@ fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
 
 #[path = "service_cli_tests.rs"]
 mod service_cli_tests;
+
+#[cfg(target_os = "macos")]
+#[path = "serving_check_tls_tests.rs"]
+mod serving_check_tls;

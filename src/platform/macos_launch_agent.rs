@@ -1189,20 +1189,18 @@ fn configured_application_is_ready_with_bounds(
                 "readiness certificate is too large",
             ));
         }
-        let certificates = reqwest::Certificate::from_pem_bundle(&pem).map_err(io::Error::other)?;
-        if certificates.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "readiness certificate is empty",
-            ));
-        }
+        // Only the exact configured certificate, which also admits an older
+        // CA-style LAN certificate the WebPKI path refuses as an end entity.
+        let pinned = crate::crypto::pinned_listener_client_config(&pem).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "readiness certificate is empty")
+        })?;
         let mut endpoint = reqwest::Url::parse(&tls.public_url).map_err(io::Error::other)?;
         let host = endpoint
             .host_str()
             .ok_or_else(|| io::Error::other("readiness TLS hostname is absent"))?;
         builder = builder
             .https_only(true)
-            .tls_certs_only(certificates)
+            .tls_backend_preconfigured(pinned)
             .resolve(host, address);
         endpoint
             .set_port(Some(address.port()))
