@@ -668,7 +668,9 @@ fn stored_drive_elevation_coverage(
 impl HubStore {
     /// The elevation coverage of the given drives of one vehicle, as served by
     /// hub-http-v1@1.4.0 (issue #32). A drive without stored coverage is
-    /// unknown.
+    /// unknown. Test only: the public routes read coverage with the drive
+    /// rows in one snapshot.
+    #[cfg(test)]
     pub(crate) fn drive_elevation_coverage(
         &self,
         vehicle_id: Uuid,

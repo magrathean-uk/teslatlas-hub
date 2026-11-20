@@ -1870,3 +1870,58 @@ fn design_later_32_coverage_is_published_with_totals_and_on_coverage_only_change
         .unwrap();
     assert_eq!(design_later_32_coverage(&reopened, vehicle), ElevationCoverage::Unknown);
 }
+
+/// REV-CX-R5 ISS-A1332: a terrain recompute that commits between the drive
+/// read and the coverage read must not label the old totals with the new
+/// coverage. Both public reads return one snapshot.
+#[test]
+fn design_later_32_drive_totals_and_coverage_come_from_one_snapshot() {
+    use crate::lifecycle::ElevationCoverage;
+    let (_dir, store, vehicle) = fixture();
+    let positions: Vec<_> = (1..=4).map(|id| position(id, 1)).collect();
+    seed(&store, vehicle, &positions);
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    let fill_gap = |store: &HubStore| {
+        let store = store.clone();
+        move || {
+            design_later_32_elevations(
+                &store,
+                vehicle,
+                &[Some(100), Some(200), Some(110), Some(120)],
+            );
+            assert!(design_later_32_recompute(&store, vehicle));
+        }
+    };
+
+    crate::db::before_drive_coverage_read(fill_gap(&store));
+    let page = store
+        .materialised_drives_page_with_elevation_coverage(vehicle, 0, i64::MAX, None, 10)
+        .unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(
+        (page[0].0.ascent, page[0].0.descent, page[0].1),
+        (Some(20), Some(0), ElevationCoverage::Partial)
+    );
+    // The next read sees the committed recompute, totals and coverage together.
+    let (drive, coverage) = store
+        .materialised_closed_drive_with_elevation_coverage(vehicle, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (drive.ascent, drive.descent, coverage),
+        (Some(110), Some(90), ElevationCoverage::Complete)
+    );
+
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    crate::db::before_drive_coverage_read(fill_gap(&store));
+    let (drive, coverage) = store
+        .materialised_closed_drive_with_elevation_coverage(vehicle, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (drive.ascent, drive.descent, coverage),
+        (Some(20), Some(0), ElevationCoverage::Partial)
+    );
+}
