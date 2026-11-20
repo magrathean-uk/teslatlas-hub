@@ -22,13 +22,14 @@ const T0: i64 = 1_760_000_000_000;
 /// Spec notation W: the wall clock the policy tests read.
 const W: i64 = T0 + 5_000;
 
-/// Row V1 of the spec: elevation 25, est_lat 10.5, est_lng 20.25, est_range 230.5,
-/// heading 182, odometer 12345.6, power 15, range 241.25, shift_state D, soc 80, speed 30.
-const V1: &str = "25,10.5,20.25,230.5,182,12345.6,15,241.25,D,80,30";
+/// Row V1 of the spec, in the documented column order: speed 30, odometer 12345.6,
+/// soc 80, elevation 25, est_heading not reported, est_lat 10.5, est_lng 20.25,
+/// power 15, shift_state D, range 241.25, est_range 230.5, heading 182.
+const V1: &str = "30,12345.6,80,25,,10.5,20.25,15,D,241.25,230.5,182";
 /// Row PK of the spec: a parked frame (power 0, gear P, speed 0).
-const PK: &str = "25,10.5,20.25,230.5,182,12345.6,0,241.25,P,80,0";
-/// Row E of the spec: eleven empty values.
-const E: &str = ",,,,,,,,,,";
+const PK: &str = "0,12345.6,80,25,,10.5,20.25,0,P,241.25,230.5,182";
+/// Row E of the spec: twelve empty values.
+const E: &str = ",,,,,,,,,,,";
 
 /// `U(t, row)` of the spec: one `data:update` frame for the session's tag. The JSON is
 /// built, not formatted, so a control character in a value is escaped as the wire would.
@@ -43,11 +44,13 @@ fn v1_with(index: usize, text: &str) -> String {
     elements.join(",")
 }
 
-const EST_LAT: usize = 1;
-const ODOMETER: usize = 5;
-const POWER: usize = 6;
+const SPEED: usize = 0;
+const ODOMETER: usize = 1;
+const EST_HEADING: usize = 4;
+const EST_LAT: usize = 5;
+const POWER: usize = 7;
 const SHIFT: usize = 8;
-const SPEED: usize = 10;
+const RANGE: usize = 9;
 
 fn parsed(row: &str) -> StreamUpdate {
     parse_data_update(&u(T0, row)).expect("a valid frame")
@@ -178,29 +181,28 @@ fn sc3_subscribe_frame_has_exactly_four_members() {
     assert_eq!(members["token"], "tok-1");
     assert_eq!(
         members["value"],
-        "elevation,est_lat,est_lng,est_range,heading,odometer,power,range,shift_state,soc,speed"
+        "speed,odometer,soc,elevation,est_heading,est_lat,est_lng,power,shift_state,range,est_range,heading"
     );
     assert_eq!(members["tag"], TAG);
+    // Tesla's full documented column list in its documented order (R15), so the row
+    // means the same whether the server follows the request order or its own.
     assert_eq!(
         STREAM_COLUMNS,
         [
+            "speed",
+            "odometer",
+            "soc",
             "elevation",
+            "est_heading",
             "est_lat",
             "est_lng",
-            "est_range",
-            "heading",
-            "odometer",
             "power",
-            "range",
             "shift_state",
-            "soc",
-            "speed"
+            "range",
+            "est_range",
+            "heading"
         ]
     );
-    // The column list is sorted: alphabetical is the Hub's own reproducible order (R15).
-    let mut sorted = STREAM_COLUMNS;
-    sorted.sort_unstable();
-    assert_eq!(sorted, STREAM_COLUMNS);
 }
 
 #[test]
@@ -346,14 +348,14 @@ fn sc23_an_all_empty_frame_is_all_none_and_counts_nothing_invalid() {
     // An empty element is "not reported", never an invalid one (R22).
     assert_eq!(invalid, 0);
     // Whitespace-only elements are empty after trimming.
-    let spaced = parse_data_update(&u(T0, " , ,\t, , , , , , , , ")).expect("frame");
+    let spaced = parse_data_update(&u(T0, " , ,\t, , , , , , , , , ")).expect("frame");
     assert_eq!(spaced.odometer, None);
     assert_eq!(spaced.shift_state, None);
 }
 
 #[test]
 fn sc24_a_parked_frame_keeps_zero_speed_and_has_no_power_or_gear() {
-    let update = parsed("25,10.5,20.25,230.5,182,12345.6,,241.25,,80,0");
+    let update = parsed("0,12345.6,80,25,,10.5,20.25,,,241.25,230.5,182");
     assert_eq!(update.power, None);
     assert_eq!(update.shift_state, None);
     assert_eq!(update.speed, Some(0.0));
@@ -365,26 +367,156 @@ fn sc24_a_parked_frame_keeps_zero_speed_and_has_no_power_or_gear() {
 }
 
 #[test]
-fn sc25_a_wrong_element_count_rejects_the_whole_frame() {
+fn sc25_a_short_row_rejects_the_whole_frame() {
     let eleven = V1.rsplit_once(',').expect("comma").0;
     let value_frame =
         |value: &str| format!(r#"{{"msg_type":"data:update","tag":"{TAG}","value":"{value}"}}"#);
-    for frame in [
-        // 11 elements: the time and ten values.
-        u(T0, eleven),
-        // 13 elements.
-        u(T0, &format!("{V1},1")),
-        value_frame(""),
-        value_frame(&format!("{T0}")),
-        // The old 13-element layout, which also had a leading column.
-        value_frame("1,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"),
+    for (frame, elements) in [
+        // 12 elements: the time and eleven values.
+        (u(T0, eleven), 12),
+        (value_frame(""), 1),
+        (value_frame(&format!("{T0}")), 1),
+        (u(T0, "1,2"), 3),
     ] {
         assert_eq!(
             parse_data_update(&frame),
             Err(StreamError::MalformedDataUpdate),
             "{frame}"
         );
+        assert_eq!(
+            parse_data_update_diagnosed(&frame).map(|parsed| parsed.elements),
+            Err(UpdateRejection {
+                error: StreamError::MalformedDataUpdate,
+                reason: "column_count",
+                elements: Some(elements),
+            }),
+            "{frame}"
+        );
     }
+}
+
+#[test]
+fn fix_stream_columns_exactly_the_subscribed_count_is_accepted() {
+    let parsed = parse_data_update_diagnosed(&u(T0, V1)).expect("a valid frame");
+    assert_eq!(parsed.update, v1_update());
+    assert_eq!(parsed.fields_invalid, 0);
+    assert_eq!(parsed.elements, 13);
+    assert_eq!(subscribed_elements(), 13);
+    assert_eq!(subscribed_elements() as usize, 1 + STREAM_COLUMNS.len());
+}
+
+#[test]
+fn fix_stream_columns_extra_trailing_columns_are_ignored() {
+    // One extra trailing column: the subscribed prefix decides every field.
+    let one = parse_data_update_diagnosed(&u(T0, &format!("{V1},1"))).expect("one extra");
+    assert_eq!(one.update, v1_update());
+    assert_eq!(one.fields_invalid, 0);
+    assert_eq!(one.elements, 14);
+    // Trailing elements are not validated: text, empty or many of them.
+    for tail in ["x", "", ",,,", "1,2,3,4,5,6,7,8"] {
+        let parsed =
+            parse_data_update_diagnosed(&u(T0, &format!("{V1},{tail}"))).expect("trailing");
+        assert_eq!(parsed.update, v1_update(), "{tail}");
+        assert_eq!(parsed.fields_invalid, 0, "{tail}");
+    }
+    // A bad value inside the prefix is still invalid with a trailing column.
+    let bad = parse_data_update_counted(&u(T0, &format!("{},9", v1_with(SPEED, "fast"))))
+        .expect("frame kept");
+    assert_eq!(bad.0.speed, None);
+    assert_eq!(bad.1, 1);
+    // A bad sample time still refuses the frame.
+    assert_eq!(
+        parse_data_update_diagnosed(&u("bad", &format!("{V1},9"))).map(|parsed| parsed.elements),
+        Err(UpdateRejection {
+            error: StreamError::InvalidTimestamp,
+            reason: "invalid_timestamp",
+            elements: None,
+        })
+    );
+}
+
+#[test]
+fn fix_stream_columns_a_changed_est_heading_is_not_a_duplicate() {
+    // R26 compares every subscribed value, est_heading included: a frame that
+    // differs from the last only in est_heading is a new sample.
+    let row = |heading: &str| {
+        parse_data_update_diagnosed(&u(
+            T0,
+            &format!("27,17195.7,68,169,{heading},0.123456,-0.654321,-50,D,235,245,271"),
+        ))
+        .expect("a documented row")
+        .update
+    };
+    assert!(super::session::same_sample(&row("270"), &row("270")));
+    assert!(!super::session::same_sample(&row("270"), &row("271")));
+    assert!(!super::session::same_sample(&row("270"), &row("")));
+}
+
+#[test]
+fn fix_stream_columns_a_documented_13_element_row_maps_by_documented_position() {
+    // The documented reply shape for the documented request: epoch-ms sample time,
+    // then one value per column in the order speed, odometer, soc, elevation,
+    // est_heading, est_lat, est_lng, power, shift_state, range, est_range, heading.
+    // Synthetic values only; the position is not a real place.
+    let frame = json!({
+        "msg_type": "data:update",
+        "tag": TAG,
+        "value": format!("{T0},27,17195.7,68,169,270,0.123456,-0.654321,-50,D,235,245,271"),
+    })
+    .to_string();
+    let parsed = parse_data_update_diagnosed(&frame).expect("a documented row");
+    assert_eq!(parsed.elements, 13);
+    assert_eq!(parsed.fields_invalid, 0);
+    assert_eq!(
+        parsed.update,
+        StreamUpdate {
+            tag: TAG.to_owned(),
+            timestamp_ms: T0,
+            speed: Some(27.0),
+            odometer: Some(17195.7),
+            soc: Some(68.0),
+            elevation: Some(169.0),
+            est_heading: Some(270),
+            est_lat: Some(0.123456),
+            est_lng: Some(-0.654321),
+            power: Some(-50),
+            shift_state: Some("D".to_owned()),
+            range: Some(235.0),
+            est_range: Some(245.0),
+            heading: Some(271.0),
+        }
+    );
+    // A server that appends columns after the documented set changes nothing.
+    let longer = json!({
+        "msg_type": "data:update",
+        "tag": TAG,
+        "value": format!("{T0},27,17195.7,68,169,270,0.123456,-0.654321,-50,D,235,245,271,0.1,0.2,"),
+    })
+    .to_string();
+    let extended = parse_data_update_diagnosed(&longer).expect("trailing columns");
+    assert_eq!(extended.update, parsed.update);
+    assert_eq!(extended.elements, 16);
+    // A parked row with unreported speed, gear and power, exactly the subscribed count.
+    let parked = parse_data_update_diagnosed(&u(
+        T0,
+        ",17195.7,68,169,270,0.123456,-0.654321,,,235,245,271",
+    ))
+    .expect("parked");
+    assert_eq!(parked.elements, 13);
+    assert_eq!(parked.update.power, None);
+    assert_eq!(parked.update.shift_state, None);
+    assert_eq!(parked.update.speed, None);
+    assert_eq!(parked.update.est_lat, Some(0.123456));
+    // The earlier 11-column alphabetical row is one element short and refused.
+    assert_eq!(
+        parse_data_update_diagnosed(&u(T0, "101,0.1,0.2,180,271,17195.7,-50,190,D,68,27"))
+            .map(|parsed| parsed.elements),
+        Err(UpdateRejection {
+            error: StreamError::MalformedDataUpdate,
+            reason: "column_count",
+            elements: Some(12),
+        })
+    );
 }
 
 #[test]
@@ -451,7 +583,10 @@ fn sc27_the_number_grammar() {
     assert_eq!(update_with(ODOMETER, " 12345.6 ").odometer, Some(12345.6));
     assert_eq!(update_with(EST_LAT, "-33.865143").est_lat, Some(-33.865143));
     assert_eq!(update_with(POWER, "-12").power, Some(-12));
-    assert_eq!(update_with(7, "241").range, Some(241.0));
+    assert_eq!(update_with(RANGE, "241").range, Some(241.0));
+    assert_eq!(update_with(EST_HEADING, "169").est_heading, Some(169));
+    assert_eq!(update_with(EST_HEADING, "169.0").est_heading, Some(169));
+    assert_eq!(update_with(EST_HEADING, "169.5").est_heading, None);
     assert_eq!(update_with(POWER, "9223372036854775808").power, None);
     assert_eq!(
         update_with(POWER, "9223372036854775807").power,
@@ -489,7 +624,8 @@ fn sc27_the_number_grammar() {
 
 #[test]
 fn r21_invalid_elements_are_counted_per_frame() {
-    let row = "x,10.5,20.25,230.5,182,12345.6,15.5,241.25,DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD,80,3e1";
+    let row =
+        "3e1,12345.6,80,x,,10.5,20.25,15.5,DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD,241.25,230.5,182";
     let (update, invalid) = parse_data_update_counted(&u(T0, row)).expect("frame");
     // elevation, power, shift_state and speed are invalid; the others stand.
     assert_eq!(invalid, 4);
@@ -1174,11 +1310,11 @@ fn sc69_power_gate() {
     };
     assert!(!observed(PK), "gear P, speed 0, power 0");
     assert!(
-        observed("25,10.5,20.25,230.5,182,12345.6,-7,241.25,P,80,0"),
+        observed("0,12345.6,80,25,,10.5,20.25,-7,P,241.25,230.5,182"),
         "power -7 is use"
     );
     assert!(
-        observed("25,10.5,20.25,230.5,182,12345.6,1,241.25,P,80,0"),
+        observed("0,12345.6,80,25,,10.5,20.25,1,P,241.25,230.5,182"),
         "power at the 1 kW bound"
     );
     assert!(!observed(E), "an all-empty frame confirms nothing");
@@ -1187,11 +1323,11 @@ fn sc69_power_gate() {
         "a prefixed gear is motion"
     );
     assert!(
-        observed("25,10.5,20.25,230.5,182,12345.6,0,241.25,,80,3"),
+        observed("3,12345.6,80,25,,10.5,20.25,0,,241.25,230.5,182"),
         "no gear with speed 3"
     );
     assert!(
-        !observed("25,10.5,20.25,230.5,182,12345.6,0,241.25,P,80,3"),
+        !observed("3,12345.6,80,25,,10.5,20.25,0,P,241.25,230.5,182"),
         "gear P with speed 3"
     );
 

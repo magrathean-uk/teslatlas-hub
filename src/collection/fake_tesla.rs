@@ -1200,10 +1200,10 @@ fn expected_subscribe_value() -> String {
     crate::tesla_stream::STREAM_COLUMNS.join(",")
 }
 
-/// The `value` of one `data:update` frame: the sample time, then the eleven
-/// column values in `STREAM_COLUMNS` order (C4 R19). The scenario supplies the
-/// per-sample quantities; the others are fixed synthetic values: elevation 40 m,
-/// heading 90 degrees, and ranges that follow the battery level (3.0 and 3.2
+/// The `value` of one `data:update` frame: the sample time, then the twelve
+/// column values in `STREAM_COLUMNS` order, Tesla's documented order (C4 R19).
+/// The scenario supplies the per-sample quantities; the others are fixed
+/// synthetic values: elevation 40 m, heading and est_heading 90 degrees, and ranges that follow the battery level (3.0 and 3.2
 /// miles per percent).
 #[allow(clippy::too_many_arguments)]
 fn stream_update_value(
@@ -1218,10 +1218,10 @@ fn stream_update_value(
 ) -> String {
     let est_range = soc as f64 * 3.0;
     let range = soc as f64 * 3.2;
-    // elevation, est_lat, est_lng, est_range, heading, odometer, power, range,
-    // shift_state, soc, speed
+    // speed, odometer, soc, elevation, est_heading, est_lat, est_lng, power,
+    // shift_state, range, est_range, heading
     format!(
-        "{timestamp_ms},40.0,{lat},{lng},{est_range},90.0,{odometer_miles},{power},{range},{shift},{soc},{speed}"
+        "{timestamp_ms},{speed},{odometer_miles},{soc},40.0,90,{lat},{lng},{power},{shift},{range},{est_range},90.0"
     )
 }
 

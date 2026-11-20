@@ -15,32 +15,37 @@ use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
 
 use super::StreamError;
 
-/// The subscribed columns, in the order the server returns their values (R15).
+/// The subscribed columns, in Tesla's documented order (R15).
 ///
-/// Each column is read by the Hub's data model (C1 R37, C3 R36, C6 R27) and no
-/// other column is requested: a column nobody reads costs bandwidth on every
-/// frame and widens what a misplaced value could corrupt. `est_heading` is not
-/// requested because no Hub reader uses it. The order is alphabetical: the
-/// server answers by position, so any fixed order works, and alphabetical is
-/// Hub-owned and checkable without reference to any other product.
-pub const STREAM_COLUMNS: [&str; 11] = [
+/// This is the full documented column list in the order Tesla's own clients
+/// request it (`speed,odometer,soc,elevation,est_heading,est_lat,est_lng,power,
+/// shift_state,range,est_range,heading`). The server answers by position; a
+/// server that follows the request order and one that sends its own fixed
+/// documented set then give the same row, so a value can never land in another
+/// column's field under either behaviour. `est_heading` is requested for that
+/// reason even though no Hub reader needs it.
+pub const STREAM_COLUMNS: [&str; 12] = [
+    "speed",
+    "odometer",
+    "soc",
     "elevation",
+    "est_heading",
     "est_lat",
     "est_lng",
+    "power",
+    "shift_state",
+    "range",
     "est_range",
     "heading",
-    "odometer",
-    "power",
-    "range",
-    "shift_state",
-    "soc",
-    "speed",
 ];
 
-/// Number of comma-separated elements in a `data:update` `value`: the sample
-/// time, then one value per [`STREAM_COLUMNS`] entry (R19). A different count
-/// means the server's column list differs from the request, so any assignment
-/// would be a guess that could put an odometer reading into the speed field.
+/// Least number of comma-separated elements in a `data:update` `value`: the
+/// sample time, then one value per [`STREAM_COLUMNS`] entry in request order
+/// (R19). The server answers by position, so the first elements are the
+/// subscribed columns; elements after them are extra trailing columns the
+/// server appended and are ignored. A shorter row means a subscribed column is
+/// missing, so any assignment would be a guess that could put an odometer
+/// reading into the speed field, and the whole frame is refused.
 const VALUE_ELEMENTS: usize = 1 + STREAM_COLUMNS.len();
 
 /// Longest decimal text of one numeric element, in bytes (R21). A real reading
@@ -73,8 +78,8 @@ pub struct StreamUpdate {
     pub timestamp_ms: i64,
     /// Metres (C1 R38).
     pub elevation: Option<f64>,
-    /// Not requested (R15), so always `None`; kept so stored rows keep their
-    /// `drive_state.est_heading` key.
+    /// Whole degrees. Requested only to keep the documented column order
+    /// (R15); stored under `drive_state.est_heading`.
     pub est_heading: Option<i64>,
     /// Degrees.
     pub est_lat: Option<f64>,
@@ -318,8 +323,8 @@ fn parse_float(element: &str) -> Cell<f64> {
     text.parse::<f64>().map(Some).map_err(|_| ())
 }
 
-/// The `i64` column `power` (R21): any fraction must be all zeros (`15.0` is
-/// 15) and the value must fit `i64`. A fraction is surfaced as invalid rather
+/// The `i64` columns `power` and `est_heading` (R21): any fraction must be
+/// all zeros (`15.0` is 15) and the value must fit `i64`. A fraction is surfaced as invalid rather
 /// than hidden by rounding.
 fn parse_whole(element: &str) -> Cell<i64> {
     let text = trim(element);
@@ -351,9 +356,9 @@ fn parse_shift(element: &str) -> Cell<String> {
 ///
 /// `WrongMessageType` when `msg_type` is another string; `MalformedDataUpdate`
 /// when the text is not a JSON object with a string `msg_type`, when `tag` or
-/// `value` is missing or not a string, or when `value` does not split into
-/// exactly 12 elements; `InvalidTimestamp` for a bad element 0. A bad value
-/// element gives `None` for that field and keeps the rest of the frame. An
+/// `value` is missing or not a string, or when `value` splits into fewer
+/// than 13 elements (elements after the thirteenth are ignored);
+/// `InvalidTimestamp` for a bad element 0. A bad value element gives `None` for that field and keeps the rest of the frame. An
 /// envelope `timestamp` member and any other member are ignored (R19): the
 /// sample time is element 0, stated with the sample's own values.
 pub fn parse_data_update(frame: &str) -> Result<StreamUpdate, StreamError> {
@@ -363,15 +368,49 @@ pub fn parse_data_update(frame: &str) -> Result<StreamUpdate, StreamError> {
 /// [`parse_data_update`] that also returns how many value elements were
 /// invalid, for the per-run `fields_invalid` counter (R21).
 pub(crate) fn parse_data_update_counted(frame: &str) -> Result<(StreamUpdate, u32), StreamError> {
-    parse_data_update_diagnosed(frame).map_err(|(error, _reason)| error)
+    parse_data_update_diagnosed(frame)
+        .map(|parsed| (parsed.update, parsed.fields_invalid))
+        .map_err(|rejection| rejection.error)
+}
+
+/// An accepted frame with the counts the session summary reports (R21, R52).
+#[derive(Debug)]
+pub(crate) struct DiagnosedUpdate {
+    pub(crate) update: StreamUpdate,
+    /// Value elements that were invalid.
+    pub(crate) fields_invalid: u32,
+    /// Elements in `value`, the sample time included: a count, never a value.
+    pub(crate) elements: u32,
+}
+
+/// A refused frame: the public error, a fixed payload-free reason and, for a
+/// `column_count` refusal, how many elements `value` had (a count only).
+#[derive(Debug, PartialEq)]
+pub(crate) struct UpdateRejection {
+    pub(crate) error: StreamError,
+    pub(crate) reason: &'static str,
+    pub(crate) elements: Option<u32>,
+}
+
+impl UpdateRejection {
+    fn new(error: StreamError, reason: &'static str) -> Self {
+        Self {
+            error,
+            reason,
+            elements: None,
+        }
+    }
+}
+
+/// The number of subscribed elements, the sample time included (R19).
+pub(crate) const fn subscribed_elements() -> u32 {
+    VALUE_ELEMENTS as u32
 }
 
 /// The stream's private diagnostic seam retains the public parser's errors,
 /// while naming the failed condition with fixed, payload-free text.
-pub(crate) fn parse_data_update_diagnosed(
-    frame: &str,
-) -> Result<(StreamUpdate, u32), (StreamError, &'static str)> {
-    let malformed = || (StreamError::MalformedDataUpdate, "update_envelope");
+pub(crate) fn parse_data_update_diagnosed(frame: &str) -> Result<DiagnosedUpdate, UpdateRejection> {
+    let malformed = || UpdateRejection::new(StreamError::MalformedDataUpdate, "update_envelope");
     let Ok(Value::Object(members)) = serde_json::from_str::<Value>(frame) else {
         return Err(malformed());
     };
@@ -379,35 +418,50 @@ pub(crate) fn parse_data_update_diagnosed(
         return Err(malformed());
     };
     if msg_type != "data:update" {
-        return Err((StreamError::WrongMessageType, "update_envelope"));
+        return Err(UpdateRejection::new(
+            StreamError::WrongMessageType,
+            "update_envelope",
+        ));
     }
     let (Some(Value::String(tag)), Some(Value::String(value))) =
         (members.get("tag"), members.get("value"))
     else {
         return Err(malformed());
     };
-    let elements: Vec<&str> = value.split(',').collect();
-    if elements.len() != VALUE_ELEMENTS {
-        return Err((StreamError::MalformedDataUpdate, "column_count"));
+    // Only the subscribed prefix is kept; trailing elements are counted, not
+    // stored, so an oversized row costs no allocation beyond the prefix.
+    let mut parts = value.split(',');
+    let elements: Vec<&str> = parts.by_ref().take(VALUE_ELEMENTS).collect();
+    let count = u32::try_from(elements.len().saturating_add(parts.count())).unwrap_or(u32::MAX);
+    if elements.len() < VALUE_ELEMENTS {
+        return Err(UpdateRejection {
+            error: StreamError::MalformedDataUpdate,
+            reason: "column_count",
+            elements: Some(count),
+        });
     }
-    let timestamp_ms =
-        parse_sample_time(elements[0]).map_err(|error| (error, "invalid_timestamp"))?;
+    let timestamp_ms = parse_sample_time(elements[0])
+        .map_err(|error| UpdateRejection::new(error, "invalid_timestamp"))?;
     let mut invalid = 0_u32;
     let update = StreamUpdate {
         tag: tag.clone(),
         timestamp_ms,
-        elevation: settle(parse_float(elements[1]), &mut invalid),
-        est_heading: None,
-        est_lat: settle(parse_float(elements[2]), &mut invalid),
-        est_lng: settle(parse_float(elements[3]), &mut invalid),
-        est_range: settle(parse_float(elements[4]), &mut invalid),
-        heading: settle(parse_float(elements[5]), &mut invalid),
-        odometer: settle(parse_float(elements[6]), &mut invalid),
-        power: settle(parse_whole(elements[7]), &mut invalid),
-        range: settle(parse_float(elements[8]), &mut invalid),
+        speed: settle(parse_float(elements[1]), &mut invalid),
+        odometer: settle(parse_float(elements[2]), &mut invalid),
+        soc: settle(parse_float(elements[3]), &mut invalid),
+        elevation: settle(parse_float(elements[4]), &mut invalid),
+        est_heading: settle(parse_whole(elements[5]), &mut invalid),
+        est_lat: settle(parse_float(elements[6]), &mut invalid),
+        est_lng: settle(parse_float(elements[7]), &mut invalid),
+        power: settle(parse_whole(elements[8]), &mut invalid),
         shift_state: settle(parse_shift(elements[9]), &mut invalid),
-        soc: settle(parse_float(elements[10]), &mut invalid),
-        speed: settle(parse_float(elements[11]), &mut invalid),
+        range: settle(parse_float(elements[10]), &mut invalid),
+        est_range: settle(parse_float(elements[11]), &mut invalid),
+        heading: settle(parse_float(elements[12]), &mut invalid),
     };
-    Ok((update, invalid))
+    Ok(DiagnosedUpdate {
+        update,
+        fields_invalid: invalid,
+        elements: count,
+    })
 }

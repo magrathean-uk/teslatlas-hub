@@ -190,7 +190,7 @@ async fn fixture_stream(socket: tokio::net::TcpStream, state: Arc<FixtureState>)
                     let tag = value["tag"].as_str().unwrap_or("4242");
                     for index in 0..8 {
                         let timestamp = state.base_ms.load(Ordering::SeqCst)+index*1000;
-                        let frame = json!({"msg_type":"data:update","tag":tag,"value":format!("{timestamp},25,51.5,-0.12,230.5,180,12345.6,15,241.25,D,80,30")});
+                        let frame = json!({"msg_type":"data:update","tag":tag,"value":format!("{timestamp},30,12345.6,80,25,,51.5,-0.12,15,D,241.25,230.5,180")});
                         if socket.send(Message::Text(frame.to_string().into())).await.is_err() { return; }
                     }
                 } else if kind == "data:unsubscribe" {

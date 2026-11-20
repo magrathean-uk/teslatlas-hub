@@ -48,7 +48,7 @@ fn v1_with(index: usize, text: &str) -> String {
     elements.join(",")
 }
 
-const SPEED: usize = 10;
+const SPEED: usize = 0;
 
 /// The record V1 parses to at sample time `time` (spec section 9 notation).
 fn v1_update(time: i64) -> StreamUpdate {
@@ -219,12 +219,12 @@ async fn sc34_binary_messages_are_decoded_as_utf8() {
 
 // ----------------------------------------------------------------------- SC35, SC36
 
-/// A frame of 11 elements, one short of the 12 that a frame must have (R19).
+/// A frame of 12 elements, one short of the 13 that a frame must have (R19).
 fn short_frame() -> String {
     json!({
         "msg_type": "data:update",
         "tag": TAG,
-        "value": format!("{T0},25,10.5,20.25,230.5,182,12345.6,15,241.25,D,80"),
+        "value": format!("{T0},30,12345.6,80,25,,10.5,20.25,15,D,241.25,230.5"),
     })
     .to_string()
 }
@@ -867,8 +867,7 @@ async fn sc61_a_parked_frame_confirms_only_with_power_of_at_least_1_kw() {
             ws.subscribe().await;
             ws.send(&u(T0, PK)).await;
             resume.notified().await;
-            ws.send(&u(T0 + 1000, &PK.replace(",0,241.25,P", ",-7,241.25,P")))
-                .await;
+            ws.send(&u(T0 + 1000, &PK.replace(",0,P,", ",-7,P,"))).await;
             ws.drain().await;
         }
     })
