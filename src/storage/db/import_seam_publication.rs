@@ -9,20 +9,95 @@
 
 /// One live delta the import seam publishes with its import: a run of the
 /// vehicle's waiting sync mutations, in revision order, and the typed rows
-/// they publish.
-#[derive(Debug, Clone, PartialEq)]
+/// they publish. The rows are spooled to disk as they are staged (#53), so a
+/// staged seam holds no projected batch in memory; [`StagedSeamSync::rows`]
+/// reads one back when its pack is written or its journal run compared.
+#[derive(Debug, Clone)]
 pub(crate) struct StagedSeamSync {
     pub(crate) from_revision: i64,
     pub(crate) to_revision: i64,
-    /// The rows, as live publication builds them; the importer sets the
-    /// sequence and parent when it writes the pack.
-    pub(crate) rows: ProjectionDelta,
+    rows: SpooledSeamRows,
 }
 
 impl StagedSeamSync {
     /// The sync mutations it publishes; the sequence advances by as many.
     pub(crate) fn mutation_count(&self) -> u64 {
         u64::try_from(self.to_revision - self.from_revision + 1).unwrap_or(0)
+    }
+
+    /// The rows, as live publication builds them, read back from the spool;
+    /// the importer sets the sequence and parent when it writes the pack.
+    pub(crate) fn rows(&self) -> Result<ProjectionDelta, StoreError> {
+        self.rows.read()
+    }
+}
+
+impl PartialEq for StagedSeamSync {
+    fn eq(&self, other: &Self) -> bool {
+        self.from_revision == other.from_revision
+            && self.to_revision == other.to_revision
+            && matches!((self.rows(), other.rows()), (Ok(left), Ok(right)) if left == right)
+    }
+}
+
+/// A run of waiting sync mutations and the rows they project, held only
+/// while that one batch is spooled or compared (#53).
+struct ProjectedSeamBatch {
+    from_revision: i64,
+    to_revision: i64,
+    rows: ProjectionDelta,
+}
+
+/// Where one staging spools its projected batches: an anonymous temporary
+/// file, gone once the last staged batch that refers to it is dropped.
+struct SeamRowsSpool {
+    file: std::sync::Arc<std::fs::File>,
+    length: u64,
+}
+
+/// One staged batch's rows in its staging's spool.
+#[derive(Debug, Clone)]
+struct SpooledSeamRows {
+    spool: std::sync::Arc<std::fs::File>,
+    offset: u64,
+    length: usize,
+}
+
+impl SeamRowsSpool {
+    fn new() -> Result<Self, StoreError> {
+        Ok(Self {
+            file: std::sync::Arc::new(tempfile::tempfile().map_err(StoreError::CreateImportSpool)?),
+            length: 0,
+        })
+    }
+
+    fn spool(&mut self, rows: &ProjectionDelta) -> Result<SpooledSeamRows, StoreError> {
+        use std::io::Write as _;
+        let bytes = serde_json::to_vec(rows).map_err(StoreError::SerializeLifecycleRow)?;
+        (&*self.file)
+            .write_all(&bytes)
+            .map_err(StoreError::CreateImportSpool)?;
+        let spooled = SpooledSeamRows {
+            spool: std::sync::Arc::clone(&self.file),
+            offset: self.length,
+            length: bytes.len(),
+        };
+        self.length = u64::try_from(bytes.len())
+            .ok()
+            .and_then(|written| self.length.checked_add(written))
+            .ok_or(StoreError::ImportGenerationConflict)?;
+        Ok(spooled)
+    }
+}
+
+impl SpooledSeamRows {
+    fn read(&self) -> Result<ProjectionDelta, StoreError> {
+        use std::os::unix::fs::FileExt as _;
+        let mut bytes = vec![0; self.length];
+        self.spool
+            .read_exact_at(&mut bytes, self.offset)
+            .map_err(StoreError::InspectImportSpool)?;
+        serde_json::from_slice(&bytes).map_err(StoreError::DeserializeLifecycleRow)
     }
 }
 
@@ -270,61 +345,170 @@ impl HubStore {
 
 /// Every waiting sync mutation of the vehicle, in revision order, as the
 /// staged live deltas that publish them (rows read through `connection`).
+/// The journal is read one batch at a time and each projected batch is
+/// spooled before the next is read (#53): only the batch being projected is
+/// held in memory, as journal entries and as rows.
 fn staged_seam_sync_in_transaction(
     connection: &Connection,
     vehicle_id: Uuid,
     binding: &ProjectionBinding,
 ) -> Result<Vec<StagedSeamSync>, StoreError> {
-    let mutations: Vec<SyncMutation> = {
-        let mut statement = connection
-            .prepare(
-                "SELECT revision, entity, entity_id, car_id, operation, payload_json
-                   FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0
-                  ORDER BY revision",
-            )
-            .map_err(StoreError::Query)?;
-        statement
-            .query_map(params![vehicle_id.to_string()], |row| {
-                Ok(SyncMutation {
-                    vehicle_id,
-                    revision: row.get(0)?,
-                    entity: row.get(1)?,
-                    entity_id: row.get(2)?,
-                    car_id: row.get(3)?,
-                    operation: row.get(4)?,
-                    payload_json: row.get(5)?,
-                })
-            })
-            .map_err(StoreError::Query)?
-            .collect::<Result<_, _>>()
-            .map_err(StoreError::Query)?
-    };
+    let mut spool: Option<SeamRowsSpool> = None;
     let mut staged = Vec::new();
-    for chunk in mutations.chunks(STAGED_SEAM_SYNC_LIMIT) {
-        if chunk
-            .windows(2)
-            .any(|pair| pair[1].revision != pair[0].revision + 1)
-        {
-            return Err(StoreError::ImportGenerationConflict);
+    for_each_staged_seam_sync_batch(connection, vehicle_id, binding, |batch| {
+        #[cfg(test)]
+        record_staged_seam_resident_rows(projection_delta_rows(&batch.rows));
+        if spool.is_none() {
+            spool = Some(SeamRowsSpool::new()?);
         }
-        let (Some(first), Some(last)) = (chunk.first(), chunk.last()) else {
-            continue;
+        let Some(spool) = spool.as_mut() else {
+            return Err(StoreError::ImportGenerationConflict);
         };
         staged.push(StagedSeamSync {
-            from_revision: first.revision,
-            to_revision: last.revision,
-            rows: HubStore::project_sync_mutations(
-                chunk,
-                binding.clone(),
-                SequenceRange {
-                    from_exclusive: 0,
-                    to_inclusive: 0,
-                },
-                Sha256Digest::from_bytes([0; 32]),
-            )?,
+            from_revision: batch.from_revision,
+            to_revision: batch.to_revision,
+            rows: spool.spool(&batch.rows)?,
         });
-    }
+        Ok(())
+    })?;
     Ok(staged)
+}
+
+/// The number of staged batches the vehicle's waiting journal makes, read
+/// without loading it.
+fn staged_seam_sync_batch_count(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<usize, StoreError> {
+    let waiting: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0",
+            params![vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    let waiting = usize::try_from(waiting).map_err(|_| StoreError::InvalidStoredSequence)?;
+    Ok(waiting.div_ceil(STAGED_SEAM_SYNC_LIMIT))
+}
+
+/// Streams the vehicle's waiting sync mutations in revision order, projecting
+/// each run of at most [`STAGED_SEAM_SYNC_LIMIT`] as one staged live delta
+/// and handing it to `each` before the next run is read (#53).
+fn for_each_staged_seam_sync_batch(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    binding: &ProjectionBinding,
+    mut each: impl FnMut(ProjectedSeamBatch) -> Result<(), StoreError>,
+) -> Result<(), StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT revision, entity, entity_id, car_id, operation, payload_json
+               FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0
+              ORDER BY revision",
+        )
+        .map_err(StoreError::Query)?;
+    let mut rows = statement
+        .query(params![vehicle_id.to_string()])
+        .map_err(StoreError::Query)?;
+    let mut batch = Vec::new();
+    while let Some(row) = rows.next().map_err(StoreError::Query)? {
+        batch.push(SyncMutation {
+            vehicle_id,
+            revision: row.get(0).map_err(StoreError::Query)?,
+            entity: row.get(1).map_err(StoreError::Query)?,
+            entity_id: row.get(2).map_err(StoreError::Query)?,
+            car_id: row.get(3).map_err(StoreError::Query)?,
+            operation: row.get(4).map_err(StoreError::Query)?,
+            payload_json: row.get(5).map_err(StoreError::Query)?,
+        });
+        if batch.len() == STAGED_SEAM_SYNC_LIMIT {
+            each(project_staged_seam_sync_batch(&batch, binding)?)?;
+            batch.clear();
+        }
+    }
+    if !batch.is_empty() {
+        each(project_staged_seam_sync_batch(&batch, binding)?)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test only (#53): the most journal entries one staged-seam read held
+    /// at once on this thread.
+    static STAGED_SEAM_SYNC_PEAK_ENTRIES: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// The most journal entries a staged-seam read has held at once on this
+/// thread since the last call, which resets it.
+#[cfg(test)]
+pub(crate) fn take_staged_seam_sync_peak_entries() -> usize {
+    STAGED_SEAM_SYNC_PEAK_ENTRIES.with(|peak| peak.replace(0))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test only (#53): the most projected rows staging has held in memory
+    /// at once on this thread (the batch being projected and every staged
+    /// batch kept so far).
+    static STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn record_staged_seam_resident_rows(rows: usize) {
+    STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS.with(|peak| peak.set(peak.get().max(rows)));
+}
+
+/// The most projected rows staging has held in memory at once on this
+/// thread since the last call, which resets it.
+#[cfg(test)]
+pub(crate) fn take_staged_seam_sync_peak_resident_rows() -> usize {
+    STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS.with(|peak| peak.replace(0))
+}
+
+#[cfg(test)]
+fn projection_delta_rows(delta: &ProjectionDelta) -> usize {
+    delta.cars.len()
+        + delta.car_settings.len()
+        + delta.drives.len()
+        + delta.positions.len()
+        + delta.charges.len()
+        + delta.charge_samples.len()
+        + delta.states.len()
+        + delta.updates.len()
+        + delta.tombstones.len()
+}
+
+fn project_staged_seam_sync_batch(
+    chunk: &[SyncMutation],
+    binding: &ProjectionBinding,
+) -> Result<ProjectedSeamBatch, StoreError> {
+    #[cfg(test)]
+    STAGED_SEAM_SYNC_PEAK_ENTRIES.with(|peak| peak.set(peak.get().max(chunk.len())));
+    if chunk
+        .windows(2)
+        .any(|pair| pair[1].revision != pair[0].revision + 1)
+    {
+        return Err(StoreError::ImportGenerationConflict);
+    }
+    let (Some(first), Some(last)) = (chunk.first(), chunk.last()) else {
+        return Err(StoreError::ImportGenerationConflict);
+    };
+    Ok(ProjectedSeamBatch {
+        from_revision: first.revision,
+        to_revision: last.revision,
+        rows: HubStore::project_sync_mutations(
+            chunk,
+            binding.clone(),
+            SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 0,
+            },
+            Sha256Digest::from_bytes([0; 32]),
+        )?,
+    })
 }
 
 /// Publication's half of the seam before its deltas are catalogued
@@ -358,24 +542,37 @@ fn apply_staged_import_seam_in_transaction(
             false,
         )?;
     }
-    let journal = staged_seam_sync_in_transaction(transaction, vehicle_id, binding)?;
-    if journal.len() != staged.len() || deltas.len() < staged.len() {
+    if staged_seam_sync_batch_count(transaction, vehicle_id)? != staged.len()
+        || deltas.len() < staged.len()
+    {
         return Err(StoreError::ImportGenerationConflict);
     }
-    for ((found, expected), delta) in journal.into_iter().zip(staged).zip(deltas) {
+    // The journal is compared one batch at a time against the staged batch
+    // at its index (#53): only that batch's range and rows are held.
+    let mut index = 0_usize;
+    for_each_staged_seam_sync_batch(transaction, vehicle_id, binding, |found| {
+        let (Some(expected), Some(delta)) = (staged.get(index), deltas.get(index)) else {
+            return Err(StoreError::ImportGenerationConflict);
+        };
+        index += 1;
+        let expected_rows = expected.rows()?;
         let mut rows = found.rows;
-        rows.binding = expected.rows.binding.clone();
-        rows.sequence = expected.rows.sequence;
-        rows.parent_digest = expected.rows.parent_digest;
+        rows.binding = expected_rows.binding.clone();
+        rows.sequence = expected_rows.sequence;
+        rows.parent_digest = expected_rows.parent_digest;
         if found.from_revision != expected.from_revision
             || found.to_revision != expected.to_revision
-            || rows != expected.rows
+            || rows != expected_rows
         {
             return Err(StoreError::ImportGenerationConflict);
         }
         if delta.to_sequence.checked_sub(delta.from_sequence) != Some(expected.mutation_count()) {
             return Err(StoreError::LineageCatalogConflict);
         }
+        Ok(())
+    })?;
+    if index != staged.len() {
+        return Err(StoreError::ImportGenerationConflict);
     }
     Ok(())
 }
