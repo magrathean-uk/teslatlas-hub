@@ -12,8 +12,12 @@ const NOW: i64 = T0 + 100 * 3_600_000;
 const SOURCE: Uuid = Uuid::from_u128(0x5eed);
 const VEHICLE: Uuid = Uuid::from_u128(0xca5);
 
+/// A raw connection for seeding imported rows without their full parent
+/// chain (sources, heads and bases), which these checks do not read.
 fn raw(store: &HubStore) -> Connection {
-    Connection::open(&store.database_path).expect("raw catalogue connection")
+    let connection = Connection::open(&store.database_path).expect("raw catalogue connection");
+    connection.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+    connection
 }
 
 fn sample(id: i64, at: i64, odometer: f64) -> RepairSample {
@@ -257,7 +261,6 @@ fn broken_drive_repair_plan_store_refuses_foreign_or_protected_members() {
             .attest_unedited_drive_repair_candidates(VEHICLE, &ids(&rows), NOW)
             .unwrap();
         let connection = raw(&store);
-        connection.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
         if sql.contains("?1") && !sql.contains("-- ?1") {
             connection.execute(sql, params![vehicle]).unwrap();
         } else {
