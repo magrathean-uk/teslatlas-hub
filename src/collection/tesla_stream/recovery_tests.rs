@@ -2307,6 +2307,10 @@ async fn collector_m04_t12_unknown_error_tokens_and_mixed_reasons_are_visible_at
     for reason in ["invalid_envelope", "column_count", "invalid_timestamp"] {
         assert!(summary.contains(&format!("\"{reason}\": 1")), "{text}");
     }
+    // The short row "T0,1,2" is reported by its element count only.
+    assert!(summary.contains("subscribed_elements=12"), "{text}");
+    assert!(summary.contains("column_count_elements={3: 1}"), "{text}");
+    assert!(summary.contains("extra_column_elements={}"), "{text}");
     assert!(!text.contains("private-test-token"));
     run.shut_down().await.expect("shutdown");
 }

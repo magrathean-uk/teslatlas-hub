@@ -62,7 +62,9 @@ use super::{
         terminal_credential_delay,
     },
     stream_socket_config, unsubscribe_frame,
-    wire::{StreamUpdate, parse_data_update_diagnosed, subscribe_frame_zeroizing},
+    wire::{
+        StreamUpdate, parse_data_update_diagnosed, subscribe_frame_zeroizing, subscribed_elements,
+    },
 };
 
 // R52: the WebSocket crate logs each frame it reads and writes at trace level
@@ -483,6 +485,12 @@ struct SessionState {
     first_accepted_at: Option<Instant>,
     unknown_error_type: Option<String>,
     rejected_reasons: std::collections::BTreeMap<&'static str, u32>,
+    /// Element counts of `column_count` refusals: observed count to frames.
+    /// Counts only, never a value (R52).
+    short_row_elements: std::collections::BTreeMap<u32, u32>,
+    /// Element counts of accepted frames that carried extra trailing columns:
+    /// observed count to frames. Counts only, never a value (R52).
+    long_row_elements: std::collections::BTreeMap<u32, u32>,
     /// Consecutive rejected frames with no accepted frame between them (R33).
     rejected_streak: u32,
     /// The Ping schedule, the dead-socket and data-silence deadlines and the
@@ -795,6 +803,20 @@ fn event_for(class: &FailureClass, state: &RetryState) -> Option<StreamEvent> {
         FailureClass::Vehicle => Some(StreamEvent::VehicleOffline),
         FailureClass::Refusal => (state.refusal_streak >= 2).then_some(StreamEvent::AuthRejected),
         FailureClass::Protocol => Some(StreamEvent::ProtocolViolation),
+    }
+}
+
+/// Most distinct element counts one session keeps per summary map: a server
+/// that varied its row length on every frame cannot grow the session state.
+const ELEMENT_COUNT_KEYS_MAX: usize = 8;
+
+/// Counts one frame under its observed element count (R52: a count, never a
+/// value). A count that is new once the map is full is dropped.
+fn count_elements(counts: &mut std::collections::BTreeMap<u32, u32>, elements: u32) {
+    if let Some(frames) = counts.get_mut(&elements) {
+        *frames = frames.saturating_add(1);
+    } else if counts.len() < ELEMENT_COUNT_KEYS_MAX {
+        counts.insert(elements, 1);
     }
 }
 
@@ -1720,6 +1742,8 @@ impl TeslaStreamSupervisor {
             first_accepted_at: None,
             unknown_error_type: None,
             rejected_reasons: Default::default(),
+            short_row_elements: Default::default(),
+            long_row_elements: Default::default(),
             rejected_streak: 0,
             clocks,
             counts: FrameCounts::default(),
@@ -1883,6 +1907,9 @@ impl TeslaStreamSupervisor {
             duplicates = counts.duplicates,
             rejected = counts.rejected,
             rejected_reasons = ?state.rejected_reasons,
+            subscribed_elements = subscribed_elements(),
+            column_count_elements = ?state.short_row_elements,
+            extra_column_elements = ?state.long_row_elements,
             implausible_time = counts.implausible_time,
             fields_invalid = counts.fields_invalid,
             unknown_messages = counts.unknown_messages,
@@ -2163,8 +2190,18 @@ impl TeslaStreamSupervisor {
         state: &mut SessionState,
     ) -> Step {
         let (mut update, mut fields_invalid) = match parse_data_update_diagnosed(text) {
-            Ok(update) => update,
-            Err((_error, reason)) => return self.reject(state, reason),
+            Ok(parsed) => {
+                if parsed.elements > subscribed_elements() {
+                    count_elements(&mut state.long_row_elements, parsed.elements);
+                }
+                (parsed.update, parsed.fields_invalid)
+            }
+            Err(rejection) => {
+                if let Some(elements) = rejection.elements {
+                    count_elements(&mut state.short_row_elements, elements);
+                }
+                return self.reject(state, rejection.reason);
+            }
         };
         // R24: a gear text that is the session's own token is a reflected
         // credential, not a reading. It is dropped as an invalid field before

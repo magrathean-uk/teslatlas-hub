@@ -365,26 +365,116 @@ fn sc24_a_parked_frame_keeps_zero_speed_and_has_no_power_or_gear() {
 }
 
 #[test]
-fn sc25_a_wrong_element_count_rejects_the_whole_frame() {
+fn sc25_a_short_row_rejects_the_whole_frame() {
     let eleven = V1.rsplit_once(',').expect("comma").0;
     let value_frame =
         |value: &str| format!(r#"{{"msg_type":"data:update","tag":"{TAG}","value":"{value}"}}"#);
-    for frame in [
+    for (frame, elements) in [
         // 11 elements: the time and ten values.
-        u(T0, eleven),
-        // 13 elements.
-        u(T0, &format!("{V1},1")),
-        value_frame(""),
-        value_frame(&format!("{T0}")),
-        // The old 13-element layout, which also had a leading column.
-        value_frame("1,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"),
+        (u(T0, eleven), 11),
+        (value_frame(""), 1),
+        (value_frame(&format!("{T0}")), 1),
+        (u(T0, "1,2"), 3),
     ] {
         assert_eq!(
             parse_data_update(&frame),
             Err(StreamError::MalformedDataUpdate),
             "{frame}"
         );
+        assert_eq!(
+            parse_data_update_diagnosed(&frame).map(|parsed| parsed.elements),
+            Err(UpdateRejection {
+                error: StreamError::MalformedDataUpdate,
+                reason: "column_count",
+                elements: Some(elements),
+            }),
+            "{frame}"
+        );
     }
+}
+
+#[test]
+fn fix_stream_columns_exactly_the_subscribed_count_is_accepted() {
+    let parsed = parse_data_update_diagnosed(&u(T0, V1)).expect("a valid frame");
+    assert_eq!(parsed.update, v1_update());
+    assert_eq!(parsed.fields_invalid, 0);
+    assert_eq!(parsed.elements, 12);
+    assert_eq!(subscribed_elements(), 12);
+    assert_eq!(subscribed_elements() as usize, 1 + STREAM_COLUMNS.len());
+}
+
+#[test]
+fn fix_stream_columns_extra_trailing_columns_are_ignored() {
+    // One extra trailing column: the subscribed prefix decides every field.
+    let one = parse_data_update_diagnosed(&u(T0, &format!("{V1},1"))).expect("one extra");
+    assert_eq!(one.update, v1_update());
+    assert_eq!(one.fields_invalid, 0);
+    assert_eq!(one.elements, 13);
+    // Trailing elements are not validated: text, empty or many of them.
+    for tail in ["x", "", ",,,", "1,2,3,4,5,6,7,8"] {
+        let parsed =
+            parse_data_update_diagnosed(&u(T0, &format!("{V1},{tail}"))).expect("trailing");
+        assert_eq!(parsed.update, v1_update(), "{tail}");
+        assert_eq!(parsed.fields_invalid, 0, "{tail}");
+    }
+    // A bad value inside the prefix is still invalid with a trailing column.
+    let bad = parse_data_update_counted(&u(T0, &format!("{},9", v1_with(SPEED, "fast"))))
+        .expect("frame kept");
+    assert_eq!(bad.0.speed, None);
+    assert_eq!(bad.1, 1);
+    // A bad sample time still refuses the frame.
+    assert_eq!(
+        parse_data_update_diagnosed(&u("bad", &format!("{V1},9"))).map(|parsed| parsed.elements),
+        Err(UpdateRejection {
+            error: StreamError::InvalidTimestamp,
+            reason: "invalid_timestamp",
+            elements: None,
+        })
+    );
+}
+
+#[test]
+fn fix_stream_columns_a_tesla_shaped_row_parses() {
+    // Shaped like a real Owner API row for this subscription: 13-digit epoch
+    // milliseconds, empty values the car did not report, a negative regen
+    // power, a one-letter gear and a trailing column the request did not name.
+    // Synthetic values only; the position is not a real place.
+    let frame = json!({
+        "msg_type": "data:update",
+        "tag": TAG,
+        "value": format!("{T0},101,0.123456,-0.654321,180,271,17195.7,-50,190,D,68,27,"),
+    })
+    .to_string();
+    let parsed = parse_data_update_diagnosed(&frame).expect("a Tesla-shaped row");
+    assert_eq!(parsed.elements, 13);
+    assert_eq!(parsed.fields_invalid, 0);
+    assert_eq!(
+        parsed.update,
+        StreamUpdate {
+            tag: TAG.to_owned(),
+            timestamp_ms: T0,
+            elevation: Some(101.0),
+            est_heading: None,
+            est_lat: Some(0.123456),
+            est_lng: Some(-0.654321),
+            est_range: Some(180.0),
+            heading: Some(271.0),
+            odometer: Some(17195.7),
+            power: Some(-50),
+            range: Some(190.0),
+            shift_state: Some("D".to_owned()),
+            soc: Some(68.0),
+            speed: Some(27.0),
+        }
+    );
+    // A parked row with unreported gear and power, exactly the subscribed count.
+    let parked =
+        parse_data_update_diagnosed(&u(T0, "101,0.123456,-0.654321,180,271,17195.7,,190,,68,"))
+            .expect("parked");
+    assert_eq!(parked.elements, 12);
+    assert_eq!(parked.update.power, None);
+    assert_eq!(parked.update.shift_state, None);
+    assert_eq!(parked.update.speed, None);
 }
 
 #[test]
