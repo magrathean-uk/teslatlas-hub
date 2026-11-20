@@ -620,6 +620,11 @@ struct StreamView {
     /// C4 R56 e): stream receipts cannot be written. It is in memory only, and
     /// clears when a later run emits `Healthy`.
     audit_failed: bool,
+    /// The stream ended for a protocol fault or a confirmed refusal, not a plain
+    /// network loss: it cannot watch a Suspended car, so the car is read on the
+    /// Online cadence as if no stream existed (FIX-SUSPEND-FALLBACK). Clears when
+    /// the stream is healthy again or is no longer wanted.
+    unusable: bool,
 }
 
 /// The per-car settings the scheduler uses, clamped (C3 R61).
@@ -2239,6 +2244,7 @@ impl VehicleScheduler {
         vehicle.stream.last_frame = Some(now);
         vehicle.stream.task_failures = 0;
         let audit_cleared = std::mem::take(&mut vehicle.stream.audit_failed);
+        vehicle.stream.unusable = false;
         if !vehicle.stream.outage_reported {
             if audit_cleared {
                 vehicle.reason = "stream_recovered";
