@@ -176,7 +176,7 @@ fn import_seam_hub_id_range_bounds() {
 #[test]
 fn import_seam_schema_v80_creates_both_tables() {
     let test = "import_seam_schema_v80_creates_both_tables";
-    assert_eq!(SCHEMA_VERSION, 80);
+    assert_eq!(SEAM_SCHEMA_VERSION, 80);
     let expected_links = vec![
         ("vehicle_id".to_owned(), "TEXT".to_owned(), true, 1),
         ("entity".to_owned(), "TEXT".to_owned(), true, 2),

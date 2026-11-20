@@ -199,6 +199,23 @@ fn broken_drive_repair_plan_store_migrates_to_v83_and_survives_reopen() {
 }
 
 #[test]
+fn broken_drive_repair_plan_store_read_only_opens_a_v80_store() {
+    // An updated Hub holds a v80 store until its first writable open; the
+    // read-only lanes open it and change nothing.
+    let (directory, store) = try_test_store().unwrap();
+    let connection = raw(&store);
+    for table in DRIVE_REPAIR_TABLES {
+        connection.execute_batch(&format!("DROP TABLE {table};")).unwrap();
+    }
+    connection.pragma_update(None, "user_version", 80).unwrap();
+    drop(store);
+    drop(HubStore::open_read_only(directory.path()).expect("read-only lane opens v80"));
+    assert_eq!(schema_version(&connection).unwrap(), 80, "version unchanged");
+    drop(HubStore::initialize(directory.path()).unwrap());
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+}
+
+#[test]
 fn broken_drive_repair_plan_store_needs_attestation_and_changes_no_served_rows() {
     let (_directory, store) = try_test_store().unwrap();
     let rows = run(10, T0, 3);
