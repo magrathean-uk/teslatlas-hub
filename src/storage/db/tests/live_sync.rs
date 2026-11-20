@@ -1875,7 +1875,13 @@ fn staged_seam_sync_reads_the_waiting_journal_one_batch_at_a_time() {
     assert_eq!(
         staged
             .iter()
-            .map(|batch| (batch.from_revision, batch.to_revision, batch.rows.tombstones.len()))
+            .map(|batch| {
+                (
+                    batch.from_revision,
+                    batch.to_revision,
+                    batch.rows().expect("staged rows").tombstones.len(),
+                )
+            })
             .collect::<Vec<_>>(),
         vec![
             (1, limit, STAGED_SEAM_SYNC_LIMIT),
@@ -1891,4 +1897,66 @@ fn staged_seam_sync_reads_the_waiting_journal_one_batch_at_a_time() {
         peak <= STAGED_SEAM_SYNC_LIMIT,
         "a staged-seam read held {peak} journal entries at once"
     );
+}
+
+/// #53 (review repair): staging keeps no projected batch in memory once it is
+/// staged. With a waiting backlog of more than two batches, staging never
+/// holds more than the one batch it is projecting, every staged batch reads
+/// back as the rows its journal run projects, and the importer can take the
+/// rows one batch at a time; before the repair every projected batch stayed
+/// resident until publication.
+#[test]
+fn staged_seam_sync_keeps_only_the_batch_being_projected_in_memory() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _) = v2_base_manifest(&store);
+    let backlog = 2 * STAGED_SEAM_SYNC_LIMIT + 3;
+    let mut connection = store.open().expect("store connection");
+    let transaction = connection.transaction().expect("journal transaction");
+    {
+        let mut insert = transaction
+            .prepare(
+                "INSERT INTO sync_mutations
+                    (vehicle_id, revision, entity, entity_id, car_id, operation, payload_json)
+                 VALUES (?1, ?2, 'drive', ?2, ?3, 'tombstone', '{}')",
+            )
+            .expect("journal insert");
+        for revision in 1..=i64::try_from(backlog).expect("backlog") {
+            insert
+                .execute(params![
+                    vehicle.vehicle_id.to_string(),
+                    revision,
+                    binding.selected_car_id
+                ])
+                .expect("waiting mutation");
+        }
+    }
+    transaction.commit().expect("journal committed");
+
+    take_staged_seam_sync_peak_resident_rows();
+    let staged = staged_seam_sync_in_transaction(&connection, vehicle.vehicle_id, &binding)
+        .expect("staged seam sync");
+    let peak = take_staged_seam_sync_peak_resident_rows();
+    assert!(
+        peak <= STAGED_SEAM_SYNC_LIMIT,
+        "staging held {peak} projected rows in memory at once"
+    );
+    assert_eq!(staged.len(), 3);
+    let mut expected = Vec::new();
+    for_each_staged_seam_sync_batch(&connection, vehicle.vehicle_id, &binding, |batch| {
+        expected.push(batch);
+        Ok(())
+    })
+    .expect("journal projected again");
+    for (kept, again) in staged.iter().zip(&expected) {
+        assert_eq!(
+            (kept.from_revision, kept.to_revision),
+            (again.from_revision, again.to_revision)
+        );
+        assert_eq!(
+            kept.rows().expect("staged rows read back"),
+            again.rows,
+            "a staged batch differs from its journal run"
+        );
+    }
 }

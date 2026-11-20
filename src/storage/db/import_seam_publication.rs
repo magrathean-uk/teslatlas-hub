@@ -9,20 +9,95 @@
 
 /// One live delta the import seam publishes with its import: a run of the
 /// vehicle's waiting sync mutations, in revision order, and the typed rows
-/// they publish.
-#[derive(Debug, Clone, PartialEq)]
+/// they publish. The rows are spooled to disk as they are staged (#53), so a
+/// staged seam holds no projected batch in memory; [`StagedSeamSync::rows`]
+/// reads one back when its pack is written or its journal run compared.
+#[derive(Debug, Clone)]
 pub(crate) struct StagedSeamSync {
     pub(crate) from_revision: i64,
     pub(crate) to_revision: i64,
-    /// The rows, as live publication builds them; the importer sets the
-    /// sequence and parent when it writes the pack.
-    pub(crate) rows: ProjectionDelta,
+    rows: SpooledSeamRows,
 }
 
 impl StagedSeamSync {
     /// The sync mutations it publishes; the sequence advances by as many.
     pub(crate) fn mutation_count(&self) -> u64 {
         u64::try_from(self.to_revision - self.from_revision + 1).unwrap_or(0)
+    }
+
+    /// The rows, as live publication builds them, read back from the spool;
+    /// the importer sets the sequence and parent when it writes the pack.
+    pub(crate) fn rows(&self) -> Result<ProjectionDelta, StoreError> {
+        self.rows.read()
+    }
+}
+
+impl PartialEq for StagedSeamSync {
+    fn eq(&self, other: &Self) -> bool {
+        self.from_revision == other.from_revision
+            && self.to_revision == other.to_revision
+            && matches!((self.rows(), other.rows()), (Ok(left), Ok(right)) if left == right)
+    }
+}
+
+/// A run of waiting sync mutations and the rows they project, held only
+/// while that one batch is spooled or compared (#53).
+struct ProjectedSeamBatch {
+    from_revision: i64,
+    to_revision: i64,
+    rows: ProjectionDelta,
+}
+
+/// Where one staging spools its projected batches: an anonymous temporary
+/// file, gone once the last staged batch that refers to it is dropped.
+struct SeamRowsSpool {
+    file: std::sync::Arc<std::fs::File>,
+    length: u64,
+}
+
+/// One staged batch's rows in its staging's spool.
+#[derive(Debug, Clone)]
+struct SpooledSeamRows {
+    spool: std::sync::Arc<std::fs::File>,
+    offset: u64,
+    length: usize,
+}
+
+impl SeamRowsSpool {
+    fn new() -> Result<Self, StoreError> {
+        Ok(Self {
+            file: std::sync::Arc::new(tempfile::tempfile().map_err(StoreError::CreateImportSpool)?),
+            length: 0,
+        })
+    }
+
+    fn spool(&mut self, rows: &ProjectionDelta) -> Result<SpooledSeamRows, StoreError> {
+        use std::io::Write as _;
+        let bytes = serde_json::to_vec(rows).map_err(StoreError::SerializeLifecycleRow)?;
+        (&*self.file)
+            .write_all(&bytes)
+            .map_err(StoreError::CreateImportSpool)?;
+        let spooled = SpooledSeamRows {
+            spool: std::sync::Arc::clone(&self.file),
+            offset: self.length,
+            length: bytes.len(),
+        };
+        self.length = u64::try_from(bytes.len())
+            .ok()
+            .and_then(|written| self.length.checked_add(written))
+            .ok_or(StoreError::ImportGenerationConflict)?;
+        Ok(spooled)
+    }
+}
+
+impl SpooledSeamRows {
+    fn read(&self) -> Result<ProjectionDelta, StoreError> {
+        use std::os::unix::fs::FileExt as _;
+        let mut bytes = vec![0; self.length];
+        self.spool
+            .read_exact_at(&mut bytes, self.offset)
+            .map_err(StoreError::InspectImportSpool)?;
+        serde_json::from_slice(&bytes).map_err(StoreError::DeserializeLifecycleRow)
     }
 }
 
@@ -270,16 +345,30 @@ impl HubStore {
 
 /// Every waiting sync mutation of the vehicle, in revision order, as the
 /// staged live deltas that publish them (rows read through `connection`).
-/// The journal is read one batch at a time (#53): only the batch being
-/// projected is held as journal entries.
+/// The journal is read one batch at a time and each projected batch is
+/// spooled before the next is read (#53): only the batch being projected is
+/// held in memory, as journal entries and as rows.
 fn staged_seam_sync_in_transaction(
     connection: &Connection,
     vehicle_id: Uuid,
     binding: &ProjectionBinding,
 ) -> Result<Vec<StagedSeamSync>, StoreError> {
+    let mut spool: Option<SeamRowsSpool> = None;
     let mut staged = Vec::new();
     for_each_staged_seam_sync_batch(connection, vehicle_id, binding, |batch| {
-        staged.push(batch);
+        #[cfg(test)]
+        record_staged_seam_resident_rows(projection_delta_rows(&batch.rows));
+        if spool.is_none() {
+            spool = Some(SeamRowsSpool::new()?);
+        }
+        let Some(spool) = spool.as_mut() else {
+            return Err(StoreError::ImportGenerationConflict);
+        };
+        staged.push(StagedSeamSync {
+            from_revision: batch.from_revision,
+            to_revision: batch.to_revision,
+            rows: spool.spool(&batch.rows)?,
+        });
         Ok(())
     })?;
     Ok(staged)
@@ -309,7 +398,7 @@ fn for_each_staged_seam_sync_batch(
     connection: &Connection,
     vehicle_id: Uuid,
     binding: &ProjectionBinding,
-    mut each: impl FnMut(StagedSeamSync) -> Result<(), StoreError>,
+    mut each: impl FnMut(ProjectedSeamBatch) -> Result<(), StoreError>,
 ) -> Result<(), StoreError> {
     let mut statement = connection
         .prepare(
@@ -358,10 +447,44 @@ pub(crate) fn take_staged_seam_sync_peak_entries() -> usize {
     STAGED_SEAM_SYNC_PEAK_ENTRIES.with(|peak| peak.replace(0))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Test only (#53): the most projected rows staging has held in memory
+    /// at once on this thread (the batch being projected and every staged
+    /// batch kept so far).
+    static STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn record_staged_seam_resident_rows(rows: usize) {
+    STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS.with(|peak| peak.set(peak.get().max(rows)));
+}
+
+/// The most projected rows staging has held in memory at once on this
+/// thread since the last call, which resets it.
+#[cfg(test)]
+pub(crate) fn take_staged_seam_sync_peak_resident_rows() -> usize {
+    STAGED_SEAM_SYNC_PEAK_RESIDENT_ROWS.with(|peak| peak.replace(0))
+}
+
+#[cfg(test)]
+fn projection_delta_rows(delta: &ProjectionDelta) -> usize {
+    delta.cars.len()
+        + delta.car_settings.len()
+        + delta.drives.len()
+        + delta.positions.len()
+        + delta.charges.len()
+        + delta.charge_samples.len()
+        + delta.states.len()
+        + delta.updates.len()
+        + delta.tombstones.len()
+}
+
 fn project_staged_seam_sync_batch(
     chunk: &[SyncMutation],
     binding: &ProjectionBinding,
-) -> Result<StagedSeamSync, StoreError> {
+) -> Result<ProjectedSeamBatch, StoreError> {
     #[cfg(test)]
     STAGED_SEAM_SYNC_PEAK_ENTRIES.with(|peak| peak.set(peak.get().max(chunk.len())));
     if chunk
@@ -373,7 +496,7 @@ fn project_staged_seam_sync_batch(
     let (Some(first), Some(last)) = (chunk.first(), chunk.last()) else {
         return Err(StoreError::ImportGenerationConflict);
     };
-    Ok(StagedSeamSync {
+    Ok(ProjectedSeamBatch {
         from_revision: first.revision,
         to_revision: last.revision,
         rows: HubStore::project_sync_mutations(
@@ -432,13 +555,14 @@ fn apply_staged_import_seam_in_transaction(
             return Err(StoreError::ImportGenerationConflict);
         };
         index += 1;
+        let expected_rows = expected.rows()?;
         let mut rows = found.rows;
-        rows.binding = expected.rows.binding.clone();
-        rows.sequence = expected.rows.sequence;
-        rows.parent_digest = expected.rows.parent_digest;
+        rows.binding = expected_rows.binding.clone();
+        rows.sequence = expected_rows.sequence;
+        rows.parent_digest = expected_rows.parent_digest;
         if found.from_revision != expected.from_revision
             || found.to_revision != expected.to_revision
-            || rows != expected.rows
+            || rows != expected_rows
         {
             return Err(StoreError::ImportGenerationConflict);
         }

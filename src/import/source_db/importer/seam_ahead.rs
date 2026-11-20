@@ -606,7 +606,7 @@ fn publish_planned_direct_successor_to(
         let to_sequence = prior_sequence
             .checked_add(staged.mutation_count())
             .ok_or(crate::db::StoreError::SequenceTooLarge)?;
-        let mut delta = staged.rows.clone();
+        let mut delta = staged.rows()?;
         delta.binding = binding.clone();
         delta.sequence = SequenceRange {
             from_exclusive: prior_sequence,
