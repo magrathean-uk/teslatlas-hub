@@ -118,6 +118,48 @@ final class HubRenameMigrationTests: XCTestCase {
         XCTAssertEqual(steps, ["install", "logs"])
     }
 
+    func testTheHandOverRunsOffTheMainThreadWhileTheMainRunLoopKeepsTurning() {
+        XCTAssertTrue(Thread.isMainThread)
+        let mainTurned = DispatchSemaphore(value: 0)
+        // Runs only if the main run loop turns while the attempt is under way.
+        DispatchQueue.main.async { mainTurned.signal() }
+        var pumps = 0
+        var ranOnMain: Bool?
+        var stepsShown: [String] = []
+        let outcome = HubRenameMigration.waitOffMain(on: DispatchQueue(label: "hand-over test"), {
+            () -> (HubRenameMigration.Outcome, Bool) in
+            ranOnMain = Thread.isMainThread
+            let saw = mainTurned.wait(timeout: .now() + 5) == .success
+            let outcome = HubRenameMigration.handOver(run: { arguments in
+                arguments.count == 1 ? (0, self.report("prepared", install: true, start: true)) : (0, self.report("done"))
+            }, installAgent: {}, prepareLogs: {}, step: { stepsShown.append($0) })
+            return (outcome, saw)
+        }, pump: {
+            pumps += 1
+            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+        })
+        XCTAssertEqual(ranOnMain, false, "the attempt runs off the main thread")
+        XCTAssertTrue(outcome.1, "the main run loop kept turning while the attempt waited")
+        XCTAssertGreaterThan(pumps, 0)
+        XCTAssertEqual(outcome.0, .proceed)
+        XCTAssertEqual(stepsShown, [HubRenameMigration.preparingMessage, HubRenameMigration.startingMessage])
+    }
+
+    func testAFailedServingCheckSaysWhyInPlainWordsAndNamesTheCertificate() {
+        let reason = "the Hub service answers on its listener with a different TLS certificate from the one in its configuration; restart the Hub service, and if that does not help, renew the LAN certificate"
+        let outcome = HubRenameMigration.handOver(run: { arguments in
+            arguments.count == 1
+                ? (0, self.report("prepared", install: true, start: true))
+                : (1, self.report("failed", detail: reason))
+        }, installAgent: {}, prepareLogs: {})
+        guard case let .retry(detail) = outcome else { return XCTFail("a failed check is offered again") }
+        XCTAssertTrue(detail.hasPrefix("The Hub service answers"), detail)
+        XCTAssertTrue(detail.contains("TLS certificate"), detail)
+        XCTAssertTrue(detail.hasSuffix("."), detail)
+        XCTAssertEqual(HubRenameMigration.sentence("  done.  "), "Done.")
+        XCTAssertEqual(HubRenameMigration.sentence(""), "")
+    }
+
     func testAStoppedHubIsInstalledWithoutStarting() {
         var runs: [[String]] = []
         let outcome = HubRenameMigration.handOver(run: { arguments in
@@ -145,7 +187,7 @@ final class HubRenameMigrationTests: XCTestCase {
         let failed = HubRenameMigration.handOver(run: { _ in (1, self.report("failed", detail: "disk full")) },
                                                  installAgent: { XCTFail("not after a failure") },
                                                  prepareLogs: {})
-        XCTAssertEqual(failed, .retry("disk full"))
+        XCTAssertEqual(failed, .retry("Disk full."), "the step's own reason, as a sentence")
         let unreadable = HubRenameMigration.handOver(run: { _ in (0, Data("not json".utf8)) },
                                                      installAgent: { XCTFail("not without a report") },
                                                      prepareLogs: {})
@@ -165,7 +207,7 @@ final class HubRenameMigrationTests: XCTestCase {
                 ? (0, self.report("prepared", install: true, start: true))
                 : (1, self.report("failed", detail: "not ready"))
         }, installAgent: {}, prepareLogs: {})
-        XCTAssertEqual(second, .retry("not ready"))
+        XCTAssertEqual(second, .retry("Not ready."))
         let third = HubRenameMigration.handOver(run: { arguments in
             arguments.count == 1 ? (0, self.report("prepared", install: true, start: true)) : (0, self.report("done"))
         }, installAgent: {}, prepareLogs: {})
@@ -181,7 +223,7 @@ final class HubRenameMigrationTests: XCTestCase {
                 ? (0, self.report("prepared", install: true, start: true))
                 : (1, self.report("failed", detail: fault))
         }, installAgent: {}, prepareLogs: {})
-        XCTAssertEqual(outcome, .retry(fault))
+        XCTAssertEqual(outcome, .retry(HubRenameMigration.sentence(fault)))
     }
 
     func testAStepStillRunningIsOfferedAgainAsInProgressAndNothingFollows() {
