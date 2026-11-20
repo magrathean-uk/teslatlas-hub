@@ -1239,14 +1239,16 @@ fn c9_st57_unchanged_pair() {
         Some(3),
     );
     assert_eq!(result.filled, 1);
-    assert_eq!(result.drives_changed, 0);
+    // Issue #32: the totals are unchanged, but the drive's elevation coverage
+    // moves from partial to full, which publishes the drive.
+    assert_eq!(result.drives_changed, 1);
     assert_eq!(pair(&store, vehicle, 1), (Some(3), Some(0)));
     assert_eq!(
         mutations(&store, vehicle)[before..]
             .iter()
             .map(|(e, id, _)| (e.as_str(), *id))
             .collect::<Vec<_>>(),
-        [("position", 3)]
+        [("position", 3), ("drive", 1)]
     );
     assert_eq!(b3_c8_sb::export_revision(&store, vehicle), 2);
 }

@@ -297,9 +297,10 @@ impl StoreRepairEligibility<'_> {
 
     fn catalogued(&self, entity: &str, id: i64) -> Result<bool, StoreError> {
         let sql = format!(
-            "SELECT EXISTS(SELECT 1 FROM {current} WHERE vehicle_id = ?1 AND entity = ?2 AND entity_id = ?3)
+            "SELECT EXISTS(SELECT 1 FROM {current} WHERE vehicle_id = ?1 AND entity_ordinal = {ordinal} AND entity_id = ?3)
                  OR EXISTS(SELECT 1 FROM {legacy} WHERE vehicle_id = ?1 AND entity = ?2 AND entity_id = ?3)",
             current = crate::db::import_table_names::import_projection_state_rows_table!(),
+            ordinal = crate::db::import_table_names::import_state_entity_ordinal_sql!("?2"),
             legacy = crate::db::import_table_names::import_projection_rows_table!(),
         );
         self.transaction
@@ -362,7 +363,7 @@ impl StoreRepairEligibility<'_> {
                                         WHERE l.vehicle_id = ?1 AND l.entity = 'position'
                                           AND (l.loser_id = m.position_id OR l.winner_id = m.position_id))
                              OR (NOT EXISTS(SELECT 1 FROM {current} AS c
-                                             WHERE c.vehicle_id = ?1 AND c.entity = 'position'
+                                             WHERE c.vehicle_id = ?1 AND c.entity_ordinal = 2
                                                AND c.entity_id = m.position_id)
                                  AND NOT EXISTS(SELECT 1 FROM {legacy} AS g
                                                  WHERE g.vehicle_id = ?1 AND g.entity = 'position'
