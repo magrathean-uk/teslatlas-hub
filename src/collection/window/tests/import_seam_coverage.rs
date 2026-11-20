@@ -15,7 +15,7 @@ use super::support::*;
 use crate::collection::window::{CloseReason, Phase, WindowController, WindowDeps};
 use crate::data_recovery::{create_data_backup, restore_data_backup};
 use crate::db::hub_ids::HUB_ID_BASE;
-use crate::db::{HubStore, SourceDescriptor, VehicleDescriptor};
+use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
 use crate::import::source_db::seam::{HubCoverage, SeamError};
 use crate::runtime::operator::admission::admit_import;
 
@@ -72,8 +72,43 @@ pub(super) fn coverage_row(connection: &Connection, seq: i64) -> (String, Option
         .unwrap()
 }
 
+/// Stores one collected observation of `vehicle`, received at `received_ms`:
+/// the evidence a handback needs to cover that vehicle (#102).
+pub(super) fn observe(store: &HubStore, vehicle: &str, received_ms: i64) {
+    let source: String = store
+        .open()
+        .unwrap()
+        .query_row(
+            "SELECT source_id FROM vehicles WHERE vehicle_id = ?1",
+            [vehicle],
+            |row| row.get(0),
+        )
+        .unwrap();
+    store
+        .append_observation(
+            &ObservationInput {
+                source_id: source.parse().unwrap(),
+                vehicle_id: vehicle.parse().unwrap(),
+                observed_at_ms: received_ms,
+                payload: serde_json::json!({
+                    "record_type": "owner_api_vehicle_data_v1",
+                    "state": "online",
+                }),
+            },
+            received_ms,
+        )
+        .unwrap();
+}
+
 /// Opens a window now, lets `seconds` pass, closes it and hands it back.
-fn run_window(rig: &Rig, hub: &WindowController, start_in: u64, seconds: u64) {
+/// `during` runs just before the close, with the clock at the close.
+fn run_window(
+    rig: &Rig,
+    hub: &WindowController,
+    start_in: u64,
+    seconds: u64,
+    during: impl FnOnce(),
+) {
     if start_in > 0 {
         hub.open(&rig.grant(start_in as i64, 600)).unwrap();
         rig.clock.advance(start_in);
@@ -82,6 +117,7 @@ fn run_window(rig: &Rig, hub: &WindowController, start_in: u64, seconds: u64) {
         assert_eq!(hub.open(&rig.grant(0, 600)).unwrap().phase, Phase::Open);
     }
     rig.clock.advance(seconds);
+    during();
     hub.close(CloseReason::OperatorClose);
     hub.finish_close().unwrap().expect("a handback");
 }
@@ -146,6 +182,7 @@ fn import_seam_restore_keeps_the_cutoff() {
 
     // Handback: the same row closes at the handback.
     rig.clock.advance(300);
+    observe(&store, &vehicle, (T0 + 300) * SECOND);
     hub.close(CloseReason::OperatorClose);
     hub.finish_close().unwrap().unwrap();
     let (sealed, closed, _) = coverage_row(&connection, 1);
@@ -154,8 +191,10 @@ fn import_seam_restore_keeps_the_cutoff() {
     assert_eq!(coverage_of(&connection, &vehicle), vec![(T0 * SECOND, (T0 + 300) * SECOND)]);
 
     // A second window adds its own interval; the first is untouched.
-    run_window(&rig, &hub, 1600, 200);
     let second_start = (T0 + 300 + 1600) * SECOND;
+    run_window(&rig, &hub, 1600, 200, || {
+        observe(&store, &vehicle, second_start + 100 * SECOND);
+    });
     assert_eq!(
         coverage_of(&connection, &vehicle),
         vec![
@@ -181,7 +220,7 @@ fn import_seam_new_host_sees_the_cutoff() {
     let rig = Rig::new();
     let hub = rig.trusted_hub();
     let (store, vehicle, other) = store_with_vehicles(&rig);
-    run_window(&rig, &hub, 0, 400);
+    run_window(&rig, &hub, 0, 400, || observe(&store, &vehicle, (T0 + 400) * SECOND));
     let expected = vec![(T0 * SECOND, (T0 + 400) * SECOND)];
 
     // A new host holds the restored store and no window directory at all.
@@ -191,7 +230,11 @@ fn import_seam_new_host_sees_the_cutoff() {
     assert_eq!(new_host.status().phase, Phase::Closed);
     let connection = raw(&restored);
     assert_eq!(coverage_of(&connection, &vehicle), expected);
-    assert_eq!(coverage_of(&connection, &other), expected);
+    assert_eq!(
+        coverage_of(&connection, &other),
+        Vec::<(i64, i64)>::new(),
+        "a vehicle with no observation in the window is not covered (#102)"
+    );
 
     // Import admission on the new host leaves the cutoff as it is.
     let _admission = admit_import(Some(&restored), &home(&rig)).unwrap();
@@ -203,7 +246,7 @@ fn import_seam_missing_store_handback_is_mirrored() {
     let rig = Rig::new();
     let hub = rig.trusted_hub();
     // The window runs and hands back before the data directory has a store.
-    run_window(&rig, &hub, 0, 500);
+    run_window(&rig, &hub, 0, 500, || {});
     assert!(!data_dir(&rig).join("hub.sqlite").exists());
     drop(hub);
 
@@ -211,12 +254,11 @@ fn import_seam_missing_store_handback_is_mirrored() {
     let connection = store.open().unwrap();
     assert_eq!(coverage_of(&connection, &vehicle), Vec::<(i64, i64)>::new());
 
-    // Import admission copies the ledger's handback into the store.
+    // Import admission copies the ledger's handback into the store. No
+    // observation of the vehicle arrived in the window (there was no store),
+    // so the mirrored window covers nothing (#102).
     drop(admit_import(Some(&data_dir(&rig)), &home(&rig)).unwrap());
-    assert_eq!(
-        coverage_of(&connection, &vehicle),
-        vec![(T0 * SECOND, (T0 + 500) * SECOND)]
-    );
+    assert_eq!(coverage_of(&connection, &vehicle), Vec::<(i64, i64)>::new());
     let (sealed, closed, _) = coverage_row(&connection, 1);
     assert_eq!((sealed.as_str(), closed), ("handback", Some((T0 + 500) * SECOND)));
 
@@ -305,6 +347,8 @@ fn import_seam_coverage_subtracts_that_vehicles_gaps() {
         )
         .unwrap();
     rig.clock.advance(400);
+    observe(&store, &first, (T0 + 400) * SECOND);
+    observe(&store, &second, (T0 + 400) * SECOND);
     hub.close(CloseReason::OperatorClose);
     hub.finish_close().unwrap().unwrap();
 
@@ -365,4 +409,58 @@ fn m08_t39_hub_row_after_the_last_tick_survives_the_next_import() {
     let plan = plan_seam(&coverage, &hub_rows, &SourceRows::default(), &SeamLinks::default());
     assert!(plan.positions.hub_removed.is_empty(), "the Hub row is not tombstoned");
     assert_eq!(plan.positions.hub_kept_count, 1);
+}
+
+/// Review finding #102 (P06-F03): a handback covers a vehicle for the whole
+/// window only when an observation of it arrived inside the window. A vehicle
+/// with none, or with only one received before the window opened, is not
+/// covered; the Hub's own lifecycle events are not evidence.
+#[test]
+fn astra_p06_issue_handback_of_empty_window_covers_nothing() {
+    let rig = Rig::new();
+    let hub = rig.trusted_hub();
+    let (store, observed, silent) = store_with_vehicles(&rig);
+    let connection = store.open().unwrap();
+    // Before the window: received, but not inside it.
+    observe(&store, &silent, (T0 - 10) * SECOND);
+    run_window(&rig, &hub, 0, 300, || {
+        observe(&store, &observed, (T0 + 150) * SECOND);
+        // Inside the window, only a Hub lifecycle event for the silent vehicle.
+        let source: String = connection
+            .query_row("SELECT source_id FROM vehicles WHERE vehicle_id = ?1", [&silent], |row| row.get(0))
+            .unwrap();
+        store
+            .append_observation(
+                &ObservationInput {
+                    source_id: source.parse().unwrap(),
+                    vehicle_id: silent.parse().unwrap(),
+                    observed_at_ms: (T0 + 200) * SECOND,
+                    payload: serde_json::json!({
+                        "record_type": "hub_lifecycle_event_v1",
+                        "event": "no_data",
+                    }),
+                },
+                (T0 + 200) * SECOND,
+            )
+            .unwrap();
+    });
+
+    assert_eq!(
+        coverage_of(&connection, &observed),
+        vec![(T0 * SECOND, (T0 + 300) * SECOND)]
+    );
+    assert_eq!(coverage_of(&connection, &silent), Vec::<(i64, i64)>::new());
+    let ends: String = connection
+        .query_row("SELECT vehicle_ends_json FROM collection_coverage WHERE seq = 1", [], |row| row.get(0))
+        .unwrap();
+    let ends: serde_json::Value = serde_json::from_str(&ends).unwrap();
+    assert_eq!(ends[&observed], (T0 + 300) * SECOND);
+    assert_eq!(ends[&silent], T0 * SECOND);
+    // A restore keeps the per-vehicle ends.
+    let restored = restore_elsewhere(&rig, &store, "empty-window");
+    assert_eq!(coverage_of(&raw(&restored), &silent), Vec::<(i64, i64)>::new());
+    assert_eq!(
+        coverage_of(&raw(&restored), &observed),
+        coverage_of(&connection, &observed)
+    );
 }

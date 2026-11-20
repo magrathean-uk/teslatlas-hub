@@ -122,6 +122,10 @@ pub struct OpenSessionState {
     pub last_climate_fact_ms: Option<i64>,
     #[serde(default)]
     pub last_odometer_fact_ms: Option<i64>,
+    /// Vehicle-group time of the newest merged `car_metadata`. Older blobs
+    /// fall back to `last_vehicle_timestamp_ms`.
+    #[serde(default)]
+    pub last_car_metadata_fact_ms: Option<i64>,
     /// `service_mode` was set by a `service_refused` Hub event and not by a
     /// vehicle statement, so any later full-source answer can clear it (R25).
     #[serde(default)]
