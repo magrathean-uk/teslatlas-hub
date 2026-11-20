@@ -14,11 +14,13 @@ use crate::import::broken_drive_repair::{
     PlanOutcome, REPAIR_POLICY_VERSION, RepairEligibility, RepairInput, RepairRefusal,
 };
 
-/// The version whose rung adds the drive repair tables.
-const DRIVE_REPAIR_SCHEMA_VERSION: i32 = 81;
+/// The version whose rung adds the drive repair tables. Main already assigns
+/// v81 (import-state compaction) and v82 (collector retry columns), so this
+/// rung takes the next free version and runs after every earlier rung.
+const DRIVE_REPAIR_SCHEMA_VERSION: i32 = 83;
 const _: () = assert!(
-    DRIVE_REPAIR_SCHEMA_VERSION == SEAM_SCHEMA_VERSION + 1
-        && DRIVE_REPAIR_SCHEMA_VERSION <= SCHEMA_VERSION
+    DRIVE_REPAIR_SCHEMA_VERSION > SEAM_SCHEMA_VERSION + 2
+        && DRIVE_REPAIR_SCHEMA_VERSION == SCHEMA_VERSION
 );
 
 const DRIVE_REPAIR_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS drive_repair_index_heads (
@@ -113,16 +115,24 @@ pub const DRIVE_REPAIR_TABLES: [&str; 7] = [
     "drive_repair_suppressions",
 ];
 
-/// Schema v81 (M03-T26): the drive repair tables, created empty in one
+/// The versions this rung upgrades: every store the earlier rungs have
+/// brought to v80 or later, below this rung. Called after every earlier rung,
+/// so a store stamped by an earlier rung (v81 or v82 included) gains the
+/// tables here whatever layout its earlier rungs left.
+fn drive_repair_rung_applies(version: i32) -> bool {
+    (SEAM_SCHEMA_VERSION..DRIVE_REPAIR_SCHEMA_VERSION).contains(&version)
+}
+
+/// Schema v83 (M03-T26): the drive repair tables, created where absent in one
 /// transaction. A rung that stops part way rolls back and runs again.
 fn drive_repair_schema_rung(connection: &Connection) -> Result<(), StoreError> {
-    if schema_version(connection)? != SEAM_SCHEMA_VERSION {
+    if !drive_repair_rung_applies(schema_version(connection)?) {
         return Ok(());
     }
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(StoreError::Migrate)?;
     admit_writable_catalogue(&transaction)?;
-    if schema_version(&transaction)? == SEAM_SCHEMA_VERSION {
+    if drive_repair_rung_applies(schema_version(&transaction)?) {
         transaction
             .execute_batch(DRIVE_REPAIR_SCHEMA)
             .map_err(StoreError::Migrate)?;

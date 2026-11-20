@@ -144,7 +144,7 @@ fn ids(rows: &[RepairInput]) -> Vec<i64> {
 }
 
 #[test]
-fn broken_drive_repair_plan_store_migrates_to_v81_and_survives_reopen() {
+fn broken_drive_repair_plan_store_migrates_to_v83_and_survives_reopen() {
     let (directory, store) = try_test_store().unwrap();
     let connection = raw(&store);
     assert_eq!(SCHEMA_VERSION, DRIVE_REPAIR_SCHEMA_VERSION);
@@ -174,19 +174,28 @@ fn broken_drive_repair_plan_store_migrates_to_v81_and_survives_reopen() {
     assert_eq!(store.drive_repair_summary(VEHICLE).unwrap().index_rows, 4);
     assert_eq!(ids(&store.drive_repair_index_page(VEHICLE, None, 100).unwrap()), ids(&rows));
 
-    // A v80 store gains the empty tables on its next writable open.
-    let connection = raw(&store);
-    for table in DRIVE_REPAIR_TABLES {
-        connection.execute_batch(&format!("DROP TABLE {table};")).unwrap();
+    // A v80 store, and one an earlier rung already stamped v81 or v82
+    // without any repair table, gains the empty tables on its next writable
+    // open and reaches v83.
+    let mut store = store;
+    for version in [80, 81, 82] {
+        let connection = raw(&store);
+        for table in DRIVE_REPAIR_TABLES {
+            connection.execute_batch(&format!("DROP TABLE {table};")).unwrap();
+        }
+        connection.pragma_update(None, "user_version", version).unwrap();
+        drop(connection);
+        drop(store);
+        store = HubStore::initialize(directory.path()).unwrap();
+        let connection = raw(&store);
+        assert_eq!(schema_version(&connection).unwrap(), 83, "from v{version}");
+        assert_eq!(strict(&connection), 7, "from v{version}");
+        assert_eq!(store.drive_repair_summary(VEHICLE).unwrap().index_rows, 0);
+        store
+            .record_drive_repair_index(SOURCE, VEHICLE, &index(rows.clone()), NOW)
+            .unwrap();
+        assert!(store.plan_drive_repairs(VEHICLE, NOW).unwrap().index_present, "from v{version}");
     }
-    connection.pragma_update(None, "user_version", 80).unwrap();
-    drop(connection);
-    drop(store);
-    let store = HubStore::initialize(directory.path()).unwrap();
-    let connection = raw(&store);
-    assert_eq!(schema_version(&connection).unwrap(), 81);
-    assert_eq!(strict(&connection), 7);
-    assert_eq!(store.drive_repair_summary(VEHICLE).unwrap().index_rows, 0);
 }
 
 #[test]

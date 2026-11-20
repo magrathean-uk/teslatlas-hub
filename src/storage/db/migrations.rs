@@ -34,6 +34,8 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     }
     credential_schema_rung(connection, credential_fresh)?;
     seam_schema_rung(connection)?;
+    // The v83 drive repair rung stays last: it upgrades whatever v80, v81 or
+    // v82 store the earlier rungs leave.
     drive_repair_schema_rung(connection)?;
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
