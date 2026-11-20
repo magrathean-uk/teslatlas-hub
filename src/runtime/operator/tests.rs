@@ -1643,3 +1643,32 @@ fn design_later_38_an_accepted_stop_stops_the_collector_at_once() {
     );
     let _ = thread.stop_within(&budget);
 }
+
+/// Issue #38, review F3: a collector still running when its stop allowance
+/// ends is reported as the `collector` stage timing out, not as stopped,
+/// even when the supervisor thread itself is joined in time.
+#[test]
+fn design_later_38_a_collector_running_past_its_allowance_is_not_reported_stopped() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let rig = Rig::new();
+    let slot = StuckSlot::default();
+    let thread = super::authority::SupervisorThread::spawn(Arc::clone(&rig.controller), slot.clone())
+        .expect("supervisor thread");
+    // The stop accepted with 300 ms left gives the collector that allowance.
+    let accepted = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_millis(300),
+        std::time::Duration::ZERO,
+    );
+    (thread.stopper())(&accepted);
+    // The service's join then has ample budget to see the supervisor end.
+    let joining = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_secs(10),
+        std::time::Duration::ZERO,
+    );
+    let timeout = thread
+        .stop_within(&joining)
+        .expect_err("a collector still running is not a clean stop");
+    assert_eq!(timeout.stage, "collector");
+}

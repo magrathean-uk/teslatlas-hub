@@ -742,7 +742,14 @@ fn spawn_handback_publication(data_dir: Option<PathBuf>, running: &mut Vec<JoinH
 /// when the service stops (the window itself survives a restart; design 2.9).
 pub struct SupervisorThread {
     sender: mpsc::Sender<Signal>,
-    thread: Option<JoinHandle<Vec<JoinHandle<()>>>>,
+    thread: Option<JoinHandle<SupervisorExit>>,
+}
+
+/// What the supervisor thread hands back when it stops: whether its
+/// collector exited within its allowance, and the publications still running.
+struct SupervisorExit {
+    collector_stopped: bool,
+    publications: Vec<JoinHandle<()>>,
 }
 
 /// How long a stopping service waits for its collector to exit.
@@ -793,9 +800,15 @@ impl SupervisorThread {
                     }
                 };
                 drop(supervisor);
-                stop_for_shutdown(&mut shutdown_slot, collector_wait);
+                let collector_stopped = stop_for_shutdown(&mut shutdown_slot, collector_wait);
+                if !collector_stopped {
+                    tracing::warn!("the collector was still running when its stop allowance ended");
+                }
                 publications.retain(|handle| !handle.is_finished());
-                publications
+                SupervisorExit {
+                    collector_stopped,
+                    publications,
+                }
             })?;
         Ok(Self {
             sender,
@@ -848,7 +861,10 @@ impl SupervisorThread {
     /// #38). The collector gets at most the remaining budget. A thread still
     /// running when the budget ends is reported, not waited for: a
     /// publication runs under the publication gate in SQLite transactions,
-    /// and a head it leaves refused is planned again at the next start.
+    /// and a head it leaves refused is planned again at the next start. A
+    /// collector still running after its allowance is reported as the
+    /// `collector` stage timing out, never as stopped (review F3): its
+    /// unfinished writes are left to the store's recovery at the next open.
     pub fn stop_within(
         mut self,
         budget: &crate::runtime::shutdown::ShutdownBudget,
@@ -859,12 +875,17 @@ impl SupervisorThread {
         let Some(thread) = self.thread.take() else {
             return Ok(());
         };
-        let publications = match join_within(thread, budget, "window supervisor") {
-            Ok(Ok(publications)) => publications,
-            Ok(Err(_)) => Vec::new(),
-            Err((_thread, timeout)) => return Err(timeout),
+        let (collector_stopped, publications) =
+            match join_within(thread, budget, "window supervisor") {
+                Ok(Ok(exit)) => (exit.collector_stopped, exit.publications),
+                Ok(Err(_)) => (false, Vec::new()),
+                Err((_thread, timeout)) => return Err(timeout),
+            };
+        let mut outcome = if collector_stopped {
+            Ok(())
+        } else {
+            Err(budget.timed_out("collector"))
         };
-        let mut outcome = Ok(());
         for publication in publications {
             if let Err((_publication, timeout)) =
                 join_within(publication, budget, "handback publication")
@@ -878,9 +899,9 @@ impl SupervisorThread {
     fn shutdown(&mut self) {
         let _ = self.sender.send(Signal::Stop(COLLECTOR_STOP_WAIT));
         if let Some(thread) = self.thread.take()
-            && let Ok(publications) = thread.join()
+            && let Ok(exit) = thread.join()
         {
-            for publication in publications {
+            for publication in exit.publications {
                 let _ = publication.join();
             }
         }
@@ -954,10 +975,17 @@ where
 }
 
 /// Signals the collector to stop and waits for it to exit, up to `wait`.
-fn stop_for_shutdown<S: CollectorSlot>(slot: &mut S, wait: Duration) {
+/// Says whether it exited.
+fn stop_for_shutdown<S: CollectorSlot>(slot: &mut S, wait: Duration) -> bool {
     slot.stop();
     let deadline = std::time::Instant::now() + wait;
-    while slot.is_running() && std::time::Instant::now() < deadline {
+    loop {
+        if !slot.is_running() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
 }
