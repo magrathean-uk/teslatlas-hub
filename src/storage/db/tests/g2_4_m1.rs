@@ -74,8 +74,21 @@ fn rows(connection: &Connection) -> Rows {
 /// The values the v81 rung (M08-T30) keeps from `rows` of an older store: the
 /// import state rows lose their entity text (the second column) and keep
 /// every other value.
+/// The floor rows as the head keeps them: the v79 import-state compaction drops
+/// one column, and the v82 rung appends the three collector retry columns to the
+/// account row with their documented defaults (no unreachable end, no failures,
+/// inventory available). Every other floor value must be unchanged.
 pub(crate) fn rows_after_import_state_compaction(rows: &Rows) -> Rows {
     let mut kept = rows.clone();
+    if let Some(values) = kept.get_mut("collector_account_state") {
+        for value in values.iter_mut() {
+            value.extend([
+                "Null".to_owned(),
+                "Integer(0)".to_owned(),
+                "Integer(0)".to_owned(),
+            ]);
+        }
+    }
     if let Some(values) = kept.get_mut("import_projection_state_rows") {
         for value in values.iter_mut() {
             value.remove(1);
