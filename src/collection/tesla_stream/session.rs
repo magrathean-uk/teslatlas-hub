@@ -820,12 +820,13 @@ fn count_elements(counts: &mut std::collections::BTreeMap<u32, u32>, elements: u
     }
 }
 
-/// Two samples are the same when their time and all 11 values are equal, with
+/// Two samples are the same when their time and all 12 values are equal, with
 /// `f64` compared bitwise (R26).
-fn same_sample(a: &StreamUpdate, b: &StreamUpdate) -> bool {
+pub(super) fn same_sample(a: &StreamUpdate, b: &StreamUpdate) -> bool {
     let bits = |value: Option<f64>| value.map(f64::to_bits);
     a.timestamp_ms == b.timestamp_ms
         && bits(a.elevation) == bits(b.elevation)
+        && a.est_heading == b.est_heading
         && bits(a.est_lat) == bits(b.est_lat)
         && bits(a.est_lng) == bits(b.est_lng)
         && bits(a.est_range) == bits(b.est_range)

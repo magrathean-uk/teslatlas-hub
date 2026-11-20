@@ -436,6 +436,23 @@ fn fix_stream_columns_extra_trailing_columns_are_ignored() {
 }
 
 #[test]
+fn fix_stream_columns_a_changed_est_heading_is_not_a_duplicate() {
+    // R26 compares every subscribed value, est_heading included: a frame that
+    // differs from the last only in est_heading is a new sample.
+    let row = |heading: &str| {
+        parse_data_update_diagnosed(&u(
+            T0,
+            &format!("27,17195.7,68,169,{heading},0.123456,-0.654321,-50,D,235,245,271"),
+        ))
+        .expect("a documented row")
+        .update
+    };
+    assert!(super::session::same_sample(&row("270"), &row("270")));
+    assert!(!super::session::same_sample(&row("270"), &row("271")));
+    assert!(!super::session::same_sample(&row("270"), &row("")));
+}
+
+#[test]
 fn fix_stream_columns_a_documented_13_element_row_maps_by_documented_position() {
     // The documented reply shape for the documented request: epoch-ms sample time,
     // then one value per column in the order speed, odometer, soc, elevation,
