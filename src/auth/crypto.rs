@@ -89,7 +89,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCertificateVerifier {
         _intermediates: &[rustls::pki_types::CertificateDer<'_>],
         server_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
+        now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         if end_entity.as_ref() != self.pinned.as_ref() {
             return Err(rustls::Error::InvalidCertificate(
@@ -98,6 +98,16 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCertificateVerifier {
         }
         let parsed = rustls::server::ParsedCertificate::try_from(end_entity)?;
         rustls::client::verify_server_name(&parsed, server_name)?;
+        // Pinning replaces chain building, not the validity period.
+        let (not_before, not_after) = der_certificate_validity(end_entity.as_ref())
+            .ok_or(rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding))?;
+        let now = i64::try_from(now.as_secs()).unwrap_or(i64::MAX);
+        if now < not_before {
+            return Err(rustls::Error::InvalidCertificate(rustls::CertificateError::NotValidYet));
+        }
+        if now > not_after {
+            return Err(rustls::Error::InvalidCertificate(rustls::CertificateError::Expired));
+        }
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
@@ -139,6 +149,56 @@ fn der_element(input: &[u8]) -> Option<(u8, &[u8], &[u8])> {
         (bytes.iter().fold(0usize, |length, byte| (length << 8) | usize::from(*byte)), rest)
     };
     (rest.len() >= length).then(|| (tag, &rest[..length], &rest[length..]))
+}
+
+/// An X.509 certificate's notBefore and notAfter as Unix seconds (RFC 5280 4.1.2.5).
+fn der_certificate_validity(certificate: &[u8]) -> Option<(i64, i64)> {
+    const SEQUENCE: u8 = 0x30;
+    let (SEQUENCE, certificate, _) = der_element(certificate)? else { return None };
+    let (SEQUENCE, mut fields, _) = der_element(certificate)? else { return None };
+    if fields.first() == Some(&0xa0) {
+        fields = der_element(fields)?.2; // explicit version
+    }
+    let (_serial, _, fields) = der_element(fields)?;
+    let (_signature, _, fields) = der_element(fields)?;
+    let (_issuer, _, fields) = der_element(fields)?;
+    let (SEQUENCE, validity, _) = der_element(fields)? else { return None };
+    let (tag, not_before, rest) = der_element(validity)?;
+    let not_before = der_time(tag, not_before)?;
+    let (tag, not_after, _) = der_element(rest)?;
+    Some((not_before, der_time(tag, not_after)?))
+}
+
+/// A DER UTCTime (`YYMMDDHHMMSSZ`) or GeneralizedTime (`YYYYMMDDHHMMSSZ`) as Unix seconds.
+fn der_time(tag: u8, value: &[u8]) -> Option<i64> {
+    let digits = value.strip_suffix(b"Z")?;
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let number = |range: std::ops::Range<usize>| {
+        digits.get(range)?.iter().try_fold(0i64, |n, d| Some(n * 10 + i64::from(d - b'0')))
+    };
+    let (year, rest) = match (tag, digits.len()) {
+        (0x17, 12) => {
+            let year = number(0..2)?;
+            (if year >= 50 { 1900 + year } else { 2000 + year }, 2)
+        }
+        (0x18, 14) => (number(0..4)?, 4),
+        _ => return None,
+    };
+    let field = |index: usize| number(rest + 2 * index..rest + 2 * index + 2);
+    let (month, day, hour, minute, second) = (field(0)?, field(1)?, field(2)?, field(3)?, field(4)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    // Days from the civil date (H. Hinnant's algorithm).
+    let shifted = if month <= 2 { year - 1 } else { year };
+    let era = shifted.div_euclid(400);
+    let year_of_era = shifted - era * 400;
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
 }
 
 /// Whether an X.509 certificate's basicConstraints sets `cA` (RFC 5280 4.2.1.9).
@@ -210,6 +270,55 @@ mod tests {
         assert!(!listener_certificate_is_ca(self_signed(rcgen::IsCa::ExplicitNoCa).as_bytes()));
         assert!(!listener_certificate_is_ca(self_signed(rcgen::IsCa::NoCa).as_bytes()));
         assert!(!listener_certificate_is_ca(b"not a certificate"));
+    }
+
+    fn verify_at(
+        params: rcgen::CertificateParams,
+        now: rustls::pki_types::UnixTime,
+    ) -> Result<(), rustls::Error> {
+        use rustls::client::danger::ServerCertVerifier as _;
+        let key = rcgen::KeyPair::generate().unwrap();
+        let der = params.self_signed(&key).unwrap().der().clone();
+        let verifier = super::PinnedCertificateVerifier {
+            pinned: der.clone(),
+            algorithms: rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        };
+        let name = rustls::pki_types::ServerName::try_from("hub.test.local").unwrap();
+        verifier.verify_server_cert(&der, &[], &name, &[], now).map(|_| ())
+    }
+
+    #[test]
+    fn the_pinned_certificate_must_be_inside_its_validity_period() {
+        let now = rustls::pki_types::UnixTime::now();
+        let seconds = i64::try_from(now.as_secs()).unwrap();
+        let at = |offset: i64| time::OffsetDateTime::from_unix_timestamp(seconds + offset).unwrap();
+        let window = |not_before, not_after, is_ca| {
+            let mut params =
+                rcgen::CertificateParams::new(vec!["hub.test.local".to_owned()]).unwrap();
+            params.not_before = not_before;
+            params.not_after = not_after;
+            params.is_ca = is_ca;
+            params
+        };
+        let ca = || rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        assert!(verify_at(window(at(-3_600), at(3_600), rcgen::IsCa::NoCa), now).is_ok());
+        assert!(verify_at(window(at(-3_600), at(3_600), ca()), now).is_ok());
+        assert_eq!(
+            verify_at(window(at(-7_200), at(-3_600), rcgen::IsCa::NoCa), now),
+            Err(rustls::Error::InvalidCertificate(rustls::CertificateError::Expired))
+        );
+        assert_eq!(
+            verify_at(window(at(3_600), at(7_200), ca()), now),
+            Err(rustls::Error::InvalidCertificate(rustls::CertificateError::NotValidYet))
+        );
+        // GeneralizedTime (2050 and later) and UTCTime both decode.
+        let far = time::OffsetDateTime::from_unix_timestamp(2_556_143_999).unwrap();
+        assert!(verify_at(window(at(-3_600), far, rcgen::IsCa::NoCa), now).is_ok());
+        assert_eq!(
+            super::der_time(0x17, b"491231235959Z"),
+            Some(2_524_607_999)
+        );
+        assert_eq!(super::der_time(0x18, b"19700101000000Z"), Some(0));
     }
 
     #[test]
