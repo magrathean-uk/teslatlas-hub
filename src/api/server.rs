@@ -37,7 +37,8 @@ use uuid::Uuid;
 
 use super::public_query::{
     MAX_PUBLIC_PAGE_BYTES, PageItem, PageKind, PageQuery, PageQueryError, PageQueryParameters,
-    PublicCharge, PublicChargeSample, PublicDrive, PublicPage, PublicPosition, bounded_public_page,
+    HUB_HTTP_PROFILE_1_4, HUB_HTTP_PROFILE_HEADER, PublicCharge, PublicChargeSample, PublicDrive,
+    PublicDriveWithCoverage, PublicPage, PublicPosition, bounded_public_page,
 };
 
 #[path = "server/connection_policy.rs"]

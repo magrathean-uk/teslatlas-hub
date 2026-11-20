@@ -17,6 +17,53 @@ pub(crate) fn after_current_observations_read(callback: impl FnOnce() + 'static)
     AFTER_CURRENT_OBSERVATIONS_READ.with(|hook| *hook.borrow_mut() = Some(Box::new(callback)));
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static BEFORE_DRIVE_COVERAGE_READ: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Test only: run `callback` after the public drive rows are read and before
+/// their elevation coverage is, on this thread.
+#[cfg(test)]
+pub(crate) fn before_drive_coverage_read(callback: impl FnOnce() + 'static) {
+    BEFORE_DRIVE_COVERAGE_READ.with(|hook| *hook.borrow_mut() = Some(Box::new(callback)));
+}
+
+/// Pair each drive with its stored elevation coverage, read on the caller's
+/// transaction, or with `None` when coverage was not asked for.
+#[allow(clippy::type_complexity)]
+fn with_stored_coverage(
+    connection: &rusqlite::Connection,
+    vehicle_id: Uuid,
+    drives: Vec<crate::hub_pack::ProjectionDrive>,
+    with_coverage: bool,
+) -> Result<
+    Vec<(
+        crate::hub_pack::ProjectionDrive,
+        Option<crate::lifecycle::ElevationCoverage>,
+    )>,
+    StoreError,
+> {
+    if !with_coverage {
+        return Ok(drives.into_iter().map(|drive| (drive, None)).collect());
+    }
+    #[cfg(test)]
+    BEFORE_DRIVE_COVERAGE_READ.with(|hook| {
+        if let Some(callback) = hook.take() {
+            callback();
+        }
+    });
+    let vehicle_key = vehicle_id.to_string();
+    drives
+        .into_iter()
+        .map(|drive| {
+            let coverage = stored_drive_elevation_coverage(connection, &vehicle_key, drive.id)?;
+            Ok((drive, Some(coverage)))
+        })
+        .collect()
+}
+
 impl HubStore {
     /// Store one geocoder lookup under its own version-2 key.
     ///
@@ -1052,6 +1099,56 @@ impl HubStore {
         before: Option<(i64, i64)>,
         limit: u32,
     ) -> Result<Vec<crate::hub_pack::ProjectionDrive>, StoreError> {
+        Ok(self
+            .public_drives_page(vehicle_id, from_ms, to_ms, before, limit, false)?
+            .into_iter()
+            .map(|(drive, _)| drive)
+            .collect())
+    }
+
+    /// [`Self::materialised_drives_page`] with each drive's stored elevation
+    /// coverage (hub-http-v1@1.4.0, issue #32), both read from one SQLite
+    /// snapshot so the coverage always describes the served totals.
+    pub(crate) fn materialised_drives_page_with_elevation_coverage(
+        &self,
+        vehicle_id: Uuid,
+        from_ms: i64,
+        to_ms: i64,
+        before: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<
+        Vec<(
+            crate::hub_pack::ProjectionDrive,
+            crate::lifecycle::ElevationCoverage,
+        )>,
+        StoreError,
+    > {
+        self.public_drives_page(vehicle_id, from_ms, to_ms, before, limit, true)?
+            .into_iter()
+            .map(|(drive, coverage)| {
+                Ok((drive, coverage.ok_or(StoreError::InvalidDriveProjectionIdentity)?))
+            })
+            .collect()
+    }
+
+    /// The public drive page, with coverage from the same read transaction
+    /// when `with_coverage` is set.
+    #[allow(clippy::type_complexity)]
+    fn public_drives_page(
+        &self,
+        vehicle_id: Uuid,
+        from_ms: i64,
+        to_ms: i64,
+        before: Option<(i64, i64)>,
+        limit: u32,
+        with_coverage: bool,
+    ) -> Result<
+        Vec<(
+            crate::hub_pack::ProjectionDrive,
+            Option<crate::lifecycle::ElevationCoverage>,
+        )>,
+        StoreError,
+    > {
         const MAXIMUM_FETCH: u32 = 501;
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
@@ -1068,11 +1165,14 @@ impl HubStore {
             return Err(StoreError::InvalidDriveQueryCursor);
         }
         let (before_start_ms, before_drive_id) = before.unwrap_or((i64::MAX, i64::MAX));
-        let connection = self.open_read_only_connection()?;
-        let mut statement = connection
+        let mut connection = self.open_read_only_connection()?;
+        // One deferred read transaction: the drives and their coverage come
+        // from the same snapshot (REV-CX-R5 ISS-A1332).
+        let transaction = connection.transaction().map_err(StoreError::Query)?;
+        let mut statement = transaction
             .prepare(PUBLIC_DRIVES_PAGE_SQL)
             .map_err(StoreError::Query)?;
-        statement
+        let drives = statement
             .query_map(
                 params![
                     vehicle_id.to_string(),
@@ -1094,7 +1194,11 @@ impl HubStore {
                 }
                 Ok(drive)
             })
-            .collect()
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        drop(statement);
+        let drives = with_stored_coverage(&transaction, vehicle_id, drives, with_coverage)?;
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(drives)
     }
 
     /// One bounded page of a drive's positions in source database GPX order.
@@ -1156,14 +1260,54 @@ impl HubStore {
         vehicle_id: Uuid,
         drive_id: i64,
     ) -> Result<Option<crate::hub_pack::ProjectionDrive>, StoreError> {
+        Ok(self
+            .public_closed_drive(vehicle_id, drive_id, false)?
+            .map(|(drive, _)| drive))
+    }
+
+    /// [`Self::materialised_closed_drive_for_vehicle`] with the drive's stored
+    /// elevation coverage (hub-http-v1@1.4.0, issue #32), both read from one
+    /// SQLite snapshot so the coverage always describes the served totals.
+    pub(crate) fn materialised_closed_drive_with_elevation_coverage(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+    ) -> Result<
+        Option<(
+            crate::hub_pack::ProjectionDrive,
+            crate::lifecycle::ElevationCoverage,
+        )>,
+        StoreError,
+    > {
+        self.public_closed_drive(vehicle_id, drive_id, true)?
+            .map(|(drive, coverage)| {
+                Ok((drive, coverage.ok_or(StoreError::InvalidDriveProjectionIdentity)?))
+            })
+            .transpose()
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn public_closed_drive(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+        with_coverage: bool,
+    ) -> Result<
+        Option<(
+            crate::hub_pack::ProjectionDrive,
+            Option<crate::lifecycle::ElevationCoverage>,
+        )>,
+        StoreError,
+    > {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
         if drive_id <= 0 {
             return Err(StoreError::InvalidDriveId);
         }
-        let connection = self.open_read_only_connection()?;
-        connection
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection.transaction().map_err(StoreError::Query)?;
+        let drive = transaction
             .query_row(
                 PUBLIC_DRIVE_ITEM_SQL,
                 params![vehicle_id.to_string(), drive_id],
@@ -1179,7 +1323,16 @@ impl HubStore {
                 }
                 Ok(drive)
             })
-            .transpose()
+            .transpose()?;
+        let drive = with_stored_coverage(
+            &transaction,
+            vehicle_id,
+            drive.into_iter().collect(),
+            with_coverage,
+        )?
+        .pop();
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(drive)
     }
 
     /// One bounded page of a drive's positions for the public read API, in

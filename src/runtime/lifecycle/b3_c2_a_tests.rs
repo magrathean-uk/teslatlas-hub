@@ -188,12 +188,18 @@ fn c2_t78_dip_and_restart_folds() {
     assert_eq!(open.max_energy_added, Some(7.50));
     assert_eq!(open.last_energy_added, Some(7.48));
 
-    // (d) The bound inside a fold: a fall of 0.05 is a dip, one of 0.06 a restart.
+    // (d) The bound inside a fold: a fall of 0.05 is a dip, one of 0.06 a
+    // restart, provisional for one reading (issue #13). A next counter that
+    // returns to the pre-fall range leaves the fallen reading out; one that
+    // stays low corroborates the restart.
     let d = series(10 * MIN, None, &[10.00, 9.95, 12.00]);
     let open = check(&d, None, Some(12.00), None, "T78 (d) dip");
     assert_eq!(open.energy_added_carry_kwh, 0.0);
     let d = series(10 * MIN, None, &[10.00, 9.94, 12.00]);
-    let open = check(&d, None, Some(22.00), None, "T78 (d) restart");
+    let open = check(&d, None, Some(12.00), None, "T78 (d) contradicted restart");
+    assert_eq!(open.energy_added_carry_kwh, 0.0);
+    let d = series(10 * MIN, None, &[10.00, 0.50, 0.60]);
+    let open = check(&d, None, Some(10.60), None, "T78 (d) restart");
     assert_eq!(open.energy_added_carry_kwh, 10.00);
 
     // (e) Successive dips: each fall is 0.03 against the previous counter; against

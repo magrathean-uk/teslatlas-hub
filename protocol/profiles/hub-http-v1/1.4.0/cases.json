@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "expect": "body equals the hub-http-v1@1.3.0 body; no drive item has elevation_coverage",
+      "id": "http14-no-header-is-1-3-0",
+      "request_headers": {}
+    },
+    {
+      "expect": "body equals the hub-http-v1@1.3.0 body",
+      "id": "http14-other-value-is-1-3-0",
+      "request_headers": {
+        "x-teslatlas-http-profile": "hub-http-v1@1.3.0"
+      }
+    },
+    {
+      "expect": "each drive item is the 1.3.0 item plus elevation_coverage in complete, partial, unknown",
+      "id": "http14-selected",
+      "request_headers": {
+        "x-teslatlas-http-profile": "hub-http-v1@1.4.0"
+      }
+    },
+    {
+      "expect": "a drive with no computed coverage reads unknown",
+      "id": "http14-uncomputed-is-unknown",
+      "request_headers": {
+        "x-teslatlas-http-profile": "hub-http-v1@1.4.0"
+      }
+    },
+    {
+      "expect": {
+        "ascent": 20,
+        "descent": 0,
+        "elevation_coverage": "partial"
+      },
+      "id": "http14-gap-is-partial",
+      "positions_elevation_m": [
+        100,
+        null,
+        110,
+        120
+      ]
+    },
+    {
+      "expect": {
+        "ascent": 20,
+        "descent": 0,
+        "elevation_coverage": "partial"
+      },
+      "id": "http14-invalid-is-partial",
+      "positions_elevation_m": [
+        100,
+        20000,
+        110,
+        120
+      ]
+    },
+    {
+      "expect": {
+        "ascent": 20,
+        "descent": 0,
+        "drive_republished": true,
+        "elevation_coverage": "complete"
+      },
+      "id": "http14-filled-gap-is-complete-and-republished",
+      "positions_elevation_m": [
+        100,
+        101,
+        110,
+        120
+      ]
+    },
+    {
+      "expect": {
+        "ascent": null,
+        "descent": null,
+        "elevation_coverage": "unknown"
+      },
+      "id": "http14-insufficient-is-unknown",
+      "positions_elevation_m": [
+        null,
+        null,
+        null,
+        120
+      ]
+    }
+  ],
+  "profile_id": "hub-http-v1@1.4.0"
+}

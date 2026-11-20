@@ -109,10 +109,30 @@ fn c1_st106_dip_inside_charge() {
     assert_eq!(spans(&edge.delta), vec![(T0, Some(T0 + 80 * SEC))]);
     assert_eq!(edge.delta.open_charge_samples.len(), 5);
     assert_eq!(energies(&edge.delta), vec![Some(10.12)]);
-    // A fall of 0.06 (10.04 to 9.98) is a restart: two rows, [t0, t0+20s] with
-    // energy 10.04 and [t0+40s, t0+80s] with baseline 0.0 (a restart against the
-    // snapshot's 10.04) and energy 10.12.
-    let split = run(&st106(9.98));
+    // A fall of 0.06 (10.04 to 9.98) is a restart, provisional for one reading
+    // (issue #13): the next counter, 10.08, returns to the pre-fall range, so
+    // the charge stays one row and only that reading's counter is left out of
+    // the derived energy. Its raw sample is kept under the same charge.
+    let held = run(&st106(9.98));
+    assert_eq!(spans(&held.delta), vec![(T0, Some(T0 + 80 * SEC))]);
+    assert_eq!(energies(&held.delta), vec![Some(10.12)]);
+    assert_eq!(held.delta.open_charge_samples.len(), 5);
+    assert_eq!(
+        held.delta.open_charge_samples[2].charge_energy_added_kwh,
+        Some(9.98)
+    );
+    let waiting = run(&st106(9.98)[..4]);
+    let open = waiting.state.open_charge.as_ref().expect("first row");
+    let hub = crate::db::hub_ids::HUB_ID_BASE;
+    assert_eq!(open.id, hub);
+    assert!(waiting.state.pending_counter_reset.is_some());
+    // A next counter that stays low corroborates the restart: two rows,
+    // [t0, t0+20s] with energy 10.04 and [t0+40s, t0+80s] with baseline 0.0
+    // whose first sample is the restart observation.
+    let mut restart = st106(0.10);
+    restart[4] = v(5, T0 + 60 * SEC, "Charging", 0.20, None);
+    restart[5] = v(6, T0 + 80 * SEC, "Complete", 0.30, None);
+    let split = run(&restart);
     assert_eq!(
         spans(&split.delta),
         vec![
@@ -120,13 +140,7 @@ fn c1_st106_dip_inside_charge() {
             (T0 + 40 * SEC, Some(T0 + 80 * SEC))
         ]
     );
-    assert_eq!(energies(&split.delta), vec![Some(10.04), Some(10.12)]);
-    let reopened = run(&st106(9.98)[..4]);
-    let open = reopened.state.open_charge.as_ref().expect("second row");
-    assert_eq!(open.first_energy_added, Some(0.0), "restart against 10.04");
-    let hub = crate::db::hub_ids::HUB_ID_BASE;
-    assert_eq!(open.id, hub + 1);
-    // The restart observation is sampled once, in the new row.
+    assert_eq!(energies(&split.delta), vec![Some(10.04), Some(0.30)]);
     assert_eq!(split.delta.open_charge_samples.len(), 5);
     assert_eq!(
         split.delta.open_charge_samples[2].charge_process_id,
