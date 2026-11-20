@@ -1443,4 +1443,99 @@ mod astra_p06_f07_tests {
         let state = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
         assert_eq!(state.last_battery_fact_ms, Some(t + 1_000));
     }
+
+    fn poll_with_vehicle(
+        group_ms: i64,
+        charge_ms: i64,
+        battery_level: i64,
+        car_version: &str,
+        vehicle_name: &str,
+    ) -> ManualCollection {
+        ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA0KF000009", "online")],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                serde_json::json!({
+                    "drive_state": {"timestamp": group_ms, "shift_state": null},
+                    "charge_state": {"timestamp": charge_ms, "battery_level": battery_level},
+                    "vehicle_state": {
+                        "timestamp": group_ms,
+                        "car_version": car_version,
+                        "vehicle_name": vehicle_name
+                    }
+                }),
+            )],
+            failures: vec![],
+        }
+    }
+
+    #[test]
+    fn astra_p06_issue_older_reply_keeps_newer_vehicle_metadata() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t = 1_800_000_000_000_i64;
+        let persist = |reply: ManualCollection, received_at_ms: i64| {
+            persist_collection_atomic_for_provider(
+                &store,
+                &reply,
+                received_at_ms,
+                CollectorProvider::Legacy,
+            )
+            .expect("poll")
+        };
+        let car = || {
+            let database = store.open().expect("database");
+            let car_json: String = database
+                .query_row("SELECT car_json FROM materialised_cars", [], |row| row.get(0))
+                .expect("materialised car");
+            let display_name: Option<String> = database
+                .query_row("SELECT display_name FROM vehicles", [], |row| row.get(0))
+                .expect("vehicle row");
+            let car: Value = serde_json::from_str(&car_json).expect("car JSON");
+            (
+                car["firmware_version"].as_str().map(str::to_owned),
+                car["name"].as_str().map(str::to_owned),
+                display_name,
+            )
+        };
+        let current = |version: &str, name: &str| {
+            (
+                Some(version.to_owned()),
+                Some(name.to_owned()),
+                Some(name.to_owned()),
+            )
+        };
+
+        let first = persist(poll_with_vehicle(t + 2_000, t, 50, "2026.40.2", "Renamed"), t + 3_000);
+        assert_eq!(first.observations_inserted, 1);
+        assert_eq!(car(), current("2026.40.2", "Renamed"));
+
+        // Admitted for its newer charge group (battery 51), but its drive and
+        // vehicle groups are older than the stored ones.
+        let older = persist(poll_with_vehicle(t + 1_000, t + 1_000, 51, "2026.40.1", "Original"), t + 4_000);
+        assert_eq!(older.observations_inserted, 1, "the newer battery group is stored");
+        assert_eq!(car(), current("2026.40.2", "Renamed"), "stale metadata does not regress");
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let state = |store: &HubStore| {
+            let lifecycle = store
+                .load_lifecycle_state(vehicle_id)
+                .expect("lifecycle query")
+                .expect("lifecycle state");
+            OpenSessionState::decode(&lifecycle.open_session_json).expect("open session")
+        };
+        assert_eq!(state(&store).last_battery_fact_ms, Some(t + 1_000));
+
+        // A newer vehicle group still updates the metadata.
+        let newer = persist(poll_with_vehicle(t + 5_000, t + 5_000, 52, "2026.44.1", "Latest"), t + 6_000);
+        assert_eq!(newer.observations_inserted, 1);
+        assert_eq!(car(), current("2026.44.1", "Latest"));
+        assert_eq!(state(&store).last_car_metadata_fact_ms, Some(t + 5_000));
+    }
 }
