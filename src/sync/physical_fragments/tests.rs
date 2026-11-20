@@ -2208,6 +2208,50 @@ fn physical_v3_admission_rejects_tamper_and_a_second_head() {
     );
 }
 
+/// #52: the purpose check at admission reads each pack once; the digest,
+/// sizes and SQLite header are authenticated over the very bytes decoded for
+/// the identity check. Before the fix the verifier hashed one open and decoded
+/// a second, so bytes changed between the two reached the identity check.
+#[test]
+fn physical_v3_purpose_check_decodes_the_bytes_it_authenticates_in_one_read() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let binding = registered_admission_binding(&store);
+    let candidate = two_chunk_physical_candidate(temporary.path(), &store, snapshot_id(), binding);
+    let chunk = &candidate.chunks[0];
+    let original = std::fs::read(&chunk.path).expect("pack bytes");
+    let mut changed = original.clone();
+    let last = changed.len() - 1;
+    changed[last] ^= 0x01;
+
+    // A later open would see other bytes; there must be no later open.
+    let opens = std::rc::Rc::new(std::cell::Cell::new(0_usize));
+    let counted = opens.clone();
+    let later = changed.clone();
+    crate::hub_pack::PURPOSE_OPEN_VIEW.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |_: &std::path::Path| {
+            counted.set(counted.get() + 1);
+            (counted.get() > 1).then(|| later.clone())
+        }));
+    });
+    let accepted = chunk.verify_hub_sync_v1_1_3_physical_purpose(&candidate.manifest, &candidate.binding);
+    crate::hub_pack::PURPOSE_OPEN_VIEW.with(|hook| *hook.borrow_mut() = None);
+    accepted.expect("the authentic pack passes the purpose check");
+    assert_eq!(opens.get(), 1, "the pack is opened and read once");
+
+    // The one read that is decoded is the one authenticated.
+    crate::hub_pack::PURPOSE_OPEN_VIEW.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |_: &std::path::Path| Some(changed.clone())));
+    });
+    let refused = chunk.verify_hub_sync_v1_1_3_physical_purpose(&candidate.manifest, &candidate.binding);
+    crate::hub_pack::PURPOSE_OPEN_VIEW.with(|hook| *hook.borrow_mut() = None);
+    assert!(
+        matches!(refused, Err(crate::hub_pack::ProjectionPackError::Protocol(_))),
+        "bytes other than the digest's are refused before SQLite is opened: {refused:?}"
+    );
+    assert_eq!(std::fs::read(&chunk.path).expect("pack bytes"), original);
+}
+
 #[test]
 fn pending_physical_v3_admission_rejects_foreign_or_inactive_identity() {
     let temporary = tempdir().expect("temp dir");

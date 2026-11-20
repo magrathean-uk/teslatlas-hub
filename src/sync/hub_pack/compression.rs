@@ -14,6 +14,72 @@ fn verify_file(
         .map_err(ProjectionPackError::Protocol)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Test only (#52): consulted at every open of a pack by the physical
+    /// purpose verifier; `Some` bytes stand in for the file's content at that
+    /// open, so a test can count the opens and change what one of them reads.
+    pub(crate) static PURPOSE_OPEN_VIEW: std::cell::RefCell<
+        Option<Box<dyn FnMut(&Path) -> Option<Vec<u8>>>>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// Feeds every compressed byte the verifier reads into a streaming decoder as
+/// well, so the bytes that are hashed, size-checked and header-checked are the
+/// very bytes decoded into the staged SQLite, in the same read (#52).
+struct DecodingTee<R, W: Write> {
+    inner: R,
+    decoder: zstd::stream::write::Decoder<'static, W>,
+}
+
+impl<R: Read, W: Write> Read for DecodingTee<R, W> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.decoder.write_all(&buffer[..read])?;
+        Ok(read)
+    }
+}
+
+/// A file writer that refuses output beyond the declared decoded length.
+struct BoundedWriter {
+    file: File,
+    written: u64,
+    limit: u64,
+}
+
+impl Write for BoundedWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let length = u64::try_from(buffer.len()).map_err(io::Error::other)?;
+        if self.written.checked_add(length).is_none_or(|total| total > self.limit) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "physical publication pack decodes beyond its declared length",
+            ));
+        }
+        let written = self.file.write(buffer)?;
+        self.written += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+fn open_purpose_source(path: &Path) -> Result<Box<dyn Read>, ProjectionPackError> {
+    #[cfg(test)]
+    if let Some(view) =
+        PURPOSE_OPEN_VIEW.with(|hook| hook.borrow_mut().as_mut().and_then(|view| view(path)))
+    {
+        return Ok(Box::new(io::Cursor::new(view)));
+    }
+    let file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(Box::new(file))
+}
+
 fn verify_physical_publication_file_2_2(
     metadata: &TransportPack,
     path: &Path,
@@ -21,7 +87,11 @@ fn verify_physical_publication_file_2_2(
     binding: &ProjectionBinding,
 ) -> Result<(), ProjectionPackError> {
     let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
-    verify_file(metadata, path, limits)?;
+    // Validate the declared sizes against the receiver profile before any
+    // byte is decoded, so the decoded-length bound below is the profile's too.
+    metadata
+        .validate(limits)
+        .map_err(ProjectionPackError::Protocol)?;
     let staging_dir = path
         .parent()
         .and_then(Path::parent)
@@ -29,16 +99,7 @@ fn verify_physical_publication_file_2_2(
         .ok_or_else(|| invalid("physical publication pack path has no staging directory"))?;
     ensure_private_staging_directory(&staging_dir)?;
     let sqlite = StagedFile::create(&staging_dir, "physical-admission.sqlite")?;
-    let file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let decoder = zstd::stream::read::Decoder::new(file).map_err(ProjectionPackError::Decompress)?;
-    let maximum = metadata
-        .uncompressed_bytes
-        .checked_add(1)
-        .ok_or(ProjectionPackError::CapacityOverflow)?;
-    let mut output = OpenOptions::new()
+    let output = OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(sqlite.path())
@@ -46,12 +107,32 @@ fn verify_physical_publication_file_2_2(
             path: sqlite.path().to_path_buf(),
             source,
         })?;
-    let decoded = io::copy(&mut decoder.take(maximum), &mut output)
+    let decoder = zstd::stream::write::Decoder::new(BoundedWriter {
+        file: output,
+        written: 0,
+        limit: metadata.uncompressed_bytes,
+    })
+    .map_err(ProjectionPackError::Decompress)?;
+    // One open and one read: the protocol verifier authenticates the digest,
+    // the compressed and decoded sizes and the SQLite header over the same
+    // bytes the tee decodes, so the identity check below inspects only bytes
+    // covered by that attestation.
+    let mut tee = DecodingTee {
+        inner: open_purpose_source(path)?,
+        decoder,
+    };
+    metadata
+        .verify_reader(&mut tee, limits)
+        .map_err(ProjectionPackError::Protocol)?;
+    tee.decoder
+        .flush()
         .map_err(ProjectionPackError::Decompress)?;
-    if decoded != metadata.uncompressed_bytes {
+    let output = tee.decoder.into_inner();
+    if output.written != metadata.uncompressed_bytes {
         return Err(invalid("physical publication pack decoded length is invalid"));
     }
     output
+        .file
         .sync_all()
         .map_err(ProjectionPackError::SyncCompressed)?;
     drop(output);
