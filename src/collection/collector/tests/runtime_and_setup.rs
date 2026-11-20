@@ -1641,7 +1641,7 @@ async fn a_stream_rejection_is_no_lease_state_until_the_credential_unit_signs_th
 
     let sample_time = current_epoch_millis().expect("clock") - 1_000;
     let telemetry = crate::tesla_stream::parse_data_update(&format!(
-        r#"{{"msg_type":"data:update","tag":"9","value":"{sample_time},25,51.5,-0.1,210,180,12345.6,120,200,D,80,42"}}"#,
+        r#"{{"msg_type":"data:update","tag":"9","value":"{sample_time},42,12345.6,80,25,,51.5,-0.1,120,D,200,210,180"}}"#,
     ))
     .expect("valid authenticated stream frame");
     events

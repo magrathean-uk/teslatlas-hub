@@ -15,26 +15,28 @@ use crate::auth::credential_envelope::MAX_TOKEN_PLAINTEXT_BYTES;
 
 use super::StreamError;
 
-/// The subscribed columns, in the order the server returns their values (R15).
+/// The subscribed columns, in Tesla's documented order (R15).
 ///
-/// Each column is read by the Hub's data model (C1 R37, C3 R36, C6 R27) and no
-/// other column is requested: a column nobody reads costs bandwidth on every
-/// frame and widens what a misplaced value could corrupt. `est_heading` is not
-/// requested because no Hub reader uses it. The order is alphabetical: the
-/// server answers by position, so any fixed order works, and alphabetical is
-/// Hub-owned and checkable without reference to any other product.
-pub const STREAM_COLUMNS: [&str; 11] = [
+/// This is the full documented column list in the order Tesla's own clients
+/// request it (`speed,odometer,soc,elevation,est_heading,est_lat,est_lng,power,
+/// shift_state,range,est_range,heading`). The server answers by position; a
+/// server that follows the request order and one that sends its own fixed
+/// documented set then give the same row, so a value can never land in another
+/// column's field under either behaviour. `est_heading` is requested for that
+/// reason even though no Hub reader needs it.
+pub const STREAM_COLUMNS: [&str; 12] = [
+    "speed",
+    "odometer",
+    "soc",
     "elevation",
+    "est_heading",
     "est_lat",
     "est_lng",
+    "power",
+    "shift_state",
+    "range",
     "est_range",
     "heading",
-    "odometer",
-    "power",
-    "range",
-    "shift_state",
-    "soc",
-    "speed",
 ];
 
 /// Least number of comma-separated elements in a `data:update` `value`: the
@@ -76,8 +78,8 @@ pub struct StreamUpdate {
     pub timestamp_ms: i64,
     /// Metres (C1 R38).
     pub elevation: Option<f64>,
-    /// Not requested (R15), so always `None`; kept so stored rows keep their
-    /// `drive_state.est_heading` key.
+    /// Whole degrees. Requested only to keep the documented column order
+    /// (R15); stored under `drive_state.est_heading`.
     pub est_heading: Option<i64>,
     /// Degrees.
     pub est_lat: Option<f64>,
@@ -321,8 +323,8 @@ fn parse_float(element: &str) -> Cell<f64> {
     text.parse::<f64>().map(Some).map_err(|_| ())
 }
 
-/// The `i64` column `power` (R21): any fraction must be all zeros (`15.0` is
-/// 15) and the value must fit `i64`. A fraction is surfaced as invalid rather
+/// The `i64` columns `power` and `est_heading` (R21): any fraction must be
+/// all zeros (`15.0` is 15) and the value must fit `i64`. A fraction is surfaced as invalid rather
 /// than hidden by rounding.
 fn parse_whole(element: &str) -> Cell<i64> {
     let text = trim(element);
@@ -355,7 +357,7 @@ fn parse_shift(element: &str) -> Cell<String> {
 /// `WrongMessageType` when `msg_type` is another string; `MalformedDataUpdate`
 /// when the text is not a JSON object with a string `msg_type`, when `tag` or
 /// `value` is missing or not a string, or when `value` splits into fewer
-/// than 12 elements (elements after the twelfth are ignored);
+/// than 13 elements (elements after the thirteenth are ignored);
 /// `InvalidTimestamp` for a bad element 0. A bad value element gives `None` for that field and keeps the rest of the frame. An
 /// envelope `timestamp` member and any other member are ignored (R19): the
 /// sample time is element 0, stated with the sample's own values.
@@ -444,18 +446,18 @@ pub(crate) fn parse_data_update_diagnosed(frame: &str) -> Result<DiagnosedUpdate
     let update = StreamUpdate {
         tag: tag.clone(),
         timestamp_ms,
-        elevation: settle(parse_float(elements[1]), &mut invalid),
-        est_heading: None,
-        est_lat: settle(parse_float(elements[2]), &mut invalid),
-        est_lng: settle(parse_float(elements[3]), &mut invalid),
-        est_range: settle(parse_float(elements[4]), &mut invalid),
-        heading: settle(parse_float(elements[5]), &mut invalid),
-        odometer: settle(parse_float(elements[6]), &mut invalid),
-        power: settle(parse_whole(elements[7]), &mut invalid),
-        range: settle(parse_float(elements[8]), &mut invalid),
+        speed: settle(parse_float(elements[1]), &mut invalid),
+        odometer: settle(parse_float(elements[2]), &mut invalid),
+        soc: settle(parse_float(elements[3]), &mut invalid),
+        elevation: settle(parse_float(elements[4]), &mut invalid),
+        est_heading: settle(parse_whole(elements[5]), &mut invalid),
+        est_lat: settle(parse_float(elements[6]), &mut invalid),
+        est_lng: settle(parse_float(elements[7]), &mut invalid),
+        power: settle(parse_whole(elements[8]), &mut invalid),
         shift_state: settle(parse_shift(elements[9]), &mut invalid),
-        soc: settle(parse_float(elements[10]), &mut invalid),
-        speed: settle(parse_float(elements[11]), &mut invalid),
+        range: settle(parse_float(elements[10]), &mut invalid),
+        est_range: settle(parse_float(elements[11]), &mut invalid),
+        heading: settle(parse_float(elements[12]), &mut invalid),
     };
     Ok(DiagnosedUpdate {
         update,

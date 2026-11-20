@@ -53,12 +53,12 @@ pub(super) const TAG: &str = "4242";
 pub(super) const T0: i64 = 1_760_000_000_000;
 /// Spec notation W: the wall clock the tests read unless stated.
 pub(super) const W: i64 = T0 + 5_000;
-/// Row V1 of the spec: elevation 25, est_lat 10.5, est_lng 20.25, est_range 230.5,
-/// heading 182, odometer 12345.6, power 15, range 241.25, shift_state D, soc 80,
-/// speed 30.
-pub(super) const V1: &str = "25,10.5,20.25,230.5,182,12345.6,15,241.25,D,80,30";
+/// Row V1 of the spec, in the documented column order: speed 30, odometer 12345.6,
+/// soc 80, elevation 25, est_heading not reported, est_lat 10.5, est_lng 20.25,
+/// power 15, shift_state D, range 241.25, est_range 230.5, heading 182.
+pub(super) const V1: &str = "30,12345.6,80,25,,10.5,20.25,15,D,241.25,230.5,182";
 /// Row PK of the spec: a parked frame.
-pub(super) const PK: &str = "25,10.5,20.25,230.5,182,12345.6,0,241.25,P,80,0";
+pub(super) const PK: &str = "0,12345.6,80,25,,10.5,20.25,0,P,241.25,230.5,182";
 
 /// `U(t, row)` of the spec: one `data:update` frame for the session's tag.
 pub(super) fn u(time: impl std::fmt::Display, row: &str) -> String {
