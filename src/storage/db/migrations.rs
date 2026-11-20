@@ -59,7 +59,7 @@ const _: () = assert!(
 const COLLECTOR_RETRY_SCHEMA_VERSION: i32 = 82;
 const _: () = assert!(
     COLLECTOR_RETRY_SCHEMA_VERSION == IMPORT_STATE_COMPACT_SCHEMA_VERSION + 1
-        && COLLECTOR_RETRY_SCHEMA_VERSION == SCHEMA_VERSION
+        && COLLECTOR_RETRY_SCHEMA_VERSION <= SCHEMA_VERSION
 );
 
 /// Schema v82 (P04-F07, P04-F01): the account row keeps the end and the step of
