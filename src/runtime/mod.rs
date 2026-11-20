@@ -8,6 +8,7 @@ pub mod diagnostics;
 pub mod fleet_figures;
 pub mod lifecycle;
 pub mod operator;
+pub mod shutdown;
 
 pub mod development_event_log;
 

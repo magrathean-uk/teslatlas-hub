@@ -2035,6 +2035,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // whatever the collector does (design 2.8, ruling R5). Its
                 // credential status is read once the listener is bound, and
                 // the collector is held until then (M08-T32).
+                // Issue #51: after the listener is bound, one tracked worker
+                // logs the inventory and then reconciles the pack store in
+                // the background (orphan final names, missing or damaged
+                // objects). Starting it never waits for it, and the service
+                // stop cancels and joins it within the shutdown budget.
+                let diagnostics_worker = std::sync::Arc::new(
+                    tesatlas_hub::runtime::shutdown::TrackedWorker::new("pack reconciliation"),
+                );
                 // A data-only restore leaves signed data without its cursor
                 // key: the service then waits in its recovery state, before
                 // the API could create a new key, until the operator's
@@ -2068,6 +2076,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 )?;
                 let held_collector = collector_slot.clone();
                 let collector_status_kick = supervisor.reload_kicker();
+                // One shutdown budget for the whole stop (issue #38): it
+                // starts on the first accepted stop, during the recovery
+                // wait too, and every stage below takes from it. Accepting
+                // the stop closes operator admission at once.
+                let shutdown_budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+                let stop_supervisor = supervisor.stopper();
                 let channel = operator::channel::ChannelServer::bind(
                     &config.data_dir,
                     std::sync::Arc::new(operator::authority::OperatorService::new(
@@ -2090,7 +2104,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         window_trust_authority(authority.host_id())?,
                         &config.data_dir,
                     )
-                    .with_recovery(std::sync::Arc::clone(&recovery))),
+                    .with_recovery(std::sync::Arc::clone(&recovery))
+                    .with_shutdown(std::sync::Arc::clone(&shutdown_budget))),
                 )?;
                 phases.phase("operator_channel");
                 // Once the listener is bound and accepting, on a blocking
@@ -2101,6 +2116,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let on_listening: server::ListeningHook = {
                     let store = store.clone();
                     let config = config.clone();
+                    let worker = std::sync::Arc::clone(&diagnostics_worker);
                     Box::new(move || {
                         phases.phase("bind");
                         drop(tokio::task::spawn_blocking(move || {
@@ -2124,10 +2140,19 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             // listener.
                             held_collector.status_known();
                             collector_status_kick();
-                            log_runtime_inventory(&store, &config);
+                            let started = worker.start(move |cancelled| {
+                                log_runtime_inventory(&store, &config);
+                                if !cancelled() {
+                                    log_pack_reconciliation(&store, cancelled);
+                                }
+                            });
+                            if let Err(error) = started {
+                                tracing::warn!(%error, "pack reconciliation did not start");
+                            }
                         }));
                     })
                 };
+                let quiesce_backup = std::sync::Arc::clone(&backup_schedule);
                 let recovery_stop = if recovery.pending() {
                     tracing::warn!(
                         "this Hub's signed data has no cursor key; the API starts after restore-recovery-credentials"
@@ -2143,6 +2168,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
+                if recovery_stop.is_some() {
+                    shutdown_budget.begin();
+                    quiesce_backup.request_stop();
+                    stop_supervisor(&shutdown_budget);
+                }
+                let control_budget = std::sync::Arc::clone(&shutdown_budget);
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -2154,6 +2185,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     stopped
                 } else {
                     run_macos_serve_with_optional_proxy(
+                        std::sync::Arc::clone(&shutdown_budget),
                         command_proxy,
                         false,
                         |_ready, _shutdown| async { Ok(()) },
@@ -2173,27 +2205,78 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             .await
                         },
                         async move {
-                            tokio::select! {
+                            let control = tokio::select! {
                                 error = control_admission.wait_until_invalid() => {
                                     MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
                                 }
                                 _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
                                 _ = sigterm.recv() => MacServeControl::Shutdown,
-                            }
+                            };
+                            // Accept the stop: operator admission closes
+                            // (the budget is stopping), new backups are
+                            // refused and the window supervisor stops its
+                            // collector, all before the listener drains.
+                            control_budget.begin();
+                            quiesce_backup.request_stop();
+                            stop_supervisor(&control_budget);
+                            control
                         },
                     )
                     .await
                 };
-                drop(channel);
-                tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
-                tokio::task::spawn_blocking(move || supervisor.stop()).await?;
+                // The operator channel, the backup schedule and the window
+                // supervisor (with its collector and handback publications)
+                // stop together, each within what is left of the budget.
+                shutdown_budget.begin();
+                backup_schedule.request_stop();
+                diagnostics_worker.request_stop();
+                let backup_budget = std::sync::Arc::clone(&shutdown_budget);
+                let supervisor_budget = std::sync::Arc::clone(&shutdown_budget);
+                let diagnostics_budget = std::sync::Arc::clone(&shutdown_budget);
+                let (channel_stop, backup_stop, supervisor_stop, diagnostics_stop) = tokio::join!(
+                    tokio::task::spawn_blocking(move || drop(channel)),
+                    tokio::task::spawn_blocking(move || backup_schedule.stop_within(&backup_budget)),
+                    tokio::task::spawn_blocking(move || supervisor.stop_within(&supervisor_budget)),
+                    tokio::task::spawn_blocking(move || diagnostics_worker.stop_within(&diagnostics_budget)),
+                );
                 drop(authority);
                 drop(catalogue_hold);
-                match &serve_result {
-                    Ok(()) => tracing::info!("Hub serve stopped cleanly"),
-                    Err(error) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                let mut cleanup_errors = Vec::new();
+                if let Err(error) = channel_stop {
+                    cleanup_errors.push(format!("operator channel stop failed: {error}"));
+                }
+                for stop in [backup_stop, supervisor_stop, diagnostics_stop] {
+                    match stop {
+                        Ok(Ok(())) => {}
+                        Ok(Err(timeout)) => cleanup_errors.push(timeout.to_string()),
+                        Err(error) => cleanup_errors.push(format!("a shutdown stage failed: {error}")),
+                    }
+                }
+                for error in &cleanup_errors {
+                    tracing::warn!(%error, "Hub serve shutdown stage");
+                }
+                // The final checkpoint runs only with budget left; the stop
+                // is reported clean only after it succeeded.
+                let checkpointed = catalogue_checkpoint.finish_within(&shutdown_budget);
+                match (&serve_result, cleanup_errors.is_empty(), &checkpointed) {
+                    (Ok(()), true, Ok(true)) => tracing::info!("Hub serve stopped cleanly"),
+                    (Err(error), _, _) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                    (Ok(()), _, Err(error)) => {
+                        tracing::error!(%error, "Hub serve stopped; the final checkpoint failed")
+                    }
+                    (Ok(()), _, _) => tracing::warn!(
+                        "Hub serve stopped within its shutdown budget, not cleanly; the store recovers at its next open"
+                    ),
                 }
                 serve_result?;
+                checkpointed?;
+                if !cleanup_errors.is_empty() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        cleanup_errors.join("; "),
+                    )
+                    .into());
+                }
             }
         }
         #[cfg(unix)]
@@ -2732,5 +2815,51 @@ mod observation_outcome_tests {
         let error = observation_outcome(Err(std::io::Error::other("collector failed")), Ok(None))
             .expect_err("an observation error still fails the command");
         assert!(error.to_string().contains("collector failed"), "{error}");
+    }
+}
+
+/// Issue #51: the background pack reconciliation of one service run. Logs
+/// its status and counts with diagnostic codes, never a digest or a path.
+#[cfg(unix)]
+fn log_pack_reconciliation(store: &HubStore, cancelled: &dyn Fn() -> bool) {
+    use tesatlas_hub::db::PackReconciliationStatus as Status;
+    tracing::info!(status = "running", "Hub pack reconciliation");
+    let status = match store.reconcile_packs(cancelled) {
+        Ok(report) if report.complete => Status::Completed(report),
+        Ok(report) => Status::Incomplete(report),
+        Err(error) => Status::Failed(error.to_string()),
+    };
+    match status {
+        Status::Completed(report) | Status::Incomplete(report) => {
+            let codes = report.codes().join(",");
+            let fields = (
+                report.final_names,
+                report.unreferenced_finals,
+                report.unclassified_finals,
+                report.referenced_checked,
+                report.missing_objects + report.not_regular_objects,
+                report.size_mismatches,
+                report.digest_mismatches,
+            );
+            let status = if report.complete { "completed" } else { "incomplete" };
+            if codes.is_empty() {
+                tracing::info!(status, final_names = fields.0, checked = fields.3, "Hub pack reconciliation");
+            } else {
+                tracing::warn!(
+                    status,
+                    codes = %codes,
+                    final_names = fields.0,
+                    unreferenced = fields.1,
+                    unclassified = fields.2,
+                    checked = fields.3,
+                    missing = fields.4,
+                    size_mismatches = fields.5,
+                    digest_mismatches = fields.6,
+                    "Hub pack reconciliation"
+                );
+            }
+        }
+        Status::Failed(error) => tracing::warn!(status = "failed", %error, "Hub pack reconciliation"),
+        Status::Pending | Status::Running => {}
     }
 }

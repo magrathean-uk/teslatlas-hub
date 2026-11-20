@@ -1541,3 +1541,134 @@ fn intake_latency_crosses_the_operator_channel_beside_its_own_window() {
     assert_eq!(status["intakeLatency"]["count"], 1, "{status}");
     assert_eq!(status["intakeLatency"]["maxMs"].as_f64(), Some(8.0));
 }
+
+/// A collector that never reports stopping.
+#[derive(Clone, Default)]
+struct StuckSlot {
+    stops: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl crate::collection::window::supervisor::CollectorSlot for StuckSlot {
+    fn start(&mut self, _deadline_wall: i64) -> Result<(), String> {
+        Ok(())
+    }
+    fn is_running(&mut self) -> bool {
+        true
+    }
+    fn stop(&mut self) {
+        self.stops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    fn release_lease(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Issue #38: the window supervisor's stop waits for a collector that does
+/// not stop only within the shared shutdown budget, not its own 30 seconds.
+#[test]
+fn design_later_38_supervisor_stop_gives_a_stuck_collector_only_the_budget() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let rig = Rig::new();
+    let slot = StuckSlot::default();
+    let thread = super::authority::SupervisorThread::spawn(Arc::clone(&rig.controller), slot.clone())
+        .expect("supervisor thread");
+    let budget = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_millis(400),
+        std::time::Duration::from_millis(100),
+    );
+    let began = std::time::Instant::now();
+    let _ = thread.stop_within(&budget);
+    let took = began.elapsed();
+    assert!(took < std::time::Duration::from_secs(3), "the stop took {took:?}");
+    assert!(slot.stops.load(std::sync::atomic::Ordering::SeqCst) >= 1, "the collector was told to stop");
+}
+
+/// Issue #38, review F2: once the service accepts a stop, sign-in and every
+/// other operator verb are refused before the backend is asked, even inside
+/// an Open window and while the listener is still draining; the window
+/// status is still answered.
+#[test]
+fn design_later_38_an_accepted_stop_closes_operator_admission_at_once() {
+    use crate::runtime::shutdown::ShutdownBudget;
+    let rig = Rig::new();
+    let budget = Arc::new(ShutdownBudget::system());
+    let _server = ChannelServer::bind(
+        &rig.data(),
+        Arc::new(rig.service().with_shutdown(Arc::clone(&budget))),
+    )
+    .expect("channel bound");
+    rig.forward(&OperatorRequest::WindowTrust { document: encoded(&rig.trust) })
+        .expect("trust");
+    rig.forward(&OperatorRequest::WindowOpen { grant: encoded(&rig.grant(3_600)) })
+        .expect("open");
+
+    budget.begin();
+    let refused = rig
+        .forward(&OperatorRequest::Setup { material: material(), vehicle_id: None, all_vehicles: true })
+        .unwrap_err();
+    assert_eq!(refused.code, super::authority::SERVICE_STOPPING);
+    let refused = rig.forward(&OperatorRequest::WindowClose).unwrap_err();
+    assert_eq!(refused.code, super::authority::SERVICE_STOPPING);
+    assert!(rig.calls.all().is_empty(), "the backend was not asked");
+    let status = rig.forward(&OperatorRequest::WindowStatus).expect("status");
+    assert_eq!(status["phase"], "open");
+}
+
+/// Issue #38, review F2: accepting the stop stops the window supervisor's
+/// collector at once, before the service waits for anything else.
+#[test]
+fn design_later_38_an_accepted_stop_stops_the_collector_at_once() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let rig = Rig::new();
+    let slot = StuckSlot::default();
+    let thread = super::authority::SupervisorThread::spawn(Arc::clone(&rig.controller), slot.clone())
+        .expect("supervisor thread");
+    let budget = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_millis(400),
+        std::time::Duration::from_millis(100),
+    );
+    budget.begin();
+    (thread.stopper())(&budget);
+    let asked = std::time::Instant::now();
+    while slot.stops.load(std::sync::atomic::Ordering::SeqCst) == 0
+        && asked.elapsed() < std::time::Duration::from_secs(3)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        slot.stops.load(std::sync::atomic::Ordering::SeqCst) >= 1,
+        "the collector was told to stop when the stop was accepted"
+    );
+    let _ = thread.stop_within(&budget);
+}
+
+/// Issue #38, review F3: a collector still running when its stop allowance
+/// ends is reported as the `collector` stage timing out, not as stopped,
+/// even when the supervisor thread itself is joined in time.
+#[test]
+fn design_later_38_a_collector_running_past_its_allowance_is_not_reported_stopped() {
+    use crate::runtime::shutdown::{ShutdownBudget, SystemMonotonic};
+    let rig = Rig::new();
+    let slot = StuckSlot::default();
+    let thread = super::authority::SupervisorThread::spawn(Arc::clone(&rig.controller), slot.clone())
+        .expect("supervisor thread");
+    // The stop accepted with 300 ms left gives the collector that allowance.
+    let accepted = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_millis(300),
+        std::time::Duration::ZERO,
+    );
+    (thread.stopper())(&accepted);
+    // The service's join then has ample budget to see the supervisor end.
+    let joining = ShutdownBudget::new(
+        Arc::new(SystemMonotonic::default()),
+        std::time::Duration::from_secs(10),
+        std::time::Duration::ZERO,
+    );
+    let timeout = thread
+        .stop_within(&joining)
+        .expect_err("a collector still running is not a clean stop");
+    assert_eq!(timeout.stage, "collector");
+}

@@ -507,6 +507,13 @@ impl BackupScheduler {
                 "the backup destination and password file are named by absolute paths",
             ));
         }
+        // A stopping service starts no new backup (issue #38).
+        if self.shared.cancel.load(Ordering::SeqCst) {
+            return Err(OperatorRefusal::new(
+                BACKUP_CANCELLED,
+                "the service is stopping; no backup starts",
+            ));
+        }
         let job = BackupJob {
             destination,
             password,
@@ -567,22 +574,57 @@ impl BackupScheduler {
         self.shared.tick(now_ms)
     }
 
+    /// Quiesces the schedule at once (issue #38): the timer stops, a run in
+    /// progress is cancelled at its next chunk and no new run starts. Does
+    /// not wait.
+    pub fn request_stop(&self) {
+        self.shared.cancel.store(true, Ordering::SeqCst);
+        let _guard = lock(&self.shared.wake_lock);
+        self.shared.wake.notify_all();
+    }
+
     /// Stops the timer and cancels a run in progress.
     pub fn stop(&self) {
-        self.shared.cancel.store(true, Ordering::SeqCst);
-        {
-            let _guard = lock(&self.shared.wake_lock);
-            self.shared.wake.notify_all();
-        }
+        self.request_stop();
         let handle = lock(&self.thread).take();
         if let Some(handle) = handle {
             let _ = handle.join();
+        }
+    }
+
+    /// Stops the timer and waits for it only within what is left of the
+    /// service's shutdown budget. A run still finishing a chunk when the
+    /// budget ends stays owned here (a later [`Self::stop`] or the drop
+    /// joins it) and the timeout is reported; the run itself sees the
+    /// cancellation at its next chunk.
+    pub fn stop_within(
+        &self,
+        budget: &crate::runtime::shutdown::ShutdownBudget,
+    ) -> Result<(), crate::runtime::shutdown::ShutdownTimedOut> {
+        self.request_stop();
+        let handle = lock(&self.thread).take();
+        let Some(handle) = handle else {
+            return Ok(());
+        };
+        match crate::runtime::shutdown::join_within(handle, budget, "backup schedule") {
+            Ok(_) => Ok(()),
+            Err((handle, timeout)) => {
+                *lock(&self.thread) = Some(handle);
+                Err(timeout)
+            }
         }
     }
 }
 
 impl Drop for BackupScheduler {
     fn drop(&mut self) {
-        self.stop();
+        // A stop that already ran out of its shutdown budget is not waited
+        // for again here: the process is exiting.
+        let budget = crate::runtime::shutdown::ShutdownBudget::process();
+        if budget.is_stopping() {
+            let _ = self.stop_within(&budget);
+        } else {
+            self.stop();
+        }
     }
 }

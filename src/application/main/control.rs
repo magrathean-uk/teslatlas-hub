@@ -1,7 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// The process entry: the Tokio runtime is torn down explicitly (issue #38).
+/// After a service stop it gets only what is left of the shared shutdown
+/// budget, the teardown reserve included, so a blocking task still running
+/// cannot hold the process open; other commands keep the plain teardown.
+fn main() -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("tesatlas-hub: the async runtime did not start: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let code = runtime.block_on(hub_main());
+    let budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+    if budget.is_stopping() {
+        runtime.shutdown_timeout(budget.remaining_total());
+    } else {
+        drop(runtime);
+    }
+    code
+}
+
+async fn hub_main() -> ExitCode {
     #[cfg(feature = "credential-relocation-fixture")]
     { return credential_relocation_fixture::entry().await; }
     #[cfg(not(feature = "credential-relocation-fixture"))]
