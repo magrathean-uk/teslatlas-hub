@@ -5,7 +5,7 @@ import XCTest
 @testable import Tesatlas_Hub
 
 final class HubLayoutIntegrityTests: XCTestCase {
-    func testThreeCommandGroupsFitAlignedDesktopRows() throws {
+    func testVehicleCardOffersNoCommandGroupsAndStaysInsideDesktopRow() throws {
         let model = HubController(environment: ["TESATLAS_HUB_UI_PREVIEW": "1"])
         let card = HubVehicleCardView(actions: HubVehicleCardActions(select: { _ in }, command: { _, _ in }))
         card.apply(vehicle: model.snapshot.controlVehicles.first,
@@ -17,13 +17,10 @@ final class HubLayoutIntegrityTests: XCTestCase {
         defer { window.close() }
         window.contentView = card
         card.layoutSubtreeIfNeeded()
-        let commands = descendants(card).compactMap { $0 as? HubActionButton }
-        XCTAssertEqual(commands.count, 3)
-        for button in commands {
-            button.layoutSubtreeIfNeeded()
-            XCTAssertEqual(button.frame.height, 32, accuracy: 0.5)
-            assertContained(button)
-            XCTAssertFalse(button.hubTitleLabel.frame.intersects(button.hubImageView.frame))
+        // DEC-246: the Mac app offers no vehicle action, so the card has no command buttons.
+        XCTAssertEqual(descendants(card).compactMap { $0 as? HubActionButton }.count, 0)
+        for label in descendants(card).compactMap({ $0 as? NSTextField }) where !label.isHidden {
+            XCTAssertTrue(card.bounds.insetBy(dx: -0.5, dy: -0.5).contains(label.convert(label.bounds, to: card)), label.stringValue)
         }
     }
 
@@ -112,7 +109,7 @@ final class HubLayoutIntegrityTests: XCTestCase {
         let document = try XCTUnwrap(scroll.documentView)
         document.layoutSubtreeIfNeeded()
         XCTAssertEqual(dashboard.frame.size, NSSize(width: 820, height: 590))
-        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
+        // With no vehicle actions (DEC-246) the page fits the minimum window; it may not need to scroll.
         let text = descendants(dashboard).compactMap { $0 as? NSTextField }
             .map(\.stringValue).joined(separator: " ")
         for expected in ["Aurora", "Comet", "Imported vehicle history",
@@ -145,7 +142,7 @@ final class HubLayoutIntegrityTests: XCTestCase {
         let document = try XCTUnwrap(scroll.documentView)
         document.layoutSubtreeIfNeeded()
         XCTAssertEqual(vehicles.frame.size, NSSize(width: 820, height: 590))
-        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
+        // With no vehicle actions (DEC-246) the page fits the minimum window; it may not need to scroll.
         XCTAssertTrue(descendants(vehicles).compactMap { $0 as? NSTextField }
             .contains { $0.stringValue == "Aurora" })
 
