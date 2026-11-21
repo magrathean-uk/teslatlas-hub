@@ -735,7 +735,7 @@ impl HubStore {
         let vehicle_key = vehicle_id.to_string();
         // Issue #60: once an import with a publication intent commits, only
         // the head published for that import revision is served.
-        if !physical_v3_import_revision_serves_in(&connection, vehicle_id, snapshot_id) {
+        if !physical_v3_import_revision_serves_in(connection, vehicle_id, snapshot_id) {
             tracing::info!(
                 %vehicle_id,
                 %snapshot_id,
@@ -743,16 +743,16 @@ impl HubStore {
             );
             return Ok(false);
         }
-        if !import_seam_present_in_connection(&connection, &vehicle_key)? {
+        if !import_seam_present_in_connection(connection, &vehicle_key)? {
             return Ok(true);
         }
         let snapshot = snapshot_id.to_string();
-        if !physical_v3_seam_planned_in_connection(&connection, vehicle_id)?.contains(&snapshot) {
+        if !physical_v3_seam_planned_in_connection(connection, vehicle_id)?.contains(&snapshot) {
             return Ok(false);
         }
         // M03-T22: a handback the store's coverage lacks (its write failed)
         // refuses every planned head until the coverage is reconciled.
-        if coverage_unreconciled_in(&connection, &self.database_path)
+        if coverage_unreconciled_in(connection, &self.database_path)
             .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
         {
             tracing::info!(
@@ -766,9 +766,9 @@ impl HubStore {
         // M03-T22: only while the coverage it was planned with is the
         // vehicle's coverage; a window handed back since refuses it until a
         // handback or an import plans the head again.
-        let planned_with = physical_v3_seam_coverage_in_connection(&connection, vehicle_id)?
+        let planned_with = physical_v3_seam_coverage_in_connection(connection, vehicle_id)?
             .remove(&snapshot);
-        let current = closed_coverage_digest_for_vehicle(&connection, &vehicle_key)
+        let current = closed_coverage_digest_for_vehicle(connection, &vehicle_key)
             .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
         let served = planned_with.as_deref() == Some(current.as_str());
         if !served {

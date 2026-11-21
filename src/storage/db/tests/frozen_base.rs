@@ -679,10 +679,13 @@ fn frozen_base_census_json_has_no_frozen_class_until_a_record_exists() {
     let census = store.storage_census_at(1).expect("census");
     assert_eq!(census.frozen_bases, None);
     assert!(!keys(&census).contains(&"frozen_bases".to_owned()));
+    // Reclaim takes the publication gate itself, so the test releases its own first.
+    drop(gate);
     let report = store.reclaim_storage_at(1).expect("reclaim");
     for side in [&report.before, &report.after] {
         assert!(!keys(side).contains(&"frozen_bases".to_owned()));
     }
+    let gate = store.try_acquire_publication_gate().expect("gate again");
     // Once frozen, the class is present (zero while the head is current).
     store.freeze_physical_v3_base(&gate, head.vehicle_id, 1).expect("freeze");
     let census = store.storage_census_at(1).expect("census");
