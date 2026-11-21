@@ -184,7 +184,10 @@ pub struct StorageCensus {
     pub current_heads: StorageCensusClass,
     /// Packs of the vehicles' frozen physical bases that are not a current
     /// head; always needed (DEC-250).
-    pub frozen_bases: StorageCensusClass,
+    /// Absent (and left out of the JSON) while the store has no frozen
+    /// record, so a store that never froze keeps its earlier census shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frozen_bases: Option<StorageCensusClass>,
     pub import_bases: StorageCensusClass,
     pub retained_prior_heads: StorageCensusClass,
     pub deltas: StorageCensusClass,
@@ -558,13 +561,16 @@ fn kept_stage_files(
     Ok(files)
 }
 
-fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
+fn storage_census_of(
+    connection: &Connection,
+    files: &[PackStorageFile],
+) -> Result<StorageCensus, StoreError> {
     let mut census = StorageCensus::default();
     for file in files {
         let reclaimable = !file.needed;
         let class = match file.class {
             Some(PackStorageClass::CurrentHead) => &mut census.current_heads,
-            Some(PackStorageClass::FrozenBase) => &mut census.frozen_bases,
+            Some(PackStorageClass::FrozenBase) => census.frozen_bases.get_or_insert_default(),
             Some(PackStorageClass::ImportBase) => &mut census.import_bases,
             Some(PackStorageClass::RetainedPriorHead) => &mut census.retained_prior_heads,
             Some(PackStorageClass::Delta) => &mut census.deltas,
@@ -575,7 +581,11 @@ fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
         class.add(file.bytes, reclaimable);
         census.total.add(file.bytes, reclaimable);
     }
-    census
+    // A frozen record whose packs are all current heads still has its class.
+    if !frozen_physical_bases_in(connection)?.is_empty() {
+        census.frozen_bases.get_or_insert_default();
+    }
+    Ok(census)
 }
 
 impl HubStore {
@@ -587,11 +597,10 @@ impl HubStore {
 
     fn storage_census_at(&self, now_ms: i64) -> Result<StorageCensus, StoreError> {
         let connection = self.open_read_only_connection()?;
-        Ok(storage_census_of(&pack_storage_files(
+        storage_census_of(
             &connection,
-            self.packs_dir(),
-            now_ms,
-        )?))
+            &pack_storage_files(&connection, self.packs_dir(), now_ms)?,
+        )
     }
 
     /// Remove exactly the pack files the census counts as reclaimable, then
@@ -607,7 +616,7 @@ impl HubStore {
         let _publication_gate = self.try_acquire_publication_gate()?;
         let mut connection = self.open()?;
         let files = pack_storage_files(&connection, self.packs_dir(), now_ms)?;
-        let before = storage_census_of(&files);
+        let before = storage_census_of(&connection, &files)?;
         let (mut reclaimed_files, mut reclaimed_bytes) = (0_u64, 0_u64);
         for file in files.iter().filter(|file| !file.needed) {
             let bytes = match statat(&*file.directory, file.name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
@@ -644,7 +653,8 @@ impl HubStore {
             now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS),
         )?;
         transaction.commit().map_err(StoreError::LineageCatalog)?;
-        let after = storage_census_of(&pack_storage_files(&connection, self.packs_dir(), now_ms)?);
+        let after =
+            storage_census_of(&connection, &pack_storage_files(&connection, self.packs_dir(), now_ms)?)?;
         Ok(StorageReclaimReport {
             before,
             reclaimed_files,

@@ -333,7 +333,7 @@ fn frozen_base_census_reclaim_keeps_and_counts_frozen_packs_twice_identically() 
         reclaimable_files: 0,
         reclaimable_bytes: 0,
     };
-    assert_eq!(census.frozen_bases, frozen_class);
+    assert_eq!(census.frozen_bases, Some(frozen_class));
     assert!(census.total.reclaimable_files > 0);
 
     let first = store.reclaim_storage_at(fixture.now_ms).expect("first reclaim");
@@ -343,8 +343,8 @@ fn frozen_base_census_reclaim_keeps_and_counts_frozen_packs_twice_identically() 
     assert_eq!(first.before, census);
     assert!(first.reclaimed_files > 0);
     for report in [&first, &second, &third] {
-        assert_eq!(report.before.frozen_bases, frozen_class);
-        assert_eq!(report.after.frozen_bases, frozen_class);
+        assert_eq!(report.before.frozen_bases, Some(frozen_class));
+        assert_eq!(report.after.frozen_bases, Some(frozen_class));
     }
     assert_eq!(second.before, first.after);
     assert_eq!((second.reclaimed_files, second.reclaimed_bytes), (0, 0));
@@ -378,7 +378,7 @@ fn frozen_base_backup_and_restore_keep_the_frozen_packs() {
     restored_store.repair_at(fixture.now_ms).expect("restored pack collection");
     let first = restored_store.reclaim_storage_at(fixture.now_ms).expect("restored reclaim");
     let second = restored_store.reclaim_storage_at(fixture.now_ms).expect("restored reclaim again");
-    assert_eq!(first.after.frozen_bases.files, fixture.first.manifest.chunks.len() as u64);
+    assert_eq!(first.after.frozen_bases.expect("frozen class").files, fixture.first.manifest.chunks.len() as u64);
     assert_eq!(first.after, second.after);
     assert_frozen_packs_intact(&restored_store, &fixture.base, &fixture.logical_at_freeze);
 }
@@ -658,4 +658,34 @@ fn frozen_base_canonical_one_digit_change_is_refused_at_every_gate() {
     ));
     put_metadata(store, &key, &valid);
     store.catalogue_check().expect("whole again");
+}
+
+#[test]
+fn frozen_base_census_json_has_no_frozen_class_until_a_record_exists() {
+    let (temporary, store) = try_test_store().expect("store");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let head = store
+        .stage_pending_physical_v3_admission(&gate, candidate(temporary.path(), &store, "h", 2, 1))
+        .expect("head");
+    let keys = |census: &StorageCensus| -> Vec<String> {
+        serde_json::to_value(census)
+            .expect("census json")
+            .as_object()
+            .expect("object")
+            .keys()
+            .cloned()
+            .collect()
+    };
+    let census = store.storage_census_at(1).expect("census");
+    assert_eq!(census.frozen_bases, None);
+    assert!(!keys(&census).contains(&"frozen_bases".to_owned()));
+    let report = store.reclaim_storage_at(1).expect("reclaim");
+    for side in [&report.before, &report.after] {
+        assert!(!keys(side).contains(&"frozen_bases".to_owned()));
+    }
+    // Once frozen, the class is present (zero while the head is current).
+    store.freeze_physical_v3_base(&gate, head.vehicle_id, 1).expect("freeze");
+    let census = store.storage_census_at(1).expect("census");
+    assert_eq!(census.frozen_bases, Some(StorageCensusClass::default()));
+    assert!(keys(&census).contains(&"frozen_bases".to_owned()));
 }
