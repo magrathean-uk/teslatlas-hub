@@ -1711,6 +1711,62 @@ fn backup_refuses_a_live_unconverted_legacy_replay_base() {
     assert_eq!(store.physical_v3_kept(vehicle_id).expect("record"), Some(legacy));
 }
 
+/// Issue #60 review, finding 1: while an import's publication is pending
+/// (here an intent that does not read back) both formats refuse under the
+/// shared gate, naming the vehicle, before any kept conversion: a legacy
+/// base stays exactly as it was.
+#[test]
+fn backup_refuses_both_formats_while_an_import_publication_is_pending() {
+    let (temporary, store) = create_fixture();
+    let vehicle_id = Uuid::new_v4();
+    let kept_directory = store.packs_dir().join("physical-kept");
+    fs::create_dir_all(kept_directory.join(".staging")).expect("legacy staging");
+    fs::write(kept_directory.join(".staging").join(format!("{vehicle_id}.sqlite")), b"raw")
+        .expect("legacy stage");
+    fs::write(kept_directory.join(format!("{vehicle_id}.source.json")), b"{}")
+        .expect("legacy source");
+    let legacy = crate::db::PhysicalV3Kept {
+        stage: sha256_bytes_hex(b"raw"),
+        source: sha256_bytes_hex(b"{}"),
+        archive: None,
+    };
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    assert!(
+        store
+            .swap_physical_v3_kept(&gate, vehicle_id, None, Some(&legacy), false)
+            .expect("legacy record")
+    );
+    drop(gate);
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO hub_metadata(key, value) VALUES(?1, '{}')",
+            [format!("import_publication_intent:{vehicle_id}")],
+        )
+        .expect("pending intent");
+
+    let refused = temporary.path().join("pending-refused");
+    let error = create_data_backup(&store, &refused)
+        .expect_err("a pending publication refuses the backup")
+        .to_string();
+    assert!(error.contains(&vehicle_id.to_string()), "{error}");
+    assert!(error.contains("finishes the publication locally"), "{error}");
+    assert!(!refused.exists(), "nothing is published");
+    let destination = temporary.path().join("pending-encrypted");
+    fs::create_dir(&destination).expect("destination");
+    let request = kept_archive_encrypted_request(&destination);
+    let error = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect_err("the encrypted backup refuses it too")
+        .to_string();
+    crate::data_recovery::encrypted_backup::clear_hook();
+    assert!(error.contains(&vehicle_id.to_string()), "{error}");
+    assert!(error.contains("finishes the publication locally"), "{error}");
+    // No conversion ran: the legacy base and its record are untouched.
+    assert!(kept_directory.join(format!("{vehicle_id}.source.json")).exists());
+    assert_eq!(store.physical_v3_kept(vehicle_id).expect("record"), Some(legacy));
+}
+
 #[test]
 fn encrypted_backup_refuses_a_kept_archive_changed_or_missing() {
     let (temporary, store) = create_fixture();

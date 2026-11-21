@@ -116,6 +116,12 @@ pub enum StoreError {
          archive first, and the conversion failed: {reason}"
     )]
     BackupLegacyKeptConversion { vehicle_id: Uuid, reason: String },
+    #[error(
+        "a Hub backup waits for the import of vehicle {0} to finish its phone-sync publication; \
+         start the Hub (or run the import again) so it finishes the publication locally, then \
+         retry the backup"
+    )]
+    BackupImportPublicationPending(Uuid),
     #[error("cannot copy Hub backup pack from {source_path} to {destination}: {source_error}")]
     CopyBackupPack {
         source_path: PathBuf,
@@ -649,6 +655,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::BackupCapacityOverflow => (),
                 StoreError::BackupLegacyKeptBase(..) => (),
                 StoreError::BackupLegacyKeptConversion { .. } => (),
+                StoreError::BackupImportPublicationPending(..) => (),
                 StoreError::CopyBackupPack { .. } => (),
                 StoreError::BackupPackSizeMismatch { .. } => (),
                 StoreError::OpenBackupPack(..) => (),
@@ -889,6 +896,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
             vehicle_id: Uuid::nil(),
             reason: String::new(),
         });
+        check_store_error(StoreError::BackupImportPublicationPending(Uuid::nil()));
         check_store_error(StoreError::CopyBackupPack {
             source_path: example(),
             destination: example(),

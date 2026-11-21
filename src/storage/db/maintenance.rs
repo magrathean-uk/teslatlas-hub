@@ -597,6 +597,10 @@ impl HubStore {
 
     pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
         let publication_gate = self.try_acquire_publication_gate()?;
+        // Issue #60: an import whose publication is still pending names a
+        // capture no backup carries, so the backup waits for it, before any
+        // kept conversion.
+        require_no_pending_import_publication_in(&self.open_read_only_connection()?)?;
         // A live legacy raw replay base is converted to a kept archive under
         // this gate, so the backup carries it (the refusal below stays for a
         // base that did not convert).

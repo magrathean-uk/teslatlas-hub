@@ -174,6 +174,42 @@ fn physical_v3_import_revision_serves_in(
     }
 }
 
+/// Refuses a new backup while an import's publication is pending (issue #60):
+/// an intent its commit made current, or one that does not read back, names
+/// a capture under `packs/import-publication` that no backup carries, so a
+/// restored Hub could neither finish that publication nor serve the older
+/// head. An intent of a run that never committed changes no route and is
+/// dropped at the restored Hub's next start.
+pub(crate) fn require_no_pending_import_publication_in(
+    connection: &Connection,
+) -> Result<(), StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'import_publication_intent:%' \
+             ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    for (key, value) in rows {
+        let staging_only = matches!(
+            serde_json::from_str::<ImportPublicationIntent>(&value),
+            Ok(intent) if !intent.committed
+        );
+        if !staging_only {
+            let vehicle_id = key
+                .strip_prefix(IMPORT_PUBLICATION_INTENT_PREFIX)
+                .and_then(|id| id.parse().ok())
+                .unwrap_or_else(Uuid::nil);
+            return Err(StoreError::BackupImportPublicationPending(vehicle_id));
+        }
+    }
+    Ok(())
+}
+
 impl HubStore {
     /// Every recorded import publication intent, by vehicle; one that does
     /// not read back is `None`.

@@ -127,6 +127,16 @@ fn capture_files(fixture: &Fixture) -> Vec<String> {
     names
 }
 
+/// Runs `run` with the fixture's publication gate released (a backup or a
+/// reclamation takes the gate itself), then takes the gate back.
+fn with_gate_released<T>(fixture: Fixture, run: impl FnOnce(&HubStore) -> T) -> (Fixture, T) {
+    let Fixture { _temporary, store, binding, car, gate, cursor_key } = fixture;
+    drop(gate);
+    let result = run(&store);
+    let gate = store.try_acquire_publication_gate().expect("gate taken back");
+    (Fixture { _temporary, store, binding, car, gate, cursor_key }, result)
+}
+
 /// The 1.4 client and the schema-2.1 lineage hold the same drives.
 fn assert_routes_agree(fixture: &Fixture, at: &str) {
     let env = paired(fixture);
@@ -365,4 +375,49 @@ fn design_later_60_seam_interruptions_after_adoption_and_publication_resume_idem
             "{point}: the handback finds the import's head current"
         );
     }
+}
+
+/// Review finding 1: a backup taken after a final import committed but
+/// before its publication finished would carry the intent and the revision
+/// without the capture, so the restored Hub could never finish it. Both
+/// formats share the refusal at `begin_backup_snapshot`, under the gate,
+/// naming the vehicle; once the restart finishes the publication the backup
+/// goes ahead.
+#[test]
+fn design_later_60_backup_waits_for_a_pending_import_publication() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_physical(&fixture, history_stage(root.path(), "base", &base_history()), None)
+        .expect("base head")
+        .expect("served base");
+    let (_, stage, _) =
+        commit_captured_import(&fixture, root.path(), "successor", &successor_history(), T + 3 * HOUR);
+    drop(stage);
+    let vehicle = fixture.binding.vehicle_id.to_string();
+    let outside = crate::private_tempdir().expect("backup root");
+    let refused = outside.path().join("refused");
+    let (fixture, errors) = with_gate_released(fixture, |store| {
+        [
+            store.begin_backup_snapshot().err().map(|error| error.to_string()),
+            crate::data_recovery::create_data_backup(store, &refused)
+                .err()
+                .map(|error| error.to_string()),
+        ]
+    });
+    for error in errors {
+        let error = error.expect("the backup waits for the publication");
+        assert!(error.contains(&vehicle), "{error}");
+        assert!(error.contains("finishes the publication locally"), "{error}");
+    }
+    assert!(!refused.exists(), "nothing is published");
+
+    assert!(
+        matches!(resume(&fixture).as_slice(), [(_, ImportPublicationOutcome::Finished(Some(_)))]),
+        "the restart finishes the publication"
+    );
+    let finished = outside.path().join("finished");
+    let (_fixture, created) = with_gate_released(fixture, |store| {
+        crate::data_recovery::create_data_backup(store, &finished).map(|_| ())
+    });
+    created.expect("the backup goes ahead once the publication finished");
 }
