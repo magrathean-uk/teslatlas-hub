@@ -590,3 +590,70 @@ fn design_later_98_read_only_inventory_reads_a_v83_store_without_the_lease_table
         .expect("schema");
     assert!(!present, "the read-only path creates nothing");
 }
+
+fn catalogued_bytes(store: &HubStore, digest: Sha256Digest) -> i64 {
+    store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT compressed_bytes FROM pending_physical_v3_packs WHERE sha256 = ?1
+             UNION ALL SELECT compressed_bytes FROM physical_v3_delta_packs WHERE sha256 = ?1
+             LIMIT 1",
+            [digest.to_string()],
+            |row| row.get(0),
+        )
+        .expect("catalogued size")
+}
+
+#[test]
+fn design_later_98_offer_byte_budgets_cap_each_device_and_the_store() {
+    let fixture = rotated(0);
+    let store = &fixture.store;
+    let vehicle_id = fixture.binding.vehicle_id;
+    let head = fixture.current.receipt_id.clone();
+    // A fresh device: the fixture's own offer would count against the store.
+    store.revoke_device_at(fixture.device, fixture.now_ms).expect("revoke fixture device");
+    let objects = fixture
+        .current
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| PackOffer { digest: chunk.sha256, kind: PackOfferKind::Physical })
+        .chain(fixture.delta_digests.iter().map(|digest| PackOffer {
+            digest: *digest,
+            kind: PackOfferKind::Delta,
+        }))
+        .collect::<Vec<_>>();
+    assert!(objects.len() >= 3, "the fixture offers at least three objects");
+    let size = |index: usize| catalogued_bytes(store, objects[index].digest);
+    let at = fixture.now_ms + 10;
+    let offer = |device: Uuid, budgets: PackOfferBudgets| {
+        store
+            .record_pack_offers_with_budgets_at(device, vehicle_id, &head, &objects, at, budgets)
+            .expect("offer is served")
+    };
+    // Device cap: only the first object fits; the response is still served.
+    let device_cap = PackOfferBudgets { device_bytes: size(0), store_bytes: i64::MAX };
+    assert_eq!(offer(fixture.other_device, device_cap), PackOfferRecord::Recorded);
+    assert!(leased(&fixture, fixture.other_device, objects[0].digest, at));
+    for later in &objects[1..] {
+        assert!(!leased(&fixture, fixture.other_device, later.digest, at));
+    }
+    // A re-offer of the leased object is not charged again.
+    assert_eq!(offer(fixture.other_device, device_cap), PackOfferRecord::Recorded);
+    assert!(leased(&fixture, fixture.other_device, objects[0].digest, at));
+    // Store cap: the first object is already held across the store, so a
+    // third device fits it and the second object, and nothing after.
+    let third = pair(store, "third phone", at);
+    let store_cap = PackOfferBudgets { device_bytes: i64::MAX, store_bytes: size(0) + size(1) };
+    assert_eq!(offer(third, store_cap), PackOfferRecord::Recorded);
+    assert!(leased(&fixture, third, objects[0].digest, at));
+    assert!(leased(&fixture, third, objects[1].digest, at));
+    for later in &objects[2..] {
+        if objects[..2].iter().all(|held| held.digest != later.digest) {
+            assert!(!leased(&fixture, third, later.digest, at));
+        }
+    }
+    // The shipped budgets are 1 GiB per device and 4 GiB per store.
+    assert_eq!((MAX_LEASED_BYTES_PER_DEVICE, MAX_LEASED_BYTES_PER_STORE), (1 << 30, 4 << 30));
+}

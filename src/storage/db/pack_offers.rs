@@ -36,6 +36,26 @@ const MAX_PACK_OFFERS_PER_DEVICE: i64 = 8_192;
 /// Live leases across the store.
 const MAX_PACK_OFFERS_PER_STORE: i64 = 65_536;
 
+/// Byte budgets of the objects leases keep beyond the current catalogue
+/// (issue #98 review finding 6). Every live lease is counted, current object
+/// or not, because a rotation turns a leased current object into a
+/// non-current one without another offer; a digest counts once per device
+/// and once across the store. An offered object that does not fit gets no
+/// lease: the response is still served, and that object stays fetchable only
+/// while it is current (the behaviour before #98). So the non-current bytes
+/// leases hold never exceed 1 GiB for one device or 4 GiB for the store.
+const MAX_LEASED_BYTES_PER_DEVICE: i64 = 1 << 30;
+/// See [`MAX_LEASED_BYTES_PER_DEVICE`].
+const MAX_LEASED_BYTES_PER_STORE: i64 = 4 << 30;
+
+/// The two byte budgets of [`MAX_LEASED_BYTES_PER_DEVICE`]; tests pass
+/// smaller ones.
+#[derive(Debug, Clone, Copy)]
+struct PackOfferBudgets {
+    device_bytes: i64,
+    store_bytes: i64,
+}
+
 /// The lease predicate shared by the fetch lookup, the reference set and the
 /// cleanup: the device is not revoked, it still holds the vehicle grant, the
 /// vehicle is active and its source generation is the offered one.
@@ -185,6 +205,28 @@ impl HubStore {
         offers: &[PackOffer],
         now_ms: i64,
     ) -> Result<PackOfferRecord, StoreError> {
+        self.record_pack_offers_with_budgets_at(
+            device_id,
+            vehicle_id,
+            head_receipt_id,
+            offers,
+            now_ms,
+            PackOfferBudgets {
+                device_bytes: MAX_LEASED_BYTES_PER_DEVICE,
+                store_bytes: MAX_LEASED_BYTES_PER_STORE,
+            },
+        )
+    }
+
+    fn record_pack_offers_with_budgets_at(
+        &self,
+        device_id: Uuid,
+        vehicle_id: Uuid,
+        head_receipt_id: &str,
+        offers: &[PackOffer],
+        now_ms: i64,
+        budgets: PackOfferBudgets,
+    ) -> Result<PackOfferRecord, StoreError> {
         if offers.is_empty() {
             return Ok(PackOfferRecord::Recorded);
         }
@@ -242,6 +284,9 @@ impl HubStore {
             tracing::info!(%vehicle_id, "pack offer refused: the device or its grant moved");
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
+        let mut device_bytes = leased_bytes(&transaction, Some(&device), now_ms)?;
+        let mut store_bytes = leased_bytes(&transaction, None, now_ms)?;
+        let mut unleased = 0_usize;
         for offer in offers {
             let digest = offer.digest.to_string();
             let bytes: Option<i64> = transaction
@@ -256,6 +301,24 @@ impl HubStore {
                 tracing::info!(%vehicle_id, "pack offer refused: the object left the catalogue");
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             };
+            let device_charge = if holds_live_lease(&transaction, &digest, Some(&device), now_ms)? {
+                0
+            } else {
+                bytes
+            };
+            let store_charge = if holds_live_lease(&transaction, &digest, None, now_ms)? {
+                0
+            } else {
+                bytes
+            };
+            if device_bytes + device_charge > budgets.device_bytes
+                || store_bytes + store_charge > budgets.store_bytes
+            {
+                unleased += 1;
+                continue;
+            }
+            device_bytes += device_charge;
+            store_bytes += store_charge;
             transaction
                 .execute(
                     "INSERT INTO device_pack_offers(device_id, vehicle_id, sha256, kind,
@@ -297,6 +360,13 @@ impl HubStore {
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
         transaction.commit().map_err(StoreError::Query)?;
+        if unleased > 0 {
+            tracing::info!(
+                %vehicle_id,
+                unleased,
+                "offered objects past the lease byte budget get no lease"
+            );
+        }
         Ok(PackOfferRecord::Recorded)
     }
 
@@ -341,6 +411,53 @@ impl HubStore {
             kind,
         )))
     }
+}
+
+/// The bytes unexpired live leases hold at `now_ms`, each digest once: of one
+/// device, or (`None`) across the store.
+fn leased_bytes(
+    transaction: &Transaction<'_>,
+    device: Option<&str>,
+    now_ms: i64,
+) -> Result<i64, StoreError> {
+    transaction
+        .query_row(
+            concat!(
+                "SELECT COALESCE(sum(bytes), 0) FROM (
+                   SELECT offer.sha256, max(offer.compressed_bytes) AS bytes
+                     FROM device_pack_offers AS offer
+                    WHERE (?1 IS NULL OR offer.device_id = ?1)
+                      AND offer.expires_at_ms > ?2 AND ",
+                live_pack_offer_predicate!(),
+                " GROUP BY offer.sha256)"
+            ),
+            params![device, now_ms],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)
+}
+
+/// Whether an unexpired live lease at `now_ms` names `digest`: of one device,
+/// or (`None`) of any device.
+fn holds_live_lease(
+    transaction: &Transaction<'_>,
+    digest: &str,
+    device: Option<&str>,
+    now_ms: i64,
+) -> Result<bool, StoreError> {
+    transaction
+        .query_row(
+            concat!(
+                "SELECT EXISTS(SELECT 1 FROM device_pack_offers AS offer
+                  WHERE offer.sha256 = ?1 AND (?2 IS NULL OR offer.device_id = ?2)
+                    AND offer.expires_at_ms > ?3 AND ",
+                live_pack_offer_predicate!(),
+                ")"
+            ),
+            params![digest, device, now_ms],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)
 }
 
 /// The objects live leases keep, for the shared pack reference set: a lease
