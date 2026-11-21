@@ -609,10 +609,53 @@ fn frozen_base_record_claiming_a_hub_dimension_row_is_refused() {
         .expect("addresses");
     addresses.hub_rows += 1;
     forged.rows += 1;
+    // Sealed again, so only the ownership rule can refuse it.
+    forged.integrity = frozen_physical_base_integrity(&forged).expect("integrity");
     let key = format!("physical_v3_frozen_base:{}", forged.vehicle_id);
     let value = serde_json::to_string(&forged).expect("value");
     assert!(matches!(
         frozen_physical_base_from_row(&key, &value),
         Err(StoreError::FrozenPhysicalBaseInvalid { .. })
     ));
+}
+
+#[test]
+fn frozen_base_canonical_one_digit_change_is_refused_at_every_gate() {
+    let fixture = frozen_fixture();
+    let store = &fixture.store;
+    let vehicle_id = fixture.base.vehicle_id;
+    let key = format!("physical_v3_frozen_base:{vehicle_id}");
+    let valid = frozen_value(store, vehicle_id).expect("record");
+    // Flip the last hex digit of `logical`: still lower-case hex, still the
+    // canonical serialisation, every pack body still intact.
+    let mut flipped = fixture.base.clone();
+    let last = flipped.logical.pop().expect("digit");
+    flipped.logical.push(if last == '0' { '1' } else { '0' });
+    let damaged = serde_json::to_string(&flipped).expect("value");
+    assert!(matches!(
+        frozen_physical_base_from_row(&key, &damaged),
+        Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+    ));
+    // A change to another field (the freeze time) is refused as well.
+    let mut later = fixture.base.clone();
+    later.frozen_at_ms += 1;
+    assert!(frozen_physical_base_from_row(&key, &serde_json::to_string(&later).expect("value")).is_err());
+    assert!(frozen_physical_base_from_row(&key, &valid).is_ok());
+
+    put_metadata(store, &key, &damaged);
+    // Reference selection (reclaim) and the directory backup refuse.
+    assert!(matches!(
+        store.reclaim_storage_at(fixture.now_ms),
+        Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+    ));
+    let outside = crate::private_tempdir().expect("backup parent");
+    let refused = outside.path().join("refused");
+    crate::data_recovery::create_data_backup(store, &refused).expect_err("backup refuses");
+    // Restore opens the restored catalogue and runs this same check.
+    assert!(matches!(
+        store.catalogue_check(),
+        Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+    ));
+    put_metadata(store, &key, &valid);
+    store.catalogue_check().expect("whole again");
 }

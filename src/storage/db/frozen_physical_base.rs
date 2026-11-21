@@ -73,6 +73,9 @@ pub(crate) struct FrozenPhysicalBase {
     pub(crate) rows: u64,
     pub(crate) provenance: FrozenPhysicalBaseProvenance,
     pub(crate) frozen_at_ms: i64,
+    /// [`frozen_physical_base_integrity`] over every other field, so a
+    /// canonical one-digit change of any field is detected.
+    pub(crate) integrity: String,
 }
 
 /// How the frozen rows divide between the source import and the Hub, and
@@ -202,6 +205,17 @@ pub(crate) fn frozen_physical_base_scan(
     })
 }
 
+/// The integrity value of a record: SHA-256 over the canonical serialisation
+/// of every field but `integrity` itself (held empty while it is computed).
+fn frozen_physical_base_integrity(base: &FrozenPhysicalBase) -> Result<String, serde_json::Error> {
+    let mut bare = base.clone();
+    bare.integrity = String::new();
+    let mut hash = Sha256::new();
+    hash.update(b"teslatlas-hub frozen physical base integrity v1\n");
+    hash.update(serde_json::to_string(&bare)?.as_bytes());
+    Ok(hex::encode(hash.finalize()))
+}
+
 fn canonical_sha256_hex(digest: &str) -> bool {
     digest.len() == 64 && digest.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
@@ -222,6 +236,9 @@ fn frozen_physical_base_from_row(key: &str, value: &str) -> Result<FrozenPhysica
     }
     let base: FrozenPhysicalBase = serde_json::from_str(value).map_err(|_| invalid())?;
     if serde_json::to_string(&base).map_err(|_| invalid())? != value {
+        return Err(invalid());
+    }
+    if frozen_physical_base_integrity(&base).map_err(|_| invalid())? != base.integrity {
         return Err(invalid());
     }
     let binding = &base.binding;
@@ -435,7 +452,7 @@ impl HubStore {
             .physical_v3_handback_plan(vehicle_id)?
             .filter(|plan| plan.snapshot_id == admission.snapshot_id.to_string())
             .map(|plan| plan.inputs);
-        let base = FrozenPhysicalBase {
+        let mut base = FrozenPhysicalBase {
             format: FROZEN_PHYSICAL_BASE_FORMAT,
             vehicle_id,
             snapshot_id: admission.snapshot_id,
@@ -457,7 +474,10 @@ impl HubStore {
                 tables: scan.tables,
             },
             frozen_at_ms,
+            integrity: String::new(),
         };
+        base.integrity =
+            frozen_physical_base_integrity(&base).map_err(StoreError::SerializeLifecycleRow)?;
         let value = serde_json::to_string(&base).map_err(StoreError::SerializeLifecycleRow)?;
         // The record must read back as written before it may own anything.
         frozen_physical_base_from_row(&frozen_physical_base_key(vehicle_id), &value)?;
