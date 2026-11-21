@@ -211,7 +211,9 @@ fn keep_physical_source(
                 "the import's physical stage was not kept; a handback leaves the 1.4 head refused \
                  until the next import"
             );
-            forget_physical_kept(store, publication_gate, vehicle_id);
+            if let Err(reason) = forget_physical_kept(store, publication_gate, vehicle_id) {
+                tracing::warn!(%vehicle_id, %reason, "the failed keep's record was not forgotten");
+            }
             None
         }
     }
@@ -410,15 +412,39 @@ fn write_private_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String
     })
 }
 
-/// Forgets what is kept for the vehicle: the record, then the files.
-fn forget_physical_kept(store: &HubStore, publication_gate: &PublicationGate, vehicle_id: Uuid) {
-    let _ = store.record_physical_v3_kept(publication_gate, vehicle_id, None);
-    let _ = store.record_physical_v3_handback_plan(publication_gate, vehicle_id, None);
-    remove_superseded_kept_files(store, vehicle_id, None);
+/// Forgets what is kept for the vehicle: the record, then the files. The files
+/// go only against the record the catalogue actually holds afterwards (read
+/// again), so a failed removal never unlinks what a surviving record names; a
+/// failure to remove or to read again is returned and leaves every file.
+fn forget_physical_kept(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    vehicle_id: Uuid,
+) -> Result<(), String> {
+    #[cfg(test)]
+    let injected = FAIL_KEPT_REMOVAL.with(|fail| fail.replace(false));
+    #[cfg(not(test))]
+    let injected = false;
+    let removed = if injected {
+        Err("the kept record removal failed (injected)".to_string())
+    } else {
+        store
+            .record_physical_v3_kept(publication_gate, vehicle_id, None)
+            .map_err(|error| error.to_string())
+    };
+    let plan = store
+        .record_physical_v3_handback_plan(publication_gate, vehicle_id, None)
+        .map_err(|error| error.to_string());
+    let surviving = store.physical_v3_kept(vehicle_id).map_err(|error| error.to_string())?;
+    remove_superseded_kept_files(store, vehicle_id, surviving.as_ref());
+    removed?;
+    plan
 }
 
 #[cfg(test)]
 thread_local! {
+    /// Fails the next kept-record removal of `forget_physical_kept` (tests).
+    pub(super) static FAIL_KEPT_REMOVAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Fails a handback right after its store transaction commits (tests).
     static FAIL_AFTER_HANDBACK_COMMIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -472,8 +498,12 @@ fn publish_vehicle_after_handback(
     }
     match store.physical_v3_current_head_served(vehicle_id)? {
         None => {
-            forget_physical_kept(store, publication_gate, vehicle_id);
-            return Ok(HandbackPhysicalOutcome::Pruned);
+            return match forget_physical_kept(store, publication_gate, vehicle_id) {
+                Ok(()) => Ok(HandbackPhysicalOutcome::Pruned),
+                Err(reason) => Ok(HandbackPhysicalOutcome::Withheld(format!(
+                    "the kept record was not forgotten: {reason}"
+                ))),
+            };
         }
         Some(true) => return Ok(HandbackPhysicalOutcome::Current),
         Some(false) => {}

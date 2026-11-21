@@ -438,3 +438,23 @@ fn handback_kept_archive_import_keep_crash_points() {
         assert_only_the_recorded_pair(&fixture);
     }
 }
+
+/// A failed removal of the kept record is returned, and every file the
+/// surviving record names stays, for an archive base and a legacy base.
+#[test]
+fn forget_kept_with_a_failed_removal_leaves_every_referenced_file() {
+    for legacy in [false, true] {
+        let (fixture, _root, _env) = planned_then_refused(true);
+        if legacy {
+            make_legacy(&fixture);
+        }
+        let before = kept_files(&fixture);
+        let record = kept_record(&fixture);
+        FAIL_KEPT_REMOVAL.with(|fail| fail.set(true));
+        let outcome = forget_physical_kept(&fixture.store, &fixture.gate, fixture.binding.vehicle_id);
+        assert!(outcome.is_err(), "the failed removal is returned");
+        assert_eq!(kept_record(&fixture), record, "the record survives");
+        assert_eq!(kept_files(&fixture), before, "every referenced file stays");
+        assert_only_the_recorded_pair(&fixture);
+    }
+}
