@@ -1366,7 +1366,7 @@ pub(crate) fn insert_signed_month_fixture(
         &month,
         0,
         0,
-        &pack_digest,
+        pack_digest,
         100,
         100,
         now_ms,
