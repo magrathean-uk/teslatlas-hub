@@ -352,3 +352,115 @@ async fn design_later_109_issued_prepared_pack_stays_fetchable_across_rotations(
         app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
     assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// Head A of a fresh store, its chunks leased to `phone`, then rotated to B.
+struct LeasedRotation {
+    _temp: tempfile::TempDir,
+    store: HubStore,
+    binding: crate::hub_pack::ProjectionBinding,
+    first: crate::db::PendingPhysicalV3Admission,
+    current: crate::db::PendingPhysicalV3Admission,
+    phone: Paired,
+    now: i64,
+}
+
+fn leased_rotation() -> LeasedRotation {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x98; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 1, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    drop(gate);
+    let phone = pair(&store, "leased phone", now);
+    let offers = first
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| crate::db::PackOffer {
+            digest: chunk.sha256,
+            kind: crate::db::PackOfferKind::Physical,
+        })
+        .collect::<Vec<_>>();
+    store
+        .record_pack_offers_at(phone.device_id, binding.vehicle_id, binding.generation, &offers, now)
+        .expect("A leased");
+    let current = rotate(&store, temp.path(), &key, &first, "b", now + 1);
+    LeasedRotation { _temp: temp, store, binding, first, current, phone, now }
+}
+
+fn move_generation(store: &HubStore, vehicle_id: Uuid, by: i64) {
+    store
+        .open()
+        .unwrap()
+        .execute(
+            "UPDATE sources SET generation = generation + ?2 WHERE source_id =
+               (SELECT source_id FROM vehicles WHERE vehicle_id = ?1)",
+            rusqlite::params![vehicle_id.to_string(), by],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn design_later_98_leased_download_stops_when_the_grant_or_generation_moves() {
+    let fixture = leased_rotation();
+    let store = &fixture.store;
+    let digest = fixture.first.manifest.chunks[0].sha256;
+    let device = fixture.phone.device_id;
+    let grant = |present: bool| {
+        let connection = store.open().unwrap();
+        if present {
+            connection
+                .execute(
+                    "INSERT INTO device_vehicle_grants(device_id, vehicle_id, granted_at_ms)
+                     VALUES (?1, ?2, ?3)",
+                    rusqlite::params![
+                        device.to_string(),
+                        fixture.binding.vehicle_id.to_string(),
+                        fixture.now
+                    ],
+                )
+                .unwrap();
+        } else {
+            connection
+                .execute(
+                    "DELETE FROM device_vehicle_grants WHERE device_id = ?1",
+                    rusqlite::params![device.to_string()],
+                )
+                .unwrap();
+        }
+    };
+    for case in ["grant", "generation"] {
+        let slots = Arc::new(tokio::sync::Semaphore::new(1));
+        let mut body = verified_pack_body(
+            Bytes::from(vec![7; 512 * 1024]),
+            slots.clone().acquire_owned().await.expect("slot"),
+            PackDeviceSlot {
+                device_id: device,
+                counts: Arc::new(Mutex::new(HashMap::from([(device, 1)]))),
+                authorization: Some(Arc::new(PackStreamAuthorization {
+                    store: Arc::new(store.clone()),
+                    bearer: zeroize::Zeroizing::new(fixture.phone.bearer.clone()),
+                    lease: Some(digest),
+                })),
+            },
+            Duration::from_secs(2),
+        );
+        let first = body.frame().await.expect("first chunk");
+        assert!(first.is_ok(), "{case}: the leased body starts");
+        match case {
+            "grant" => grant(false),
+            _ => move_generation(store, fixture.binding.vehicle_id, 1),
+        }
+        let next = body.frame().await.expect("refusal frame");
+        assert!(next.is_err(), "{case}: the next chunk is refused");
+        assert!(body.frame().await.is_none(), "{case}: the body ends");
+        match case {
+            "grant" => grant(true),
+            _ => move_generation(store, fixture.binding.vehicle_id, -1),
+        }
+    }
+}

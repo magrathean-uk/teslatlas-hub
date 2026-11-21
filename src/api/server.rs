@@ -2221,6 +2221,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut delta_pack = false;
+    let mut leased = false;
     let (stored, verify_digest) = match state.store.pack_for_digest_in_scope(digest, scope) {
         Ok(Some(pack)) => (pack, false),
         Ok(None) => match state
@@ -2247,6 +2248,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                         match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
                             Ok(Some((pack, delta))) => {
                                 delta_pack = delta;
+                                leased = true;
                                 break 'current (pack, true);
                             }
                             Ok(None) => {}
@@ -2301,6 +2303,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
             bearer: zeroize::Zeroizing::new(
                 bearer_from_headers(&headers).expect("authenticated bearer").to_owned(),
             ),
+            lease: leased.then_some(digest),
         }));
     }
     let permit = match state.pack_stream_slots.clone().try_acquire_owned() {
@@ -2536,6 +2539,28 @@ struct PackDeviceSlot {
 struct PackStreamAuthorization {
     store: Arc<HubStore>,
     bearer: zeroize::Zeroizing<String>,
+    /// Issues #98/#109: the digest a rotated pack is served under the
+    /// device's offer lease. Each chunk then also rechecks that lease (grant,
+    /// generation, window), as it does the bearer.
+    lease: Option<Sha256Digest>,
+}
+
+impl PackStreamAuthorization {
+    fn allows_delivery(&self) -> bool {
+        let Ok(Some(device)) = self.store.authenticate_device(&self.bearer) else {
+            return false;
+        };
+        let Some(digest) = self.lease else {
+            return true;
+        };
+        let Ok(now_ms) = current_epoch_ms() else {
+            return false;
+        };
+        matches!(
+            self.store.offered_pack_for_digest_at(device.device_id, digest, now_ms),
+            Ok(Some(_))
+        )
+    }
 }
 
 impl Drop for PackDeviceSlot {
@@ -2746,7 +2771,8 @@ where
         }
     });
     // Check at delivery, including queued chunks: a revocation, expiry or
-    // superseded bearer must stop an existing response as well as new requests.
+    // superseded bearer must stop an existing response as well as new requests,
+    // and so must a lost grant or generation for a leased pack.
     Body::from_stream(stream::unfold(
         Some((receiver, authorization)),
         |state| async move {
@@ -2754,9 +2780,7 @@ where
             let item = receiver.recv().await?;
             if let Some(access) = authorization.as_ref() {
                 let access = Arc::clone(access);
-                let allowed = tokio::task::spawn_blocking(move || {
-                    matches!(access.store.authenticate_device(&access.bearer), Ok(Some(_)))
-                })
+                let allowed = tokio::task::spawn_blocking(move || access.allows_delivery())
                 .await
                 .unwrap_or(false);
                 if !allowed {
