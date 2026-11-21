@@ -1141,6 +1141,7 @@ fn wire_chunk(pack: &crate::protocol::TransportPack) -> WireChunk {
 /// (nothing recorded; the caller selects again or refuses). A refused lease
 /// is a retryable 503 with no body; an unrestricted (loopback owner) scope
 /// has no device to lease to.
+#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 pub(super) fn record_pack_offers(
     state: &AppState,
     scope: VehicleScope,
@@ -1171,6 +1172,7 @@ pub(super) fn record_pack_offers(
 
 /// [`record_pack_offers`] for a response that is not selected again: a head
 /// that moved since selection is the same retryable 503 as a refused lease.
+#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 fn require_pack_offers(
     state: &AppState,
     scope: VehicleScope,
@@ -1202,6 +1204,7 @@ pub(super) fn offer_scope(
 
 /// The object a live offer lease of this device names (issues #98/#109), and
 /// whether it is a changed-set pack. An unrestricted scope holds no leases.
+#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 pub(super) fn offered_pack(
     state: &AppState,
     scope: VehicleScope,
@@ -1224,6 +1227,7 @@ pub(super) fn offered_pack(
 /// device it is about to be returned to, bound to the head the receipt was
 /// built from (`source.input_receipt_id`); a head that moved since the
 /// receipt was selected is the retryable 503.
+#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 pub(super) fn lease_prepared_receipt(
     state: &AppState,
     scope: VehicleScope,
