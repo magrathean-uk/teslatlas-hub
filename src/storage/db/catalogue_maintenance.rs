@@ -1131,6 +1131,13 @@ fn cleanup_abandoned_import_generations(connection: &Connection) -> Result<(), S
     connection
         .execute("DELETE FROM import_generations", [])
         .map_err(StoreError::ImportGeneration)?;
+    // Their uncaptured-import markers (issue #60) go with them.
+    connection
+        .execute(
+            "DELETE FROM hub_metadata WHERE key LIKE 'import_publication_uncaptured:%'",
+            [],
+        )
+        .map_err(StoreError::ImportGeneration)?;
     Ok(())
 }
 

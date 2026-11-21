@@ -1300,7 +1300,17 @@ async fn import_pass(
                 return Err(error);
             }
         },
-        None => None,
+        // No capture (a compatibility import): its commit refuses every
+        // earlier physical head until the next import that records one.
+        None => {
+            if let Err(error) =
+                store.record_uncaptured_import_publication(&publication_gate, run_id, binding.vehicle_id)
+            {
+                store.abort_import_generation(run_id)?;
+                return Err(error.into());
+            }
+            None
+        }
     };
     if legacy_bridge {
         let legacy_physical_fingerprint = direct
@@ -1858,6 +1868,16 @@ fn publish_staged_history_with_limits(
             .run_id
             .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?,
         open_session,
+    )?;
+    // Issue #60: a staged import records no capture, so the commit that
+    // changes the history refuses every earlier physical head until the next
+    // import that records one.
+    store.record_uncaptured_import_publication(
+        &publication_gate,
+        import_run
+            .run_id
+            .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?,
+        vehicle.vehicle_id,
     )?;
     let snapshot_id = Uuid::new_v4();
     let binding = ProjectionBinding {

@@ -335,3 +335,58 @@ async fn native_complete_corpus_publishes_a_durable_manifest_when_configured() {
 
 #[path = "capacity_fallback_tests.rs"]
 mod capacity_fallback;
+
+/// Issue #60 review, finding 3: the staged compatibility importer records
+/// no capture, so the commit that publishes its history makes it the
+/// vehicle's import revision with no physical head, and its marker goes with
+/// the commit.
+#[test]
+fn design_later_60_staged_compatibility_import_records_a_headless_revision() {
+    let data = crate::private_tempdir().expect("Hub data directory");
+    let imports = crate::private_tempdir().expect("staging directory");
+    let store = HubStore::initialize(data.path()).expect("Hub store");
+    let request = SourceDbImportRequest {
+        new_import_source: false,
+        source_key: "design-later-60-staged".into(),
+        scope: SourceDbImportScope::Selected(1),
+        imported_at_ms: 1_700_000_000_000,
+    };
+    let cursor_key = CursorKey::from_bytes([61; 32]);
+    let mut stage = SourceDbStage::create(
+        imports.path().join("imports"),
+        SourceDbStageLimits {
+            max_rows: 16,
+            max_stage_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("create staged source");
+    let mut source = history();
+    let car = source.cars.remove(0);
+    stage
+        .insert(SourceDbStageTable::Cars, car.id, &car)
+        .expect("stage selected car");
+    for drive in source.drives {
+        stage
+            .insert(SourceDbStageTable::Drives, drive.id, &drive)
+            .expect("stage drive");
+    }
+    stage.seal().expect("seal staged source");
+    let report = publish_staged_history(&store, &cursor_key, &request, &stage)
+        .expect("staged compatibility import");
+    let revision = store
+        .physical_v3_import_revision(report.vehicle_id)
+        .expect("revision")
+        .expect("recorded by the commit");
+    assert_eq!((revision.kept, revision.head), (None, None));
+    let markers: i64 = store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT COUNT(*) FROM hub_metadata WHERE key LIKE 'import_publication_uncaptured:%'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("markers");
+    assert_eq!(markers, 0);
+}

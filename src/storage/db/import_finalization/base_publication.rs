@@ -203,6 +203,23 @@ fn consume_import_generation_in_transaction(
     transaction: &Connection,
     run_id: Uuid,
 ) -> Result<(), StoreError> {
+    consume_import_generation_with_history_in(transaction, run_id, true)
+}
+
+/// As [`consume_import_generation_in_transaction`] for a promotion that
+/// publishes nothing: the imported history did not change.
+fn consume_unchanged_import_generation_in_transaction(
+    transaction: &Connection,
+    run_id: Uuid,
+) -> Result<(), StoreError> {
+    consume_import_generation_with_history_in(transaction, run_id, false)
+}
+
+fn consume_import_generation_with_history_in(
+    transaction: &Connection,
+    run_id: Uuid,
+    changes_history: bool,
+) -> Result<(), StoreError> {
     if transaction
         .execute(
             "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
@@ -213,7 +230,8 @@ fn consume_import_generation_in_transaction(
     {
         return Err(StoreError::ImportGenerationNotFound);
     }
-    // Issue #60: the same commit makes a captured import the vehicle's
-    // import revision, so no earlier physical head stays served beside it.
-    commit_import_publication_revision_in(transaction, run_id)
+    // Issue #60: the same commit makes a captured import, or one that
+    // changes history without a capture, the vehicle's import revision, so
+    // no earlier physical head stays served beside it.
+    commit_import_publication_revision_in(transaction, run_id, changes_history)
 }

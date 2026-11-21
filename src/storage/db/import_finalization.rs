@@ -2318,7 +2318,7 @@ impl HubStore {
             updated_at_ms,
             Some((base_last_observation_id, base_updated_at_ms)),
         )?;
-        consume_import_generation_in_transaction(&transaction, run_id)?;
+        consume_unchanged_import_generation_in_transaction(&transaction, run_id)?;
         transaction.commit().map_err(StoreError::ImportGeneration)?;
         Ok(report)
     }

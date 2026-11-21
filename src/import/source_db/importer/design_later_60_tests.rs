@@ -712,3 +712,59 @@ fn design_later_60_uncommitted_retry_keeps_the_earlier_committed_intent() {
         assert!(capture_files(&fixture).is_empty(), "{ending}: {:?}", capture_files(&fixture));
     }
 }
+
+/// Review finding 3: a compatibility import records no capture and commits
+/// changed history into a vehicle without the seam. Its commit makes it the
+/// vehicle's import revision with no head, so the older 1.4 head is refused
+/// instead of served beside the newer lineage, until the next import that
+/// records a capture publishes a coherent head.
+#[test]
+fn design_later_60_uncaptured_compatibility_commit_refuses_the_older_head() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    let vehicle = fixture.binding.vehicle_id;
+    publish_physical(&fixture, history_stage(root.path(), "base", &base_history()), None)
+        .expect("base head")
+        .expect("served base");
+    assert_routes_agree(&fixture, "before the compatibility import");
+
+    let history = successor_history();
+    let projected = project_vehicle(&history, CAR).expect("projection");
+    let mut planned = plan(&fixture, &projected);
+    let run_id = begin_run(&fixture, T + 3 * HOUR);
+    fixture
+        .store
+        .record_uncaptured_import_publication(&fixture.gate, run_id, vehicle)
+        .expect("no capture is marked before the commit");
+    let capture = capture_everything(&fixture, run_id, &projected);
+    publish_captured(&fixture, &projected, run_id, capture, &mut planned).expect("lineage commit");
+    assert!(!fixture.store.import_seam_present(vehicle).expect("seam"));
+    assert_eq!(client(&fixture).drives.len(), 4, "the lineage committed the new drives");
+    let env = paired(&fixture);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the older 1.4 head is refused once the compatibility import committed"
+    );
+    let revision = fixture
+        .store
+        .physical_v3_import_revision(vehicle)
+        .expect("revision")
+        .expect("recorded by the commit");
+    assert_eq!((revision.run_id, revision.kept, revision.head), (run_id, None, None));
+    assert!(resume(&fixture).is_empty(), "there is no capture to finish from");
+
+    let (intent, stage, seam) =
+        commit_captured_import(&fixture, root.path(), "full", &history, T + 4 * HOUR);
+    finish_import_physical(
+        &fixture.store,
+        &fixture.cursor_key,
+        &fixture.gate,
+        &intent,
+        Some(stage),
+        Some(&seam),
+    )
+    .expect("publication")
+    .expect("physical head");
+    assert_routes_agree(&fixture, "after the next full import");
+}

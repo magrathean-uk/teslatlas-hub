@@ -47,6 +47,15 @@ pub(crate) struct PhysicalV3ImportRevision {
 
 const IMPORT_PUBLICATION_INTENT_PREFIX: &str = "import_publication_intent:";
 
+/// Marks a still-staging import generation that changes history without a
+/// recovery capture (a compatibility import, review finding 3); its value is
+/// the vehicle. Every marker is stale once the store reopens, as its run is.
+const UNCAPTURED_IMPORT_PREFIX: &str = "import_publication_uncaptured:";
+
+fn uncaptured_import_key(run_id: Uuid) -> String {
+    format!("{UNCAPTURED_IMPORT_PREFIX}{run_id}")
+}
+
 fn import_publication_intent_key(vehicle_id: Uuid) -> String {
     format!("{IMPORT_PUBLICATION_INTENT_PREFIX}{vehicle_id}")
 }
@@ -121,10 +130,37 @@ fn put_physical_v3_import_revision_in(
 /// In the transaction that consumes import generation `run_id`: an intent
 /// naming the run is marked committed and the run becomes its vehicle's
 /// import revision, so every earlier physical head is stale from this commit.
+/// A run marked uncaptured that `changes_history` becomes the revision too,
+/// with no head: every earlier head stays refused until the next import that
+/// records a capture publishes one.
 fn commit_import_publication_revision_in(
     connection: &Connection,
     run_id: Uuid,
+    changes_history: bool,
 ) -> Result<(), StoreError> {
+    let uncaptured = metadata_value_in(connection, &uncaptured_import_key(run_id))?;
+    if uncaptured.is_some() {
+        connection
+            .execute(
+                "DELETE FROM hub_metadata WHERE key = ?1",
+                params![uncaptured_import_key(run_id)],
+            )
+            .map_err(StoreError::Query)?;
+    }
+    if let Some(vehicle) = uncaptured.filter(|_| changes_history) {
+        let vehicle_id = vehicle
+            .parse::<Uuid>()
+            .map_err(|_| StoreError::ImportGenerationConflict)?;
+        put_physical_v3_import_revision_in(
+            connection,
+            vehicle_id,
+            &PhysicalV3ImportRevision {
+                run_id,
+                kept: None,
+                head: None,
+            },
+        )?;
+    }
     for (vehicle_id, intent) in import_publication_intents_in(connection)? {
         let Some(mut intent) = intent.filter(|intent| intent.run_id == run_id) else {
             continue;
@@ -153,6 +189,12 @@ fn drop_uncommitted_import_publication_intent_in(
     connection: &Connection,
     run_id: Uuid,
 ) -> Result<(), StoreError> {
+    connection
+        .execute(
+            "DELETE FROM hub_metadata WHERE key = ?1",
+            params![uncaptured_import_key(run_id)],
+        )
+        .map_err(StoreError::Query)?;
     for (vehicle_id, intent) in import_publication_intents_in(connection)? {
         if let Some(intent) = intent.filter(|intent| intent.run_id == run_id && !intent.committed) {
             restore_superseded_import_publication_intent_in(connection, vehicle_id, intent)?;
@@ -390,6 +432,35 @@ impl HubStore {
         };
         let value = serde_json::to_string(&recorded).map_err(StoreError::SerializeLifecycleRow)?;
         put_metadata_in(&transaction, &key, &value)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)
+    }
+
+    /// Marks still-staging import generation `run_id` of `vehicle_id` as one
+    /// that changes history without a recovery capture, before its first
+    /// commit (review finding 3): that commit then refuses every earlier
+    /// physical head until the next import that records a capture.
+    pub(crate) fn record_uncaptured_import_publication(
+        &self,
+        _publication_gate: &PublicationGate,
+        run_id: Uuid,
+        vehicle_id: Uuid,
+    ) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let staging: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM import_generations
+                                WHERE run_id = ?1 AND vehicle_id = ?2 AND status = 'staging')",
+                params![run_id.to_string(), vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        if !staging {
+            return Err(StoreError::ImportGenerationNotFound);
+        }
+        put_metadata_in(&transaction, &uncaptured_import_key(run_id), &vehicle_id.to_string())?;
         transaction.commit().map_err(StoreError::LifecycleWrite)
     }
 
