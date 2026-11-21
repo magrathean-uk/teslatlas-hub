@@ -1778,6 +1778,55 @@ pub(crate) fn physical_v3_kept_files_in(
     Ok(files)
 }
 
+/// The kept-base ownership records of a catalogue, validated for reclamation
+/// (DEC-250). `records` holds, per vehicle key, the record when it reads back
+/// with canonical digests and `None` when it does not; `unattributable` is set
+/// when a key names no vehicle, so no kept file can be attributed safely.
+#[derive(Debug, Default)]
+pub(crate) struct PhysicalV3KeptReferences {
+    pub(crate) records: std::collections::HashMap<Uuid, Option<PhysicalV3Kept>>,
+    pub(crate) unattributable: bool,
+}
+
+/// Reads every `physical_v3_kept:*` record without guessing: a damaged record
+/// is kept as `None` for its vehicle, an unparsable key marks the set
+/// unattributable.
+pub(crate) fn physical_v3_kept_references_in(
+    connection: &Connection,
+) -> Result<PhysicalV3KeptReferences, StoreError> {
+    let rows = connection
+        .prepare("SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%'")
+        .map_err(StoreError::Query)?
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let canonical = |digest: &str| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let mut references = PhysicalV3KeptReferences::default();
+    for (key, value) in rows {
+        let Some(vehicle_id) = key
+            .strip_prefix("physical_v3_kept:")
+            .filter(|id| id.len() == 36)
+            .and_then(|id| id.parse::<Uuid>().ok())
+        else {
+            references.unattributable = true;
+            continue;
+        };
+        let record = serde_json::from_str::<PhysicalV3Kept>(&value).ok().filter(|kept| {
+            canonical(&kept.stage)
+                && canonical(&kept.source)
+                && kept.archive.as_ref().is_none_or(|archive| canonical(&archive.digest))
+        });
+        references.records.insert(vehicle_id, record);
+    }
+    Ok(references)
+}
+
 /// Refuses a new backup while any kept record of `connection`'s catalogue is
 /// a legacy raw base (no archive). That base is two files (the raw stage and
 /// its source sessions) whose recorded digest is the stage's logical one, so
