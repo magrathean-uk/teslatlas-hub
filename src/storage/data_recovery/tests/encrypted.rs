@@ -1418,3 +1418,56 @@ fn design_later_98_encrypted_backup_leaves_out_an_expired_lease_only_pack() {
     assert!(restored_pack(stray_digest).is_file());
     assert_eq!(pin_rows(store), 0, "the run released its pins");
 }
+
+#[test]
+fn design_later_98_encrypted_backup_leaves_out_a_pack_whose_expiry_a_fetch_observed() {
+    let rig = rig();
+    let store = &rig.store;
+    let invitation = store
+        .create_pairing("leased phone", now_ms() - 1, i64::MAX)
+        .expect("invitation");
+    let device = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "leased phone", now_ms())
+        .expect("paired device")
+        .device_id;
+    let expired = vec![0x97_u8; 100];
+    let expired_digest = Sha256Digest::of_bytes(&expired);
+    fs::write(pack_path(store, expired_digest), &expired).expect("expired lease object");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO device_pack_offers(device_id, vehicle_id, sha256, kind, generation,
+                 compressed_bytes, offered_at_ms, expires_at_ms)
+             VALUES (?1, ?2, ?3, 'delta', 1, 100, 1, 2)",
+            rusqlite::params![device.to_string(), Uuid::from_u128(0x97).to_string(), expired_digest.to_string()],
+        )
+        .expect("expired lease");
+    // A fetch observes the expiry: the row stays as a tombstone.
+    assert!(
+        store
+            .offered_pack_for_digest_at(device, expired_digest, now_ms())
+            .expect("lease lookup")
+            .is_none()
+    );
+    let tombstones: i64 = store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT count(*) FROM device_pack_offers WHERE sha256 = ?1 AND expired = 1",
+            [expired_digest.to_string()],
+            |row| row.get(0),
+        )
+        .expect("tombstone");
+    assert_eq!(tombstones, 1);
+    let report = rig.backup();
+    let restored = rig.temporary.path().join("restored");
+    restore_encrypted_backup(&report.path, PASSWORD, &restored).expect("restore");
+    assert!(
+        !restored
+            .join("packs/sha256")
+            .join(format!("{expired_digest}.sqlite.zst"))
+            .exists()
+    );
+    assert_eq!(pin_rows(store), 0, "the run released its pins");
+}

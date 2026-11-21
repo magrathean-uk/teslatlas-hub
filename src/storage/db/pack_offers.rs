@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS device_pack_offers (
     compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes BETWEEN 1 AND 16777216),
     offered_at_ms INTEGER NOT NULL CHECK(offered_at_ms BETWEEN 0 AND 9007199254740991),
     expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms BETWEEN 1 AND 9007199254740991),
+    expired INTEGER NOT NULL DEFAULT 0 CHECK(expired IN (0, 1)),
     CHECK(expires_at_ms > offered_at_ms),
     PRIMARY KEY(device_id, vehicle_id, sha256)
 ) STRICT, WITHOUT ROWID;
@@ -325,13 +326,16 @@ impl HubStore {
                      ON CONFLICT(device_id, vehicle_id, sha256) DO UPDATE SET
                          kind = excluded.kind,
                          compressed_bytes = excluded.compressed_bytes,
-                         offered_at_ms = CASE WHEN generation = excluded.generation
+                         offered_at_ms = CASE WHEN expired = 0
+                                 AND generation = excluded.generation
                              THEN min(offered_at_ms, excluded.offered_at_ms)
                              ELSE excluded.offered_at_ms END,
-                         expires_at_ms = CASE WHEN generation = excluded.generation
+                         expires_at_ms = CASE WHEN expired = 0
+                                 AND generation = excluded.generation
                              THEN max(expires_at_ms, excluded.expires_at_ms)
                              ELSE excluded.expires_at_ms END,
-                         generation = excluded.generation",
+                         generation = excluded.generation,
+                         expired = 0",
                     params![
                         device,
                         vehicle,
@@ -371,9 +375,11 @@ impl HubStore {
     /// The object a live lease of `device_id` names, for the pack route once
     /// every current lookup has missed. `None` for an unknown, unoffered,
     /// expired, revoked, ungranted or other-generation digest alike. An
-    /// expiry this lookup observes is persisted by deleting the expired rows,
-    /// so a wall clock moved back cannot revive the lease (issue #98 review
-    /// finding 8).
+    /// expiry this lookup observes is persisted by marking the expired rows
+    /// `expired`, so a wall clock moved back cannot revive the lease (issue
+    /// #98 review finding 8). The tombstone stays until the normal grace and
+    /// reclaim remove it, so the encrypted backup still sees the object as
+    /// expired lease-only (finding 7).
     pub(crate) fn offered_pack_for_digest_at(
         &self,
         device_id: Uuid,
@@ -386,6 +392,7 @@ impl HubStore {
                 concat!(
                     "SELECT offer.kind, offer.compressed_bytes FROM device_pack_offers AS offer
                       WHERE offer.device_id = ?1 AND offer.sha256 = ?2
+                        AND offer.expired = 0
                         AND offer.offered_at_ms <= ?3 AND offer.expires_at_ms > ?3 AND ",
                     live_pack_offer_predicate!(),
                     " ORDER BY offer.expires_at_ms DESC LIMIT 1"
@@ -427,7 +434,8 @@ impl HubStore {
             .open_read_only_connection()?
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM device_pack_offers
-                  WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3)",
+                  WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3
+                    AND expired = 0)",
                 params![device, digest, now_ms],
                 |row| row.get(0),
             )
@@ -435,8 +443,9 @@ impl HubStore {
         if expired {
             self.open()?
                 .execute(
-                    "DELETE FROM device_pack_offers
-                      WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3",
+                    "UPDATE device_pack_offers SET expired = 1
+                      WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3
+                        AND expired = 0",
                     params![device, digest, now_ms],
                 )
                 .map_err(StoreError::Query)?;

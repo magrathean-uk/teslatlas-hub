@@ -666,8 +666,21 @@ fn design_later_98_observed_expiry_survives_a_clock_moved_back_and_a_restart() {
     assert!(leased(&fixture, fixture.device, digest, inside));
     // The lease is seen expired once...
     assert!(!leased(&fixture, fixture.device, digest, fixture.now_ms + RETENTION));
-    // ...so a clock moved back into the window does not revive it.
+    // ...so a clock moved back into the window does not revive it. The row
+    // stays as a tombstone until the grace and reclaim remove it.
     assert!(!leased(&fixture, fixture.device, digest, inside));
+    let tombstone: (i64, i64) = fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT count(*), COALESCE(min(expired), 0) FROM device_pack_offers
+              WHERE device_id = ?1 AND sha256 = ?2",
+            rusqlite::params![fixture.device.to_string(), digest.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("tombstone");
+    assert_eq!(tombstone, (1, 1));
     let reopened = HubStore::initialize(fixture._temporary.path().join("store")).expect("restart");
     assert!(
         reopened
