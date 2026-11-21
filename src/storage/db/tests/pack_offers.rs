@@ -459,3 +459,40 @@ fn design_later_109_prepared_lease_outlives_its_catalogue_row_until_expiry() {
         .expect("reclaim after expiry");
     assert!(!object(store, digest).exists());
 }
+
+fn bump_generation(fixture: &Rotated, by: i64) {
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "UPDATE sources SET generation = generation + ?2 WHERE source_id =
+               (SELECT source_id FROM vehicles WHERE vehicle_id = ?1)",
+            params![fixture.binding.vehicle_id.to_string(), by],
+        )
+        .expect("move generation");
+}
+
+#[test]
+fn design_later_98_current_delta_lookup_requires_the_source_generation() {
+    let fixture = rotated(0);
+    let digest = fixture.delta_digests[0];
+    let current = |fixture: &Rotated| {
+        fixture
+            .store
+            .physical_v3_delta_pack_for_digest_at(
+                digest,
+                fixture.now_ms + 10,
+                VehicleScope::Device(fixture.device),
+            )
+            .expect("current delta lookup")
+            .is_some()
+    };
+    assert!(current(&fixture));
+    // The target and base rows stay, but the source moved on: no delta.
+    bump_generation(&fixture, 1);
+    assert!(!current(&fixture));
+    assert!(!leased(&fixture, fixture.device, digest, fixture.now_ms + 10));
+    bump_generation(&fixture, -1);
+    assert!(current(&fixture));
+}
