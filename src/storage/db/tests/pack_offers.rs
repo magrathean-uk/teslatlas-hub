@@ -373,3 +373,89 @@ fn design_later_98_revoked_lease_frees_its_object_at_the_next_reclaim() {
     store.reclaim_storage_at(fixture.now_ms + 12).expect("reclaim after revoke");
     assert!(!object(store, delta).exists());
 }
+
+/// A 100-byte prepared pack object and its catalogue row for the current
+/// head of `fixture`, as publication would leave them.
+fn prepared_object(fixture: &Rotated, fill: u8) -> Sha256Digest {
+    let bytes = vec![fill; 100];
+    let digest = Sha256Digest::of_bytes(&bytes);
+    std::fs::write(object(&fixture.store, digest), &bytes).expect("prepared object");
+    fixture
+        .store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO prepared_map_months
+             (artifact_id, vehicle_id, month, input_manifest_id, input_receipt_id,
+              input_sequence, source_digest, pack_sha256, compressed_bytes, receipt_json)
+             VALUES (?1, ?2, ?8, ?3, ?4, ?5, ?6, ?7, 100, X'7B7D')",
+            params![
+                format!("map-month-v1.{}", hex::encode([fill; 32])),
+                fixture.binding.vehicle_id.to_string(),
+                fixture.current.snapshot_id.to_string(),
+                fixture.current.receipt_id,
+                i64::try_from(fixture.current.head_sequence).unwrap(),
+                "b".repeat(64),
+                digest.to_string(),
+                format!("2026-{:02}", fill % 12 + 1),
+            ],
+        )
+        .expect("prepared row");
+    digest
+}
+
+#[test]
+fn design_later_109_prepared_lease_outlives_its_catalogue_row_until_expiry() {
+    let fixture = rotated(0);
+    let store = &fixture.store;
+    let digest = prepared_object(&fixture, 0x61);
+    let never = prepared_object(&fixture, 0x62);
+    store
+        .record_pack_offers_at(
+            fixture.device,
+            fixture.binding.vehicle_id,
+            fixture.binding.generation,
+            &[PackOffer { digest, kind: PackOfferKind::Prepared }],
+            fixture.now_ms,
+        )
+        .expect("prepared lease");
+    // Publication prunes the month once its head is no longer retained.
+    store
+        .open()
+        .expect("catalogue")
+        .execute("DELETE FROM prepared_map_months", [])
+        .expect("prune months");
+    let (pack, kind) = store
+        .offered_pack_for_digest_at(fixture.device, digest, fixture.now_ms + 10)
+        .expect("lease lookup")
+        .expect("issued prepared pack stays fetchable");
+    assert_eq!((pack.digest, pack.compressed_bytes, kind), (digest, 100, PackOfferKind::Prepared));
+    assert!(!leased(&fixture, fixture.other_device, digest, fixture.now_ms + 10));
+    assert!(!leased(&fixture, fixture.device, never, fixture.now_ms + 10));
+    // A digest no catalogue row names can no longer be offered.
+    assert!(matches!(
+        store.record_pack_offers_at(
+            fixture.other_device,
+            fixture.binding.vehicle_id,
+            fixture.binding.generation,
+            &[PackOffer { digest, kind: PackOfferKind::Prepared }],
+            fixture.now_ms + 10,
+        ),
+        Err(StoreError::PhysicalV3AdmissionConflict)
+    ));
+    store.reclaim_storage_at(fixture.now_ms + 10).expect("reclaim in lease");
+    assert!(object(store, digest).is_file());
+    assert!(!object(store, never).exists());
+    let gate = store.try_acquire_publication_gate().expect("backup gate");
+    let backup = fixture._temporary.path().join("prepared-backup");
+    store
+        .backup_to_with_gate(&backup, &gate, fixture.now_ms + 10)
+        .expect("backup in lease");
+    drop(gate);
+    assert!(backup.join("packs/sha256").join(format!("{digest}.sqlite.zst")).is_file());
+    assert!(!leased(&fixture, fixture.device, digest, fixture.now_ms + RETENTION));
+    store
+        .reclaim_storage_at(fixture.now_ms + RETENTION + GRACE)
+        .expect("reclaim after expiry");
+    assert!(!object(store, digest).exists());
+}

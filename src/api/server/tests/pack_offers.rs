@@ -217,3 +217,138 @@ async fn design_later_98_offered_full_and_changed_set_packs_survive_two_rotation
     let revoked = app.clone().oneshot(get(&pack_uri(delta_digest), &phone.bearer, None)).await.unwrap();
     assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// A 100-byte prepared pack object named by a genuinely signed month receipt
+/// of `head`, as publication would leave it.
+fn prepared_month(
+    store: &HubStore,
+    key: &CursorKey,
+    head: &crate::db::PendingPhysicalV3Admission,
+    now: i64,
+    fill: u8,
+) -> (String, Sha256Digest) {
+    let bytes = vec![fill; 100];
+    let digest = Sha256Digest::of_bytes(&bytes);
+    fs::write(store.packs_dir().join("sha256").join(format!("{digest}.sqlite.zst")), &bytes)
+        .expect("prepared object");
+    let (artifact_id, _) = crate::sync::prepared_map::insert_signed_month_fixture(
+        store,
+        key,
+        head,
+        now,
+        &digest.to_string(),
+    );
+    (artifact_id, digest)
+}
+
+#[tokio::test]
+async fn design_later_109_issued_prepared_pack_stays_fetchable_across_rotations() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x09; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 2, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    drop(gate);
+    let (first_id, first_digest) = prepared_month(&store, &key, &first, now, 0x71);
+    let phone = pair(&store, "issued phone", now);
+    let other = pair(&store, "other phone", now);
+    let app = paired_router(store.clone(), &key);
+    let receipt_uri = |id: &str| {
+        format!("/v1/vehicles/{}/sync/prepared-artefacts/{id}", binding.vehicle_id)
+    };
+    let issued = app.clone().oneshot(get(&receipt_uri(&first_id), &phone.bearer, None)).await.unwrap();
+    assert_eq!(issued.status(), StatusCode::OK);
+    let issued: serde_json::Value = serde_json::from_slice(&body(issued).await).unwrap();
+    assert_eq!(issued["pack"]["sha256"], first_digest.to_string());
+    let expiry = || -> i64 {
+        store
+            .open()
+            .unwrap()
+            .query_row(
+                "SELECT expires_at_ms FROM device_pack_offers WHERE device_id = ?1 AND sha256 = ?2",
+                rusqlite::params![phone.device_id.to_string(), first_digest.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    let leased_until = expiry();
+
+    let mut current = first.clone();
+    for (rotation, name) in [(1, "b"), (2, "c")] {
+        current = rotate(&store, temp.path(), &key, &current, name, now + rotation);
+        // Discovery advances: the old receipt is not served, a new one names
+        // the current head.
+        let old = app.clone().oneshot(get(&receipt_uri(&first_id), &phone.bearer, None)).await.unwrap();
+        assert_eq!(old.status(), StatusCode::NOT_FOUND, "rotation {rotation}");
+        let (current_id, _) = prepared_month(&store, &key, &current, now, 0x71 + rotation as u8);
+        let fresh =
+            app.clone().oneshot(get(&receipt_uri(&current_id), &other.bearer, None)).await.unwrap();
+        assert_eq!(fresh.status(), StatusCode::OK);
+        let fresh: serde_json::Value = serde_json::from_slice(&body(fresh).await).unwrap();
+        assert_eq!(fresh["source"]["input_receipt_id"], current.receipt_id);
+        // The issued pack is still fetchable by the issued device only.
+        let pack =
+            app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
+        assert_eq!(pack.status(), StatusCode::OK, "rotation {rotation}");
+        assert_eq!(Sha256Digest::of_bytes(&body(pack).await), first_digest);
+        let ranged = app
+            .clone()
+            .oneshot(get(&pack_uri(first_digest), &phone.bearer, Some("bytes=10-19")))
+            .await
+            .unwrap();
+        assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(body(ranged).await, vec![0x71; 10]);
+        let refused =
+            app.clone().oneshot(get(&pack_uri(first_digest), &other.bearer, None)).await.unwrap();
+        assert_eq!(refused.status(), StatusCode::NOT_FOUND);
+    }
+    // Fetching renewed nothing; an unissued digest has no grace.
+    assert_eq!(expiry(), leased_until);
+    let unissued = app
+        .clone()
+        .oneshot(get(&pack_uri(Sha256Digest::of_bytes(b"unissued")), &phone.bearer, None))
+        .await
+        .unwrap();
+    assert_eq!(unissued.status(), StatusCode::NOT_FOUND);
+    // A removed grant refuses at once, and comes back with the grant.
+    let connection = store.open().unwrap();
+    connection
+        .execute(
+            "DELETE FROM device_vehicle_grants WHERE device_id = ?1",
+            rusqlite::params![phone.device_id.to_string()],
+        )
+        .unwrap();
+    let ungranted =
+        app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
+    assert_eq!(ungranted.status(), StatusCode::NOT_FOUND);
+    connection
+        .execute(
+            "INSERT INTO device_vehicle_grants(device_id, vehicle_id, granted_at_ms)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![phone.device_id.to_string(), binding.vehicle_id.to_string(), now],
+        )
+        .unwrap();
+    let regranted =
+        app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
+    assert_eq!(regranted.status(), StatusCode::OK);
+    // Expiry ends it.
+    connection
+        .execute(
+            "UPDATE device_pack_offers SET offered_at_ms = 0, expires_at_ms = 1
+              WHERE device_id = ?1",
+            rusqlite::params![phone.device_id.to_string()],
+        )
+        .unwrap();
+    let expired =
+        app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
+    assert_eq!(expired.status(), StatusCode::NOT_FOUND);
+    // Revocation wins.
+    store.revoke_device(phone.device_id).expect("revoke");
+    let revoked =
+        app.clone().oneshot(get(&pack_uri(first_digest), &phone.bearer, None)).await.unwrap();
+    assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
+}

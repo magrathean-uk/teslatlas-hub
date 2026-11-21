@@ -1155,6 +1155,42 @@ pub(super) fn offered_pack(
     }
 }
 
+/// Issue #109: lease the pack a current signed prepared receipt names to the
+/// device it is about to be returned to, under the current head's generation.
+pub(super) fn lease_prepared_receipt(
+    state: &AppState,
+    device: &PairedDeviceRecord,
+    vehicle_id: Uuid,
+    receipt: &[u8],
+) -> Result<(), Response> {
+    let unavailable = || StatusCode::SERVICE_UNAVAILABLE.into_response();
+    let scope = state.vehicle_scope(device);
+    if !matches!(scope, VehicleScope::Device(_)) {
+        return Ok(());
+    }
+    let digest = serde_json::from_slice::<serde_json::Value>(receipt)
+        .ok()
+        .and_then(|receipt| receipt.get("pack")?.get("sha256")?.as_str()?.parse().ok())
+        .ok_or_else(|| {
+            tracing::error!(%vehicle_id, "a served prepared receipt names no pack digest");
+            unavailable()
+        })?;
+    let generation = match state
+        .store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+    {
+        Ok(Some(head)) => head.manifest.generation,
+        Ok(None) | Err(_) => return Err(unavailable()),
+    };
+    record_pack_offers(
+        state,
+        scope,
+        vehicle_id,
+        generation,
+        [(digest, crate::db::PackOfferKind::Prepared)],
+    )
+}
+
 /// The chunks of a full physical head, as offers.
 fn physical_offers(
     admission: &crate::db::PendingPhysicalV3Admission,

@@ -2044,10 +2044,16 @@ async fn prepared_artefact(
         vehicle_id,
         &artifact_id,
     ) {
-        Ok(Some(bytes)) => bounded_no_store_json_bytes(bytes).unwrap_or_else(|error| {
-            tracing::error!(%error, %vehicle_id, "prepared receipt exceeds response bound");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        }),
+        Ok(Some(bytes)) => {
+            let leased = hub_sync_v1::lease_prepared_receipt(&state, &device, vehicle_id, &bytes);
+            if let Err(response) = leased {
+                return response;
+            }
+            bounded_no_store_json_bytes(bytes).unwrap_or_else(|error| {
+                tracing::error!(%error, %vehicle_id, "prepared receipt exceeds response bound");
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            })
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => {
             tracing::error!(%error, %vehicle_id, "cannot resolve prepared receipt");

@@ -1353,12 +1353,12 @@ pub(crate) fn insert_signed_month_fixture(
     key: &CursorKey,
     admission: &PendingPhysicalV3Admission,
     now_ms: i64,
+    pack_digest: &str,
 ) -> (String, Vec<u8>) {
     let month = previous_complete_month(now_ms)
         .expect("fixture month")
         .expect("fixture clock has a previous complete month");
     let id = artifact_id(admission, &month.name, month.from_ms, month.to_ms);
-    let pack_digest = "c".repeat(64);
     let receipt = signed_receipt(
         key,
         admission,

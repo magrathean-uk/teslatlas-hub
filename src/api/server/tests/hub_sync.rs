@@ -821,7 +821,7 @@ async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
     // The route serves only a receipt that passes the current semantic and
     // signature checks, so the fixture must be genuinely signed by `key`.
     let (artifact_id, receipt) =
-        crate::sync::prepared_map::insert_signed_month_fixture(&store, &key, &admission, now_ms);
+        crate::sync::prepared_map::insert_signed_month_fixture(&store, &key, &admission, now_ms, &"c".repeat(64));
     let invitation = store
         .create_pairing("prepared route", now_ms - 1, i64::MAX)
         .expect("pairing invitation");
