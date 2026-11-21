@@ -28,6 +28,9 @@ fn referenced_pack_rows_at(
             .map_err(StoreError::Query)?
     };
     rows.extend(pending_physical_v3_pack_rows(connection)?);
+    // DEC-250: every pack a frozen physical base names, current or not; a
+    // record that does not read back refuses the whole set.
+    rows.extend(frozen_physical_base_pack_rows(connection)?);
     rows.extend(retained_physical_v3_pack_rows(
         connection,
         retired_expiry_cutoff_ms,
@@ -156,7 +159,8 @@ impl StorageCensusClass {
 /// and `packs/sha256`, and the import stages kept under `packs/physical-kept`.
 /// A pack referenced by more than one class is counted once, in the first
 /// class of this order. The current heads are the served physical heads and
-/// the lineage head; the import bases are each vehicle's kept import stage
+/// the lineage head; the frozen bases are the packs each vehicle's frozen
+/// physical base names, kept after its head stops being current; the import bases are each vehicle's kept import stage
 /// and its source sessions, which every hand-back republishes from, decided by
 /// the validated kept records alone. A kept file no record names (a stage copy
 /// or archive generation left by an interrupted hand-back, keep or conversion,
@@ -165,6 +169,9 @@ impl StorageCensusClass {
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, PartialEq, Eq)]
 pub struct StorageCensus {
     pub current_heads: StorageCensusClass,
+    /// Packs of the vehicles' frozen physical bases that are not a current
+    /// head; always needed (DEC-250).
+    pub frozen_bases: StorageCensusClass,
     pub import_bases: StorageCensusClass,
     pub retained_prior_heads: StorageCensusClass,
     pub deltas: StorageCensusClass,
@@ -189,6 +196,8 @@ pub struct StorageReclaimReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PackStorageClass {
     CurrentHead,
+    /// A pack of a vehicle's frozen physical base (DEC-250).
+    FrozenBase,
     ImportBase,
     RetainedPriorHead,
     Delta,
@@ -276,14 +285,22 @@ fn pack_storage_classes(
     connection: &Connection,
 ) -> Result<HashMap<String, PackStorageClass>, StoreError> {
     let mut classes = HashMap::new();
+    let frozen = frozen_physical_base_pack_rows(connection)?;
     for (class, sql) in [
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM pending_physical_v3_packs"),
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM sync_packs"),
+        (PackStorageClass::FrozenBase, ""),
         (PackStorageClass::RetainedPriorHead, "SELECT sha256 FROM retained_physical_v3_packs"),
         (PackStorageClass::RetainedPriorHead, "SELECT pack_digest FROM sync_retired_lineage_packs"),
         (PackStorageClass::Delta, "SELECT sha256 FROM physical_v3_delta_packs"),
         (PackStorageClass::PreparedMap, "SELECT pack_sha256 FROM prepared_map_months"),
     ] {
+        if class == PackStorageClass::FrozenBase {
+            for (digest, _, _) in &frozen {
+                classes.entry(digest.clone()).or_insert(class);
+            }
+            continue;
+        }
         let digests = connection
             .prepare(sql)
             .map_err(StoreError::Query)?
@@ -534,6 +551,7 @@ fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
         let reclaimable = !file.needed;
         let class = match file.class {
             Some(PackStorageClass::CurrentHead) => &mut census.current_heads,
+            Some(PackStorageClass::FrozenBase) => &mut census.frozen_bases,
             Some(PackStorageClass::ImportBase) => &mut census.import_bases,
             Some(PackStorageClass::RetainedPriorHead) => &mut census.retained_prior_heads,
             Some(PackStorageClass::Delta) => &mut census.deltas,
