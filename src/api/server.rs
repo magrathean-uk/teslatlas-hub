@@ -2338,9 +2338,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
     };
     stream_pack(
         stored,
-        headers
-            .get(header::RANGE)
-            .and_then(|header| header.to_str().ok()),
+        pack_range_header(&headers, digest),
         permit,
         device_slot,
         verify_digest,
@@ -2351,6 +2349,20 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
         },
     )
     .await
+}
+
+/// The `Range` a pack request may be served: none when an `If-Range` names
+/// another representation than this digest's strong ETag (a date included),
+/// so the answer is the full 200 body (RFC 9110, section 13.1.5).
+fn pack_range_header(headers: &HeaderMap, digest: Sha256Digest) -> Option<&str> {
+    let range = headers.get(header::RANGE)?.to_str().ok()?;
+    match headers.get(header::IF_RANGE) {
+        None => Some(range),
+        Some(validator) if validator.as_bytes() == format!("\"{digest}\"").as_bytes() => {
+            Some(range)
+        }
+        Some(_) => None,
+    }
 }
 
 /// A Hub with no cursor key cannot verify a prepared pack's receipt, so the 503

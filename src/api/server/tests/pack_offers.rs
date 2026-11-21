@@ -551,3 +551,30 @@ async fn design_later_98_lease_serves_a_pack_whose_head_rotates_during_lookup() 
     let refused = app.oneshot(get(&pack_uri(unleased), &other.bearer, None)).await.unwrap();
     assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+async fn design_later_98_if_range_with_another_validator_gets_the_full_body() {
+    let fixture = leased_rotation();
+    let app = paired_router(fixture.store.clone(), &CursorKey::from_bytes([0x98; 32]));
+    let digest = fixture.first.manifest.chunks[0].sha256;
+    let full = fs::read(fixture.store.packs_dir().join("sha256").join(format!("{digest}.sqlite.zst")))
+        .expect("leased bytes");
+    let request = |if_range: &str| {
+        let mut request = get(&pack_uri(digest), &fixture.phone.bearer, Some("bytes=0-9"));
+        request
+            .headers_mut()
+            .insert(header::IF_RANGE, HeaderValue::from_str(if_range).unwrap());
+        request
+    };
+    let other = format!("\"{}\"", Sha256Digest::of_bytes(b"another pack"));
+    let weak = format!("W/\"{digest}\"");
+    for validator in [other.as_str(), "Sat, 21 Nov 2026 00:00:00 GMT", weak.as_str()] {
+        let response = app.clone().oneshot(request(validator)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{validator}");
+        assert!(response.headers().get(header::CONTENT_RANGE).is_none());
+        assert_eq!(body(response).await, full);
+    }
+    let matching = app.clone().oneshot(request(&format!("\"{digest}\""))).await.unwrap();
+    assert_eq!(matching.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(body(matching).await, full[..10]);
+}
