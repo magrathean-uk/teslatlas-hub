@@ -1418,6 +1418,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_source: None,
             source_basis: SourceDbImportBasis::default(),
             publication_gate,
+            publication: None,
         },
     )
     .expect_err("post-commit publication failure is explicit");
@@ -1453,6 +1454,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_source: None,
             source_basis: SourceDbImportBasis::default(),
             publication_gate,
+            publication: None,
         },
     )
     .expect("retry publishes the schema-2.2 pair");
@@ -1522,6 +1524,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
                 physical_source: None,
                 source_basis: SourceDbImportBasis::default(),
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
+                publication: None,
             },
         )
         .expect_err("a withheld phone sync target makes the selected import incomplete");
@@ -1554,6 +1557,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
                 physical_source: None,
                 source_basis: SourceDbImportBasis::default(),
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
+                publication: None,
             },
         )
         .expect("physical follow-up under existing import gate");
@@ -1638,6 +1642,7 @@ fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
             physical_source: None,
             source_basis: SourceDbImportBasis::default(),
             publication_gate,
+            publication: None,
         },
     )
     .expect("current V2 delta head admits schema-2.2 bootstrap");

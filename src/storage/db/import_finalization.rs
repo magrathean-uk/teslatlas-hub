@@ -1093,16 +1093,7 @@ impl HubStore {
                     ],
                 )
                 .map_err(StoreError::LineageCatalog)?;
-            if transaction
-                .execute(
-                    "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
-                    params![run_id.to_string()],
-                )
-                .map_err(StoreError::ImportGeneration)?
-                != 1
-            {
-                return Err(StoreError::ImportGenerationNotFound);
-            }
+            consume_import_generation_in_transaction(&transaction, run_id)?;
             transaction.commit().map_err(StoreError::ImportGeneration)?;
             Ok(SourceDbLegacyDirectBridgeResult {
                 snapshot_id: candidate.snapshot_id,
@@ -1878,16 +1869,7 @@ impl HubStore {
             )?;
             upsert_geofences_in_transaction(&transaction, vehicle_id, geofences)?;
             record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
-            if transaction
-                .execute(
-                    "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
-                    params![run_id.to_string()],
-                )
-                .map_err(StoreError::ImportGeneration)?
-                != 1
-            {
-                return Err(StoreError::ImportGenerationNotFound);
-            }
+            consume_import_generation_in_transaction(&transaction, run_id)?;
             self.commit_catalogue_receipted_transaction(
                 transaction,
                 "import_generation_projection_state_schema_22",
@@ -1970,16 +1952,7 @@ impl HubStore {
         )?;
         upsert_geofences_in_transaction(&transaction, vehicle_id, geofences)?;
         record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
-        if transaction
-            .execute(
-                "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
-                params![run_id.to_string()],
-            )
-            .map_err(StoreError::ImportGeneration)?
-            != 1
-        {
-            return Err(StoreError::ImportGenerationNotFound);
-        }
+        consume_import_generation_in_transaction(&transaction, run_id)?;
         self.commit_catalogue_receipted_transaction(
             transaction,
             "import_generation",
@@ -2345,16 +2318,7 @@ impl HubStore {
             updated_at_ms,
             Some((base_last_observation_id, base_updated_at_ms)),
         )?;
-        if transaction
-            .execute(
-                "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
-                params![run_id.to_string()],
-            )
-            .map_err(StoreError::ImportGeneration)?
-            != 1
-        {
-            return Err(StoreError::ImportGenerationNotFound);
-        }
+        consume_import_generation_in_transaction(&transaction, run_id)?;
         transaction.commit().map_err(StoreError::ImportGeneration)?;
         Ok(report)
     }
@@ -2363,14 +2327,18 @@ impl HubStore {
         if run_id.is_nil() {
             return Ok(());
         }
-        let connection = self.open()?;
-        connection
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        drop_uncommitted_import_publication_intent_in(&transaction, run_id)?;
+        transaction
             .execute(
                 "DELETE FROM import_generations WHERE run_id = ?1",
                 params![run_id.to_string()],
             )
             .map_err(StoreError::ImportGeneration)?;
-        Ok(())
+        transaction.commit().map_err(StoreError::ImportGeneration)
     }
 }
 

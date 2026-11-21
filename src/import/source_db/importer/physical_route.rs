@@ -50,6 +50,7 @@ fn finish_selected_schema_22_publication(
         physical_source,
         source_basis,
         publication_gate,
+        publication,
     } = captured;
     let vehicle_id = report.vehicle_id;
     let legacy_snapshot_id = report.snapshot_id;
@@ -86,17 +87,30 @@ fn finish_selected_schema_22_publication(
     // The negotiated 1.4 route's head, planned with the seam the lineage's
     // publication proved (M03-T21).
     let physical_target_expected = physical_stage.is_some();
-    let physical_v3 = publish_physical_route(
-        store,
-        cursor_key,
-        binding,
-        physical_stage,
-        &publication_gate,
-        physical_seam.as_ref(),
-        physical_source
-            .as_ref()
-            .map(|(drives, charges)| (drives.as_slice(), charges.as_slice())),
-    )?;
+    import_publication_crash_point("schema_22");
+    // Issue #60: a captured import adopts its capture and publishes the head
+    // stamped with its revision; without a capture there is no stage either.
+    let physical_v3 = match publication {
+        Some(intent) => finish_import_physical(
+            store,
+            cursor_key,
+            &publication_gate,
+            &intent,
+            physical_stage,
+            physical_seam.as_ref(),
+        )?,
+        None => publish_physical_route(
+            store,
+            cursor_key,
+            binding,
+            physical_stage,
+            &publication_gate,
+            physical_seam.as_ref(),
+            physical_source
+                .as_ref()
+                .map(|(drives, charges)| (drives.as_slice(), charges.as_slice())),
+        )?,
+    };
     if physical_target_expected && physical_v3.is_none() {
         return Err(SourceDbImportError::PhysicalHeadWithheld {
             vehicle_id,
@@ -159,6 +173,34 @@ fn publish_planned_physical_route(
     keep: Option<(&[ProjectionDrive], &[ProjectionCharge])>,
     kept_stage: Option<&str>,
 ) -> Result<Option<crate::physical_publication::PhysicalV3Publication>, SourceDbImportError> {
+    publish_planned_physical_route_at_revision(
+        store,
+        cursor_key,
+        binding,
+        stage,
+        publication_gate,
+        seam,
+        keep,
+        kept_stage,
+        None,
+    )
+}
+
+/// As [`publish_planned_physical_route`]; with `revision` the head is
+/// stamped as that import revision's before it is published (issue #60),
+/// so it is served while that import is the vehicle's revision.
+#[allow(clippy::too_many_arguments)]
+fn publish_planned_physical_route_at_revision(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: ProjectionBinding,
+    stage: Option<crate::source_db_stage::OwnedSourceDbStage>,
+    publication_gate: &PublicationGate,
+    seam: Option<&crate::import::source_db::seam::SeamPackPlan>,
+    keep: Option<(&[ProjectionDrive], &[ProjectionCharge])>,
+    kept_stage: Option<&str>,
+    revision: Option<Uuid>,
+) -> Result<Option<crate::physical_publication::PhysicalV3Publication>, SourceDbImportError> {
     let Some(mut stage) = stage else {
         return Ok(None);
     };
@@ -210,14 +252,19 @@ fn publish_planned_physical_route(
     let coverage = seam.map(|packs| {
         crate::db::coverage_digest(packs.coverage().intervals())
     });
-    let record = |snapshot_id: Uuid| match (planned, coverage.as_deref()) {
-        (true, Some(coverage)) => store.record_physical_v3_seam_planned_with_coverage(
-            publication_gate,
-            vehicle_id,
-            snapshot_id,
-            coverage,
-        ),
-        _ => Ok(()),
+    let record = |snapshot_id: Uuid| {
+        if let (true, Some(coverage)) = (planned, coverage.as_deref()) {
+            store.record_physical_v3_seam_planned_with_coverage(
+                publication_gate,
+                vehicle_id,
+                snapshot_id,
+                coverage,
+            )?;
+        }
+        if let Some(run_id) = revision {
+            store.stamp_physical_v3_import_head(publication_gate, vehicle_id, snapshot_id, run_id)?;
+        }
+        Ok(())
     };
     let inputs = match (seam, &facts, kept_stage.as_deref()) {
         (Some(packs), Some(facts), Some(kept_stage)) => Some((

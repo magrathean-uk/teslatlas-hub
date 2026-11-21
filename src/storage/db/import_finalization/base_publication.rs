@@ -200,7 +200,7 @@ fn staging_import_generation_session_in_transaction(
 
 /// Consumes a staging generation once its publication is in the transaction.
 fn consume_import_generation_in_transaction(
-    transaction: &Transaction<'_>,
+    transaction: &Connection,
     run_id: Uuid,
 ) -> Result<(), StoreError> {
     if transaction
@@ -213,5 +213,7 @@ fn consume_import_generation_in_transaction(
     {
         return Err(StoreError::ImportGenerationNotFound);
     }
-    Ok(())
+    // Issue #60: the same commit makes a captured import the vehicle's
+    // import revision, so no earlier physical head stays served beside it.
+    commit_import_publication_revision_in(transaction, run_id)
 }

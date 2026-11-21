@@ -722,6 +722,16 @@ impl HubStore {
     ) -> Result<bool, StoreError> {
         let connection = self.open_read_only_connection()?;
         let vehicle_key = vehicle_id.to_string();
+        // Issue #60: once an import with a publication intent commits, only
+        // the head published for that import revision is served.
+        if !physical_v3_import_revision_serves_in(&connection, vehicle_id, snapshot_id) {
+            tracing::info!(
+                %vehicle_id,
+                %snapshot_id,
+                "physical 1.4 head refused: a committed import has not published its head yet"
+            );
+            return Ok(false);
+        }
         if !import_seam_present_in_connection(&connection, &vehicle_key)? {
             return Ok(true);
         }
