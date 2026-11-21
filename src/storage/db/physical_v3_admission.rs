@@ -1282,6 +1282,10 @@ impl HubStore {
             .optional()
             .map_err(StoreError::Query)?;
         drop(connection);
+        #[cfg(test)]
+        if let Some(rotate) = ROTATE_DURING_PHYSICAL_PACK_LOOKUP.with(|hook| hook.take()) {
+            rotate();
+        }
         let Some(vehicle_id) = vehicle_id else {
             return Ok(None);
         };
@@ -1611,6 +1615,10 @@ type PhysicalAdmissionReadHook = Box<dyn FnOnce()>;
 thread_local! {
     pub(crate) static ROTATE_DURING_PHYSICAL_ADMISSION_READ:
         std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
+    /// Runs between the digest's head lookup and the head load of
+    /// `pending_physical_v3_pack_for_digest` (issue #98 review finding 4).
+    pub(crate) static ROTATE_DURING_PHYSICAL_PACK_LOOKUP:
+        std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
 }
 
 impl HubStore {
@@ -1655,7 +1663,9 @@ impl HubStore {
 
     /// The delta pack a digest names, served only to a scope that can see the
     /// vehicle the transition belongs to; the owner predicate sits before the
-    /// LIMIT, so an ungranted digest is `Ok(None)`, as for an unknown one.
+    /// LIMIT, so an ungranted digest is `Ok(None)`, as for an unknown one. A
+    /// target head of another generation than its source's current one names
+    /// no servable delta (issue #98 review).
     pub(crate) fn physical_v3_delta_pack_for_digest_at(
         &self,
         digest: Sha256Digest,
@@ -1675,6 +1685,10 @@ impl HubStore {
                      ON base.receipt_id=delta.base_receipt_id
                   WHERE packs.sha256=?1 AND target.serve_state='public_first'
                     AND base.expires_at_ms>?2
+                    AND json_extract(CAST(target.manifest_json AS TEXT),'$.generation')
+                        =(SELECT source.generation FROM vehicles AS vehicle
+                            JOIN sources AS source ON source.source_id=vehicle.source_id
+                           WHERE vehicle.vehicle_id=delta.vehicle_id)
                     AND (?3 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
                                                 WHERE grants.device_id=?3
                                                   AND grants.vehicle_id=delta.vehicle_id))

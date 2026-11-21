@@ -1126,6 +1126,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
         &key,
         &admission_one,
         now_ms,
+        &"c".repeat(64),
     );
     let receipt_uri =
         |vehicle: Uuid| format!("/v1/vehicles/{vehicle}/sync/prepared-artefacts/{artifact_id}");

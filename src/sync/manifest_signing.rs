@@ -63,6 +63,31 @@ impl ManifestSigning {
         serde_json::to_vec(&document)
     }
 
+    /// Whether `document` is a control document this key signed, exactly as
+    /// [`Self::signed_control_document`] makes it (Ed25519 is deterministic,
+    /// so the signature block is recomputed and compared).
+    pub(crate) fn verifies_control_document(&self, document: &[u8]) -> bool {
+        let Ok(mut document) = serde_json::from_slice::<serde_json::Value>(document) else {
+            return false;
+        };
+        let Some(signature) = document
+            .as_object_mut()
+            .and_then(|object| object.remove("signature"))
+        else {
+            return false;
+        };
+        let Ok(canonical) = serde_jcs::to_vec(&document) else {
+            return false;
+        };
+        signature
+            == serde_json::json!({
+                "algorithm": "ed25519",
+                "key_id": self.key_id(),
+                "signed_payload_sha256": Sha256Digest::of_bytes(&canonical).to_string(),
+                "signature": self.sign_base64(&canonical),
+            })
+    }
+
     pub(crate) fn signed_physical_manifest_document(
         &self,
         admission: &crate::db::PendingPhysicalV3Admission,

@@ -34,6 +34,7 @@ fn referenced_pack_rows_at(
     )?);
     rows.extend(prepared_map_pack_rows(connection, retired_expiry_cutoff_ms)?);
     rows.extend(physical_delta_pack_rows(connection, retired_expiry_cutoff_ms)?);
+    rows.extend(pack_offer_rows(connection, retired_expiry_cutoff_ms)?);
     let retired_rows = {
         let mut statement = connection
             .prepare(
@@ -127,7 +128,7 @@ fn delete_expired_pack_retention_rows(
             params![cutoff_ms],
         )
         .map_err(StoreError::LineageCatalog)?;
-    Ok(())
+    delete_expired_pack_offers(transaction, cutoff_ms)
 }
 
 /// One class of pack files in a storage census: how many files and bytes it
@@ -276,6 +277,7 @@ fn pack_storage_classes(
     connection: &Connection,
 ) -> Result<HashMap<String, PackStorageClass>, StoreError> {
     let mut classes = HashMap::new();
+    let leases = device_pack_offers_present(connection)?;
     for (class, sql) in [
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM pending_physical_v3_packs"),
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM sync_packs"),
@@ -283,7 +285,14 @@ fn pack_storage_classes(
         (PackStorageClass::RetainedPriorHead, "SELECT pack_digest FROM sync_retired_lineage_packs"),
         (PackStorageClass::Delta, "SELECT sha256 FROM physical_v3_delta_packs"),
         (PackStorageClass::PreparedMap, "SELECT pack_sha256 FROM prepared_map_months"),
+        // Issues #98/#109: an offer lease outlives the rows that named it.
+        (PackStorageClass::RetainedPriorHead, "SELECT sha256 FROM device_pack_offers WHERE kind = 'physical'"),
+        (PackStorageClass::Delta, "SELECT sha256 FROM device_pack_offers WHERE kind = 'delta'"),
+        (PackStorageClass::PreparedMap, "SELECT sha256 FROM device_pack_offers WHERE kind = 'prepared'"),
     ] {
+        if !leases && sql.contains("device_pack_offers") {
+            continue;
+        }
         let digests = connection
             .prepare(sql)
             .map_err(StoreError::Query)?

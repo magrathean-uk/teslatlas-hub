@@ -85,7 +85,7 @@ fn lineage_state(store: HubStore) -> AppState {
 
 async fn call_manifest(state: &AppState, request: Request<Body>) -> Response {
     let (parts, _) = request.into_parts();
-    manifest(State(state.clone()), parts.uri, parts.headers).await
+    manifest(State(state.clone()), parts.method, parts.uri, parts.headers).await
 }
 
 #[tokio::test]

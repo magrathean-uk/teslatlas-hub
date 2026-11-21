@@ -112,22 +112,38 @@ async fn prepared(
     serde_json::from_slice(&raw).unwrap()
 }
 
-async fn assert_withheld(app: &Router, bearer: &str, profile: &str, receipt: &Value) {
-    for uri in [
-        format!(
-            "/v1/vehicles/{}/sync/prepared-artefacts/{}",
-            receipt["vehicle_id"].as_str().unwrap(),
-            receipt["artifact_id"].as_str().unwrap()
+/// The old receipt is never discovered again. Its pack stays fetchable by
+/// the device it was issued to while that offer lease lives (issue #109),
+/// and is refused once the lease no longer binds (a new generation).
+async fn assert_withheld(
+    app: &Router,
+    bearer: &str,
+    profile: &str,
+    receipt: &Value,
+    issued_pack_leased: bool,
+) {
+    for (uri, expected) in [
+        (
+            format!(
+                "/v1/vehicles/{}/sync/prepared-artefacts/{}",
+                receipt["vehicle_id"].as_str().unwrap(),
+                receipt["artifact_id"].as_str().unwrap()
+            ),
+            StatusCode::NOT_FOUND,
         ),
-        format!(
-            "/v1/packs/sha256/{}.sqlite.zst",
-            receipt["pack"]["sha256"].as_str().unwrap()
+        (
+            format!(
+                "/v1/packs/sha256/{}.sqlite.zst",
+                receipt["pack"]["sha256"].as_str().unwrap()
+            ),
+            if issued_pack_leased {
+                StatusCode::OK
+            } else {
+                StatusCode::NOT_FOUND
+            },
         ),
     ] {
-        assert_eq!(
-            request(app, bearer, profile, &uri, None).await.0,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(request(app, bearer, profile, &uri, None).await.0, expected);
     }
 }
 
@@ -331,7 +347,7 @@ async fn correction_and_deletion_apply_before_match_on_both_served_profiles() {
                 .unwrap()
                 .admission;
             for receipt in &old {
-                assert_withheld(&app, bearer, profile, receipt).await;
+                assert_withheld(&app, bearer, profile, receipt, true).await;
             }
             let (status, bytes) = request(
                 &app,
@@ -447,7 +463,7 @@ async fn blocked_rotation_returns_404_for_prepared_receipts_on_both_served_profi
             if vehicle_id == binding.vehicle_id
     ));
     for profile in ["hub-sync-v1@1.3.0", "hub-sync-v1@1.4.0"] {
-        assert_withheld(&app, bearer, profile, &receipt).await;
+        assert_withheld(&app, bearer, profile, &receipt, true).await;
     }
 }
 
@@ -595,7 +611,7 @@ async fn restore_generation_invalidates_all_prepared_receipts_and_packs() {
     // close every delivery path, including the no-key pack probe.
     for profile in ["hub-sync-v1@1.3.0", "hub-sync-v1@1.4.0"] {
         for receipt in &old {
-            assert_withheld(&app, access.access_token.as_bearer(), profile, receipt).await;
+            assert_withheld(&app, access.access_token.as_bearer(), profile, receipt, false).await;
             let digest = receipt["pack"]["sha256"].as_str().unwrap().parse().unwrap();
             assert!(
                 !current_pack_candidate_exists(&store, digest, VehicleScope::Unrestricted).unwrap()

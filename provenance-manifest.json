@@ -722,6 +722,7 @@
         "src/api/server/tests/discovery.rs",
         "src/api/server/tests/drive_byte_budget.rs",
         "src/api/server/tests/lineage_manifest.rs",
+        "src/api/server/tests/pack_offers.rs",
         "src/api/server/tests/public_history.rs",
         "src/api/server/tests/readiness.rs",
         "src/api/server/tests/receiver.rs",

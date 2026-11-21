@@ -474,6 +474,7 @@ impl<'a> PackPins<'a> {
     /// time straight into the pin rows, counting packs and bytes, so the list
     /// is never held in memory. Packs are immutable and content-addressed:
     /// the file name is the digest, which the stream re-checks while it reads.
+    /// A pack only expired offer leases name (issue #98) is left out.
     ///
     /// `admitted_rows` pin rows were admitted on the live data volume before
     /// the gate; every further [`PIN_ADMISSION_ROWS`] are admitted before
@@ -496,6 +497,7 @@ impl<'a> PackPins<'a> {
             )
             .map_err(pin_error)?;
         let mut plan = PackPlan { count: 0, bytes: 0 };
+        let expired_leases_only = crate::db::expired_lease_only_pack_digests(&transaction, now)?;
         let pack_directory = store.packs_dir().join("sha256");
         let entries = match fs::read_dir(&pack_directory) {
             Ok(entries) => Some(entries),
@@ -527,6 +529,9 @@ impl<'a> PackPins<'a> {
                 return Err(invalid(format!("live pack is not a regular file: {name}")));
             }
             let digest = name.trim_end_matches(".sqlite.zst");
+            if expired_leases_only.contains(digest) {
+                continue;
+            }
             if plan.count >= admitted_rows {
                 admit_pin_rows(store, PIN_ADMISSION_ROWS)?;
                 admitted_rows += PIN_ADMISSION_ROWS;

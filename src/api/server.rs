@@ -71,6 +71,12 @@ pub use summary_clock::{FIXTURE_SUMMARY_CLOCK_FILE, paired_router_at};
 
 #[path = "server/vehicle_access.rs"]
 mod vehicle_access;
+
+#[path = "server/pack_stream.rs"]
+mod pack_stream;
+use pack_stream::{pack_range_header, stream_pack};
+#[cfg(test)]
+use pack_stream::{open_admitted_physical_pack, read_verified_physical_pack};
 use vehicle_access::{VehicleAccessDenied, json_sync_route_vehicle, require_vehicle_access};
 
 #[cfg(unix)]
@@ -1847,7 +1853,12 @@ async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Res
     }
 }
 
-async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
+async fn manifest(
+    State(state): State<AppState>,
+    method: axum::http::Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     let device = match require_authorized_device(&state, &headers) {
         Ok(device) => device,
         Err(status) => return device_auth_reject(status),
@@ -1863,13 +1874,14 @@ async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -
     {
         return denied.into_public_api_response();
     }
+    let scope = hub_sync_v1::offer_scope(&state, &device, &method);
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
         hub_sync_v1::BootstrapSelection::Selected => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, false).await;
+            return hub_sync_v1::bootstrap_manifest(&state, scope, vehicle_id, false).await;
         }
         hub_sync_v1::BootstrapSelection::Selected14 => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, true).await;
+            return hub_sync_v1::bootstrap_manifest(&state, scope, vehicle_id, true).await;
         }
         hub_sync_v1::BootstrapSelection::Unsupported => {
             return hub_sync_v1::unavailable_bootstrap_manifest();
@@ -2014,6 +2026,7 @@ async fn signing_keys(State(state): State<AppState>, uri: Uri, headers: HeaderMa
 
 async fn prepared_artefact(
     State(state): State<AppState>,
+    method: axum::http::Method,
     uri: Uri,
     headers: HeaderMap,
 ) -> Response {
@@ -2043,10 +2056,17 @@ async fn prepared_artefact(
         vehicle_id,
         &artifact_id,
     ) {
-        Ok(Some(bytes)) => bounded_no_store_json_bytes(bytes).unwrap_or_else(|error| {
-            tracing::error!(%error, %vehicle_id, "prepared receipt exceeds response bound");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        }),
+        Ok(Some(bytes)) => {
+            let scope = hub_sync_v1::offer_scope(&state, &device, &method);
+            let leased = hub_sync_v1::lease_prepared_receipt(&state, scope, vehicle_id, &bytes);
+            if let Err(response) = leased {
+                return response;
+            }
+            bounded_no_store_json_bytes(bytes).unwrap_or_else(|error| {
+                tracing::error!(%error, %vehicle_id, "prepared receipt exceeds response bound");
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            })
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(error) => {
             tracing::error!(%error, %vehicle_id, "cannot resolve prepared receipt");
@@ -2214,6 +2234,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut delta_pack = false;
+    let mut leased = false;
     let (stored, verify_digest) = match state.store.pack_for_digest_in_scope(digest, scope) {
         Ok(Some(pack)) => (pack, false),
         Ok(None) => match state
@@ -2234,28 +2255,72 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                         delta_pack = true;
                         (pack, true)
                     }
-                    Ok(None) => {
-                        let Some(cursor_key) = state.cursor_key.as_deref() else {
-                            return prepared_pack_without_cursor_key(&state.store, digest, scope);
-                        };
-                        match crate::sync::prepared_map::current_pack(
-                            &state.store,
-                            cursor_key,
-                            digest,
-                            scope,
-                        ) {
-                            Ok(Some(pack)) => (pack, true),
-                            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                            Err(error) => {
-                                tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                    Ok(None) => 'current: {
+                        // A current prepared object streams with the bearer
+                        // check alone; only an object that is not current
+                        // takes the lease path (issue #98 recheck).
+                        let mut prepared_failed = false;
+                        if let Some(cursor_key) = state.cursor_key.as_deref() {
+                            match crate::sync::prepared_map::current_pack(
+                                &state.store,
+                                cursor_key,
+                                digest,
+                                scope,
+                            ) {
+                                Ok(Some(pack)) => break 'current (pack, true),
+                                Ok(None) => {}
+                                Err(error) => {
+                                    tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                                    prepared_failed = true;
+                                }
+                            }
+                        }
+                        // Issues #98/#109: a digest offered to this device
+                        // stays fetchable for its lease after a rotation.
+                        match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
+                            Ok(Some((pack, delta))) => {
+                                delta_pack = delta;
+                                leased = true;
+                                (pack, true)
+                            }
+                            Ok(None) if prepared_failed => {
                                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
                             }
+                            Ok(None) if state.cursor_key.is_none() => {
+                                return prepared_pack_without_cursor_key(&state.store, digest, scope);
+                            }
+                            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                            Err(response) => return response,
                         }
                     }
                     Err(error) => {
                         tracing::error!(%error, %digest, "cannot load admitted changed-set pack");
                         return StatusCode::SERVICE_UNAVAILABLE.into_response();
                     }
+                }
+            }
+            // Issue #98 review: a rotation between the digest lookup and the
+            // head load leaves the digest on no current head (a public
+            // replacement, or a blocked successor seen on the second read); a
+            // live lease of this device still serves it.
+            Err(
+                crate::db::StoreError::PhysicalV3AdmissionConflict
+                | crate::db::StoreError::PhysicalV3SecondHeadUnsupported(_),
+            ) => {
+                let Ok(now_ms) = current_epoch_ms() else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
+                    Ok(Some((pack, delta))) => {
+                        delta_pack = delta;
+                        leased = true;
+                        (pack, true)
+                    }
+                    Ok(None) => {
+                        tracing::error!(%digest, "admitted physical pack moved during lookup");
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                    Err(response) => return response,
                 }
             }
             Err(error) => {
@@ -2284,6 +2349,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
             bearer: zeroize::Zeroizing::new(
                 bearer_from_headers(&headers).expect("authenticated bearer").to_owned(),
             ),
+            lease: leased.then_some(digest),
         }));
     }
     let permit = match state.pack_stream_slots.clone().try_acquire_owned() {
@@ -2298,9 +2364,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
     };
     stream_pack(
         stored,
-        headers
-            .get(header::RANGE)
-            .and_then(|header| header.to_str().ok()),
+        pack_range_header(&headers, digest),
         permit,
         device_slot,
         verify_digest,
@@ -2519,6 +2583,28 @@ struct PackDeviceSlot {
 struct PackStreamAuthorization {
     store: Arc<HubStore>,
     bearer: zeroize::Zeroizing<String>,
+    /// Issues #98/#109: the digest a rotated pack is served under the
+    /// device's offer lease. Each chunk then also rechecks that lease (grant,
+    /// generation, window), as it does the bearer.
+    lease: Option<Sha256Digest>,
+}
+
+impl PackStreamAuthorization {
+    fn allows_delivery(&self) -> bool {
+        let Ok(Some(device)) = self.store.authenticate_device(&self.bearer) else {
+            return false;
+        };
+        let Some(digest) = self.lease else {
+            return true;
+        };
+        let Ok(now_ms) = current_epoch_ms() else {
+            return false;
+        };
+        matches!(
+            self.store.offered_pack_for_digest_at(device.device_id, digest, now_ms),
+            Ok(Some(_))
+        )
+    }
 }
 
 impl Drop for PackDeviceSlot {
@@ -2533,143 +2619,6 @@ impl Drop for PackDeviceSlot {
             }
         }
     }
-}
-
-async fn stream_pack(
-    stored: StoredPack,
-    range_header: Option<&str>,
-    permit: tokio::sync::OwnedSemaphorePermit,
-    device_slot: PackDeviceSlot,
-    verify_digest: bool,
-    media_type: &'static str,
-) -> Response {
-    let opened = if verify_digest {
-        open_admitted_physical_pack(&stored.path)
-    } else {
-        tokio::fs::File::open(&stored.path).await
-    };
-    let mut file = match opened {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            tracing::error!(digest = %stored.digest, "published pack file is missing");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-        Err(error) => {
-            tracing::error!(%error, digest = %stored.digest, "cannot open pack file");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let metadata = match file.metadata().await {
-        Ok(metadata) if metadata.is_file() && metadata.len() == stored.compressed_bytes => metadata,
-        Ok(_) => {
-            tracing::error!(digest = %stored.digest, "published pack file size mismatch");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-        Err(error) => {
-            tracing::error!(%error, digest = %stored.digest, "cannot stat pack file");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    // Every pack, a legacy catalogued one included, is read whole through the
-    // descriptor it is served from and checked against its digest before any
-    // byte is sent, so a same-size damaged file is refused for a range too.
-    let max_bytes = if verify_digest {
-        MAX_ADMITTED_PHYSICAL_PACK_BYTES
-    } else {
-        MAX_CATALOGUED_PACK_BYTES
-    };
-    let verified_bytes = match read_verified_physical_pack(
-        &mut file,
-        stored.compressed_bytes,
-        stored.digest,
-        max_bytes,
-    )
-    .await
-    {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            tracing::error!(%error, digest = %stored.digest, "cannot verify pack bytes against their digest");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let range = match parse_single_range(range_header, metadata.len()) {
-        Ok(range) => range,
-        Err(_) => return range_not_satisfiable(metadata.len()),
-    };
-    let content_length = match HeaderValue::from_str(&range.len().to_string()) {
-        Ok(value) => value,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
-    let etag = match HeaderValue::from_str(&format!("\"{}\"", stored.digest)) {
-        Ok(value) => value,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
-    let mut response = Response::builder()
-        .status(if range.is_partial() {
-            StatusCode::PARTIAL_CONTENT
-        } else {
-            StatusCode::OK
-        })
-        .header(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("private, max-age=31536000, immutable"),
-        )
-        .header(header::CONTENT_TYPE, HeaderValue::from_static(media_type))
-        .header(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"))
-        .header(header::CONTENT_LENGTH, content_length)
-        .header(header::ETAG, etag);
-    if range.is_partial() {
-        let content_range = match HeaderValue::from_str(&range.content_range()) {
-            Ok(value) => value,
-            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        };
-        response = response.header(header::CONTENT_RANGE, content_range);
-    }
-    let start = usize::try_from(range.start).expect("pack start fits usize");
-    let end = usize::try_from(range.end + 1).expect("pack end fits usize");
-    let body = verified_pack_body(
-        verified_bytes.slice(start..end),
-        permit,
-        device_slot,
-        PACK_STREAM_IDLE_TIMEOUT,
-    );
-    response
-        .body(body)
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-}
-
-fn open_admitted_physical_pack(path: &FsPath) -> std::io::Result<tokio::fs::File> {
-    let descriptor = open(
-        path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-        Mode::empty(),
-    )
-    .map_err(|_| std::io::Error::other("admitted physical pack cannot be safely opened"))?;
-    let file: fs::File = descriptor.into();
-    Ok(tokio::fs::File::from_std(file))
-}
-
-async fn read_verified_physical_pack(
-    file: &mut tokio::fs::File,
-    expected_bytes: u64,
-    expected_digest: Sha256Digest,
-    max_bytes: u64,
-) -> std::io::Result<Bytes> {
-    if !(1..=max_bytes).contains(&expected_bytes) {
-        return Err(std::io::Error::other("pack size is outside the profile"));
-    }
-    tokio::io::AsyncSeekExt::seek(file, std::io::SeekFrom::Start(0)).await?;
-    let capacity = usize::try_from(expected_bytes)
-        .map_err(|_| std::io::Error::other("admitted physical pack is too large"))?;
-    let mut bytes = Vec::with_capacity(capacity);
-    let mut bounded = tokio::io::AsyncReadExt::take(file, expected_bytes + 1);
-    tokio::io::AsyncReadExt::read_to_end(&mut bounded, &mut bytes).await?;
-    if bytes.len() != capacity || Sha256Digest::of_bytes(&bytes) != expected_digest {
-        return Err(std::io::Error::other(
-            "pack bytes do not match the catalogued digest",
-        ));
-    }
-    Ok(Bytes::from(bytes))
 }
 
 fn verified_pack_body(
@@ -2729,7 +2678,8 @@ where
         }
     });
     // Check at delivery, including queued chunks: a revocation, expiry or
-    // superseded bearer must stop an existing response as well as new requests.
+    // superseded bearer must stop an existing response as well as new requests,
+    // and so must a lost grant or generation for a leased pack.
     Body::from_stream(stream::unfold(
         Some((receiver, authorization)),
         |state| async move {
@@ -2737,9 +2687,7 @@ where
             let item = receiver.recv().await?;
             if let Some(access) = authorization.as_ref() {
                 let access = Arc::clone(access);
-                let allowed = tokio::task::spawn_blocking(move || {
-                    matches!(access.store.authenticate_device(&access.bearer), Ok(Some(_)))
-                })
+                let allowed = tokio::task::spawn_blocking(move || access.allows_delivery())
                 .await
                 .unwrap_or(false);
                 if !allowed {
@@ -2755,19 +2703,6 @@ where
             Some((item, Some((receiver, authorization))))
         },
     ))
-}
-
-fn range_not_satisfiable(complete_length: u64) -> Response {
-    let content_range = HeaderValue::from_str(&unsatisfied_content_range(complete_length))
-        .expect("content range made only from digits");
-    (
-        StatusCode::RANGE_NOT_SATISFIABLE,
-        [
-            (header::ACCEPT_RANGES, HeaderValue::from_static("bytes")),
-            (header::CONTENT_RANGE, content_range),
-        ],
-    )
-        .into_response()
 }
 
 #[derive(Serialize)]

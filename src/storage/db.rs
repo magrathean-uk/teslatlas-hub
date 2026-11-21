@@ -1511,6 +1511,7 @@ include!("db/maintenance.rs");
 include!("db/publication.rs");
 include!("db/physical_v3_admission.rs");
 include!("db/import_publication.rs");
+include!("db/pack_offers.rs");
 include!("db/live_sync.rs");
 include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
