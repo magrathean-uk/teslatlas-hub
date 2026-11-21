@@ -587,9 +587,13 @@ fn design_later_60_failed_adoption_keeps_the_capture_and_reports_no_publication(
             .is_file(),
         "the unmoved source sessions stay"
     );
-    assert_eq!(
-        fixture.store.import_publication_intent(vehicle).expect("intent"),
-        Some(intent.clone())
+    assert!(
+        fixture
+            .store
+            .import_publication_intent(vehicle)
+            .expect("intent")
+            .is_some_and(|recorded| recorded.committed && recorded.run_id == intent.run_id),
+        "the committed intent stays"
     );
     let env = paired(&fixture);
     assert_eq!(
@@ -607,7 +611,7 @@ fn design_later_60_failed_adoption_keeps_the_capture_and_reports_no_publication(
     assert_routes_agree(&fixture, "after the restart");
 }
 
-/// Review finding 3 (P3): a run killed while compacting its capture leaves a
+/// Review finding 7 (the P3): a run killed while compacting its capture leaves a
 /// raw candidate in the capture staging folder that no intent names. The
 /// next sweep under the gate removes the candidate and its SQLite side
 /// files, and leaves any other name.
