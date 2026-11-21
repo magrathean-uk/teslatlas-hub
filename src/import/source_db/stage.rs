@@ -1284,6 +1284,13 @@ fn ensure_private_stage_path(path: &Path) -> Result<PrivateStagePath, SourceDbSt
     })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The parents synced after a private directory was newly created (tests).
+    pub(crate) static PARENT_SYNCS: std::cell::RefCell<Vec<PathBuf>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 fn ensure_private_directory(path: &Path) -> Result<PrivateDirectory, SourceDbStageError> {
     private_directory(path, true)
 }
@@ -1332,6 +1339,14 @@ fn private_directory(path: &Path, create: bool) -> Result<PrivateDirectory, Sour
                 source,
             }
         })?;
+        // The new entry must reach disk before anything that is committed
+        // elsewhere (a catalogue record) relies on the directory.
+        fsync(&parent).map_err(|source| SourceDbStageError::SyncStageDirectory {
+            path: parent_path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(test)]
+        PARENT_SYNCS.with(|syncs| syncs.borrow_mut().push(parent_path.to_path_buf()));
     }
     finish_private_directory(directory, &absolute)
 }

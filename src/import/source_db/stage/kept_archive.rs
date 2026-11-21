@@ -1002,6 +1002,35 @@ mod tests {
         assert!(staging_files(root.path()).is_empty());
     }
 
+    /// A newly created kept directory has its entry in the parent synced
+    /// before the archive is built, so a catalogue record committed after
+    /// the build cannot outlive the directory's name.
+    #[test]
+    fn kept_archive_syncs_the_parent_of_a_new_kept_directory() {
+        let root = crate::private_tempdir().expect("root");
+        let (stage, _) = synthetic_stage(root.path(), 50);
+        crate::source_db_stage::PARENT_SYNCS.with(|syncs| syncs.borrow_mut().clear());
+        stage
+            .write_kept_archive(kept_dir(root.path()), "base.kept", IDENTITY)
+            .expect("archive");
+        let synced = crate::source_db_stage::PARENT_SYNCS.with(|syncs| syncs.borrow().clone());
+        let parent = std::fs::canonicalize(root.path()).expect("root");
+        assert!(
+            synced.iter().any(|path| std::fs::canonicalize(path).ok().as_deref() == Some(parent.as_path())),
+            "the parent of the new kept directory is synced: {synced:?}"
+        );
+        // An existing directory is not a new entry: nothing more to sync.
+        crate::source_db_stage::PARENT_SYNCS.with(|syncs| syncs.borrow_mut().clear());
+        stage
+            .write_kept_archive(kept_dir(root.path()), "second.kept", IDENTITY)
+            .expect("second archive");
+        let again = crate::source_db_stage::PARENT_SYNCS.with(|syncs| syncs.borrow().clone());
+        assert!(
+            !again.iter().any(|path| std::fs::canonicalize(path).ok().as_deref() == Some(parent.as_path())),
+            "{again:?}"
+        );
+    }
+
     #[test]
     fn kept_archive_build_crash_points_never_name_a_partial_archive() {
         for point in ["candidate", "partial"] {
