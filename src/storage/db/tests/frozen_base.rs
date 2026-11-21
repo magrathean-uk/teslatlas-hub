@@ -736,7 +736,10 @@ fn frozen_base_one_digit_change_after_preflight_refuses_the_encrypted_backup() {
     let last = flipped.logical.pop().expect("digit");
     flipped.logical.push(if last == '0' { '1' } else { '0' });
     let damaged = serde_json::to_string(&flipped).expect("value");
-    let destination = fixture._temporary.path().join("encrypted-destination");
+    // The destination must sit outside the live Hub data directory, or the
+    // backup refuses before the snapshot this test damages.
+    let outside = crate::private_tempdir().expect("destination parent");
+    let destination = outside.path().join("encrypted-destination");
     std::fs::create_dir(&destination).expect("destination");
     std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o700)).expect("private");
     let request = || {
