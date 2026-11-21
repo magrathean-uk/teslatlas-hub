@@ -641,3 +641,95 @@ async fn design_later_109_head_requests_create_no_lease() {
         i64::try_from(first.manifest.chunks.len()).unwrap() + 1
     );
 }
+
+#[tokio::test]
+async fn design_later_98_changed_set_with_a_damaged_signature_is_not_leased() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x98; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 1, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    let (_, second) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("b"), &store, &key, 3, "offers98", 2);
+    let preview =
+        crate::db::physical_v3_admission_from_manifest(&second.manifest, binding.selected_car_id)
+            .expect("B identity");
+    let delta = crate::import::source_db::physical_delta_pack::prepare_changed_set(
+        &first,
+        &preview,
+        &binding,
+        &key,
+        Sha256Digest::of_bytes(b"offers98 damaged"),
+        store.packs_dir(),
+        0,
+    )
+    .expect("changed set");
+    let second = store
+        .rotate_pending_physical_v3_admission_with_delta_at(&gate, second, Some(delta), now)
+        .expect("B");
+    store
+        .activate_pending_physical_v3_rotation_at(&gate, binding.vehicle_id, &first.receipt_id, now)
+        .expect("B public");
+    drop(gate);
+    let phone = pair(&store, "damaged phone", now);
+    let app = paired_router(store.clone(), &key);
+    let first_sha = Sha256Digest::of_bytes(
+        &ManifestSigning::from_cursor_key(&key)
+            .signed_physical_manifest_document(&first)
+            .unwrap(),
+    );
+    let changes = || {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/v1/vehicles/{}/sync/changes-since", binding.vehicle_id))
+            .header(header::AUTHORIZATION, format!("Bearer {}", phone.bearer))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "source": {"installation_id":binding.installation_id,"account_id":binding.account_id,
+                        "vehicle_id":binding.vehicle_id,"generation":binding.generation,
+                        "selected_car_id":binding.selected_car_id},
+                    "base_receipt_id":first.receipt_id,"base_manifest_id":first.snapshot_id.to_string(),
+                    "base_manifest_sha256":first_sha.to_string(),"base_manifest_schema":"2.2",
+                    "from_sequence":first.head_sequence,
+                    "schema_version_range":{"minimum":"2.2","maximum":"2.2"},
+                    "accepted_changed_set_formats":[hub_sync_v1::PHYSICAL_DELTA_FORMAT],
+                }))
+                .unwrap(),
+            ))
+            .unwrap()
+    };
+    let connection = store.open().unwrap();
+    let stored: Vec<u8> = connection
+        .query_row(
+            "SELECT receipt_json FROM physical_v3_delta_transitions WHERE target_receipt_id = ?1",
+            rusqlite::params![second.receipt_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut damaged: serde_json::Value = serde_json::from_slice(&stored).unwrap();
+    damaged["signature"]["signature"] = serde_json::json!(format!("{}==", "A".repeat(86)));
+    let write = |receipt: &[u8]| {
+        connection
+            .execute(
+                "UPDATE physical_v3_delta_transitions SET receipt_json = ?1
+                  WHERE target_receipt_id = ?2",
+                rusqlite::params![receipt, second.receipt_id],
+            )
+            .unwrap();
+    };
+    write(&serde_json::to_vec(&damaged).unwrap());
+    let refused = app.clone().oneshot(changes()).await.unwrap();
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(lease_rows(&store, phone.device_id), 0);
+    // The genuine receipt verifies and is leased.
+    write(&stored);
+    let served = app.clone().oneshot(changes()).await.unwrap();
+    assert_eq!(served.status(), StatusCode::OK);
+    assert!(lease_rows(&store, phone.device_id) > 0);
+}

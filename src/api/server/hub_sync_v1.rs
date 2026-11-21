@@ -985,6 +985,12 @@ fn serve_physical_changes_since_14(
             Ok(Some((stored_base_sha, stored_target_sha, receipt_json)))
                 if stored_base_sha == base_sha && stored_target_sha == target_sha =>
             {
+                // Issue #98 review finding 10: lease only for a receipt
+                // whose signature this Hub's key verifies.
+                if !signing.verifies_control_document(&receipt_json) {
+                    tracing::error!(%vehicle_id, "stored physical delta receipt signature is invalid");
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
                 let Some(offers) = delta_offers(&receipt_json) else {
                     tracing::error!(%vehicle_id, "stored physical delta receipt names no packs");
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
