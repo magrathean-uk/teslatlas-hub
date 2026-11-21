@@ -614,3 +614,48 @@ fn storage_reclaim_holds_every_kept_file_when_a_record_names_no_vehicle() {
     assert_eq!(report.after.refused.files, 1);
     assert!(stray.is_file());
 }
+
+#[test]
+fn storage_reclaim_refuses_a_differently_cased_conflicting_kept_key() {
+    for (case, archive) in [("archive", true), ("legacy", false)] {
+        let (_temporary, store) = try_test_store().expect("store");
+        let kept = kept_dir(&store);
+        let live = Uuid::from_u128(0xabcdefab_cdef_4abc_8def_abcdefabcdef);
+        let generation = Uuid::from_u128(1);
+        let rival = Uuid::from_u128(2);
+        let live_record = kept_record(archive.then_some((generation, BASE_BYTES as u64)));
+        put_kept_record(&store, live, &live_record);
+        let paths: Vec<_> = if archive {
+            vec![
+                kept.join(format!("{live}.{generation}.kept")),
+                kept.join(format!("{live}.{generation}.source.json")),
+            ]
+        } else {
+            vec![
+                kept.join(format!("{live}.source.json")),
+                kept.join(".staging").join(format!("{live}.sqlite")),
+            ]
+        };
+        for path in &paths {
+            kept_write(path, BASE_BYTES);
+        }
+        let alias = kept_record(Some((rival, BASE_BYTES as u64)));
+        store
+            .open()
+            .expect("catalogue")
+            .execute(
+                "INSERT INTO hub_metadata(key, value) VALUES (?1, ?2)",
+                [
+                    format!("physical_v3_kept:{}", live.to_string().to_uppercase()),
+                    serde_json::to_string(&alias).expect("record"),
+                ],
+            )
+            .expect("alias record");
+        let report = store.reclaim_storage_at(1_000).expect("reclaim");
+        assert_eq!(report.reclaimed_bytes, 0, "{case}");
+        assert!(report.after.refused.files >= 1, "{case}");
+        for path in &paths {
+            assert!(path.is_file(), "{case}: {}", path.display());
+        }
+    }
+}

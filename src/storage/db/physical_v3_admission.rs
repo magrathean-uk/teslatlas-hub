@@ -1822,7 +1822,16 @@ pub(crate) fn physical_v3_kept_references_in(
                 && canonical(&kept.source)
                 && kept.archive.as_ref().is_none_or(|archive| canonical(&archive.digest))
         });
-        references.records.insert(vehicle_id, record);
+        if key != format!("physical_v3_kept:{vehicle_id}") {
+            // Another spelling of a UUID names the same vehicle as the
+            // canonical key, so ownership is ambiguous whichever row comes
+            // first: refuse that vehicle and hold every kept file.
+            references.unattributable = true;
+            references.records.insert(vehicle_id, None);
+            continue;
+        }
+        // A refusal recorded by a colliding spelling is never overwritten.
+        references.records.entry(vehicle_id).or_insert(record);
     }
     Ok(references)
 }
