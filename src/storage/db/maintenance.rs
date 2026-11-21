@@ -1524,8 +1524,16 @@ impl HubStore {
             .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
             .map_err(StoreError::Query)?;
         let schema_version = schema_version(&connection)?;
-        let referenced_pack_rows =
-            referenced_pack_rows_at(&connection, retired_lineage_clock_ms()?)?;
+        let cutoff_ms = retired_lineage_clock_ms()?;
+        // A damaged frozen record must not hide the rest of the inventory:
+        // doctor still describes the store, and its integrity check names
+        // the record.
+        let referenced_pack_rows = match referenced_pack_rows_at(&connection, cutoff_ms) {
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. }) => {
+                referenced_pack_rows_with(&connection, cutoff_ms, false)?
+            }
+            other => other?,
+        };
         let referenced_packs = u64::try_from(referenced_pack_rows.len())
             .map_err(|_| StoreError::InvalidStoredCount)?;
         let referenced_pack_bytes =

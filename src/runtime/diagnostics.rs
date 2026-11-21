@@ -921,6 +921,11 @@ mod tests {
         include!("diagnostics/b3_c7_c_tests.rs");
     }
 
+    // A damaged frozen physical base record (STORAGE-T3a).
+    mod frozen_base {
+        include!("diagnostics/frozen_base_tests.rs");
+    }
+
     // The terrain status member (C9 R63).
     mod b3_c9_w {
         include!("diagnostics/b3_c9_w_tests.rs");

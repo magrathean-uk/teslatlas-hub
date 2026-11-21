@@ -17,6 +17,17 @@ fn referenced_pack_rows_at(
     connection: &Connection,
     retired_expiry_cutoff_ms: i64,
 ) -> Result<Vec<(String, String, i64)>, StoreError> {
+    referenced_pack_rows_with(connection, retired_expiry_cutoff_ms, true)
+}
+
+/// [`referenced_pack_rows_at`], optionally without the frozen bases. Only
+/// `doctor`'s read-only inventory leaves them out, and only to describe a
+/// store whose frozen record is damaged; no sweep or backup does.
+fn referenced_pack_rows_with(
+    connection: &Connection,
+    retired_expiry_cutoff_ms: i64,
+    with_frozen_bases: bool,
+) -> Result<Vec<(String, String, i64)>, StoreError> {
     let mut rows = {
         let mut statement = connection
             .prepare("SELECT sha256, relative_path, compressed_bytes FROM sync_packs")
@@ -28,6 +39,11 @@ fn referenced_pack_rows_at(
             .map_err(StoreError::Query)?
     };
     rows.extend(pending_physical_v3_pack_rows(connection)?);
+    // DEC-250: every pack a frozen physical base names, current or not; a
+    // record that does not read back refuses the whole set.
+    if with_frozen_bases {
+        rows.extend(frozen_physical_base_pack_rows(connection)?);
+    }
     rows.extend(retained_physical_v3_pack_rows(
         connection,
         retired_expiry_cutoff_ms,
@@ -157,7 +173,8 @@ impl StorageCensusClass {
 /// and `packs/sha256`, and the import stages kept under `packs/physical-kept`.
 /// A pack referenced by more than one class is counted once, in the first
 /// class of this order. The current heads are the served physical heads and
-/// the lineage head; the import bases are each vehicle's kept import stage
+/// the lineage head; the frozen bases are the packs each vehicle's frozen
+/// physical base names, kept after its head stops being current; the import bases are each vehicle's kept import stage
 /// and its source sessions, which every hand-back republishes from, decided by
 /// the validated kept records alone. A kept file no record names (a stage copy
 /// or archive generation left by an interrupted hand-back, keep or conversion,
@@ -166,6 +183,12 @@ impl StorageCensusClass {
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, PartialEq, Eq)]
 pub struct StorageCensus {
     pub current_heads: StorageCensusClass,
+    /// Packs of the vehicles' frozen physical bases that are not a current
+    /// head; always needed (DEC-250).
+    /// Absent (and left out of the JSON) while the store has no frozen
+    /// record, so a store that never froze keeps its earlier census shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frozen_bases: Option<StorageCensusClass>,
     pub import_bases: StorageCensusClass,
     pub retained_prior_heads: StorageCensusClass,
     pub deltas: StorageCensusClass,
@@ -190,6 +213,8 @@ pub struct StorageReclaimReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PackStorageClass {
     CurrentHead,
+    /// A pack of a vehicle's frozen physical base (DEC-250).
+    FrozenBase,
     ImportBase,
     RetainedPriorHead,
     Delta,
@@ -278,9 +303,11 @@ fn pack_storage_classes(
 ) -> Result<HashMap<String, PackStorageClass>, StoreError> {
     let mut classes = HashMap::new();
     let leases = device_pack_offers_present(connection)?;
+    let frozen = frozen_physical_base_pack_rows(connection)?;
     for (class, sql) in [
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM pending_physical_v3_packs"),
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM sync_packs"),
+        (PackStorageClass::FrozenBase, ""),
         (PackStorageClass::RetainedPriorHead, "SELECT sha256 FROM retained_physical_v3_packs"),
         (PackStorageClass::RetainedPriorHead, "SELECT pack_digest FROM sync_retired_lineage_packs"),
         (PackStorageClass::Delta, "SELECT sha256 FROM physical_v3_delta_packs"),
@@ -290,6 +317,12 @@ fn pack_storage_classes(
         (PackStorageClass::Delta, "SELECT sha256 FROM device_pack_offers WHERE kind = 'delta'"),
         (PackStorageClass::PreparedMap, "SELECT sha256 FROM device_pack_offers WHERE kind = 'prepared'"),
     ] {
+        if class == PackStorageClass::FrozenBase {
+            for (digest, _, _) in &frozen {
+                classes.entry(digest.clone()).or_insert(class);
+            }
+            continue;
+        }
         if !leases && sql.contains("device_pack_offers") {
             continue;
         }
@@ -537,12 +570,16 @@ fn kept_stage_files(
     Ok(files)
 }
 
-fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
+fn storage_census_of(
+    connection: &Connection,
+    files: &[PackStorageFile],
+) -> Result<StorageCensus, StoreError> {
     let mut census = StorageCensus::default();
     for file in files {
         let reclaimable = !file.needed;
         let class = match file.class {
             Some(PackStorageClass::CurrentHead) => &mut census.current_heads,
+            Some(PackStorageClass::FrozenBase) => census.frozen_bases.get_or_insert_default(),
             Some(PackStorageClass::ImportBase) => &mut census.import_bases,
             Some(PackStorageClass::RetainedPriorHead) => &mut census.retained_prior_heads,
             Some(PackStorageClass::Delta) => &mut census.deltas,
@@ -553,7 +590,11 @@ fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
         class.add(file.bytes, reclaimable);
         census.total.add(file.bytes, reclaimable);
     }
-    census
+    // A frozen record whose packs are all current heads still has its class.
+    if !frozen_physical_bases_in(connection)?.is_empty() {
+        census.frozen_bases.get_or_insert_default();
+    }
+    Ok(census)
 }
 
 impl HubStore {
@@ -565,11 +606,10 @@ impl HubStore {
 
     fn storage_census_at(&self, now_ms: i64) -> Result<StorageCensus, StoreError> {
         let connection = self.open_read_only_connection()?;
-        Ok(storage_census_of(&pack_storage_files(
+        storage_census_of(
             &connection,
-            self.packs_dir(),
-            now_ms,
-        )?))
+            &pack_storage_files(&connection, self.packs_dir(), now_ms)?,
+        )
     }
 
     /// Remove exactly the pack files the census counts as reclaimable, then
@@ -585,7 +625,7 @@ impl HubStore {
         let _publication_gate = self.try_acquire_publication_gate()?;
         let mut connection = self.open()?;
         let files = pack_storage_files(&connection, self.packs_dir(), now_ms)?;
-        let before = storage_census_of(&files);
+        let before = storage_census_of(&connection, &files)?;
         let (mut reclaimed_files, mut reclaimed_bytes) = (0_u64, 0_u64);
         for file in files.iter().filter(|file| !file.needed) {
             let bytes = match statat(&*file.directory, file.name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
@@ -622,7 +662,8 @@ impl HubStore {
             now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS),
         )?;
         transaction.commit().map_err(StoreError::LineageCatalog)?;
-        let after = storage_census_of(&pack_storage_files(&connection, self.packs_dir(), now_ms)?);
+        let after =
+            storage_census_of(&connection, &pack_storage_files(&connection, self.packs_dir(), now_ms)?)?;
         Ok(StorageReclaimReport {
             before,
             reclaimed_files,

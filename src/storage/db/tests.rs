@@ -97,6 +97,8 @@ mod catalogue_maintenance;
 
 #[path = "tests/pack_offers.rs"]
 mod pack_offers;
+#[path = "tests/frozen_base.rs"]
+mod frozen_base;
 
 #[path = "tests/drive_repair.rs"]
 mod drive_repair;
