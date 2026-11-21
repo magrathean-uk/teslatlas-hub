@@ -841,6 +841,9 @@ struct CapturedSourceDbImport {
     /// The source sessions the import read, for its final report.
     source_basis: SourceDbImportBasis,
     publication_gate: PublicationGate,
+    /// The capture and intent recorded before the import's first commit,
+    /// with which its publication finishes after a restart (issue #60).
+    publication: Option<crate::db::ImportPublicationIntent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1086,6 +1089,9 @@ async fn import_pass(
         "Source database import opening a read-only PostgreSQL snapshot; source rows are never deleted"
     );
     let selected_car_id = selected_car_id(request)?;
+    // Issue #60: an earlier import's interrupted publication is finished (or
+    // dropped, or refused) before this one may record its own.
+    resume_import_publications(store, cursor_key, &publication_gate)?;
     let car = read_selected_car(source, password, selected_car_id, limits).await?;
     let source_vehicle_key = stable_vehicle_key_for_car(&car)?;
     let source_descriptor = SourceDescriptor::new(IMPORT_SOURCE_KIND, request.source_key.clone());
@@ -1242,7 +1248,7 @@ async fn import_pass(
     store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
-    let physical_stage = first_capture.physical_stage;
+    let mut physical_stage = first_capture.physical_stage;
     let physical_source = physical_stage
         .as_ref()
         .map(|_| (materialised_drives.clone(), materialised_charges.clone()));
@@ -1275,6 +1281,37 @@ async fn import_pass(
             direct.fingerprint,
         );
     }
+    // Issue #60: the capture a restart finishes this import's publication
+    // from is durable, and its intent recorded, before anything commits.
+    let publication = match physical_stage.as_mut() {
+        Some(stage) => match capture_import_publication(
+            store,
+            &publication_gate,
+            run_id,
+            &binding,
+            stage.stage_mut(),
+            &materialised_drives,
+            &materialised_charges,
+            &updates_v2_2,
+        ) {
+            Ok(intent) => Some(intent),
+            Err(error) => {
+                store.abort_import_generation(run_id)?;
+                return Err(error);
+            }
+        },
+        // No capture (a compatibility import): its commit refuses every
+        // earlier physical head until the next import that records one.
+        None => {
+            if let Err(error) =
+                store.record_uncaptured_import_publication(&publication_gate, run_id, binding.vehicle_id)
+            {
+                store.abort_import_generation(run_id)?;
+                return Err(error.into());
+            }
+            None
+        }
+    };
     if legacy_bridge {
         let legacy_physical_fingerprint = direct
             .legacy_physical_fingerprint
@@ -1321,6 +1358,7 @@ async fn import_pass(
             physical_source,
             source_basis,
             publication_gate,
+            publication,
         }));
     }
     let transport_rows = transport_row_count(&direct.chunks)?;
@@ -1361,6 +1399,7 @@ async fn import_pass(
                 physical_source,
                 source_basis,
                 publication_gate,
+                publication,
             }));
         }
         if let Some(current) =
@@ -1386,6 +1425,7 @@ async fn import_pass(
                 physical_source,
                 source_basis,
                 publication_gate,
+                publication,
             }));
         }
     }
@@ -1483,6 +1523,7 @@ async fn import_pass(
                 physical_source,
                 source_basis,
                 publication_gate,
+                publication,
             }));
         }
     }
@@ -1573,6 +1614,7 @@ async fn import_pass(
             physical_source,
             source_basis,
             publication_gate,
+            publication,
         }));
     }
     let projection_state = capture.state();
@@ -1707,6 +1749,7 @@ async fn import_pass(
         physical_source,
         source_basis,
         publication_gate,
+        publication,
     }))
 }
 
@@ -1820,12 +1863,10 @@ fn publish_staged_history_with_limits(
             request.imported_at_ms,
         )?),
     };
-    store.stage_import_generation_session(
-        import_run
-            .run_id
-            .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?,
-        open_session,
-    )?;
+    let staged_run = import_run.run_id.ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
+    store.stage_import_generation_session(staged_run, open_session)?;
+    // Issue #60: no capture, so its history commit refuses older physical heads.
+    store.record_uncaptured_import_publication(&publication_gate, staged_run, vehicle.vehicle_id)?;
     let snapshot_id = Uuid::new_v4();
     let binding = ProjectionBinding {
         installation_id: store.installation_id()?,
@@ -2787,6 +2828,14 @@ pub enum SourceDbImportError {
     },
     #[error("schema-2.2 publication candidate could not be prepared: {0}")]
     Schema22Preparation(#[source] UpdatesDeliveryError),
+    #[error(
+        "the import's publication capture for vehicle {vehicle_id} could not be written, so nothing was committed; retry the selected-car import: {reason}"
+    )]
+    PublicationCapture { vehicle_id: Uuid, reason: String },
+    #[error(
+        "history committed for vehicle {vehicle_id}, but the import's capture could not be kept as its replay base, so phone sync stays refused until the Hub finishes the publication from the capture at its next start, window close or import: {reason}"
+    )]
+    PublicationAdoption { vehicle_id: Uuid, reason: String },
     #[error(transparent)]
     Reader(#[from] crate::source_db_reader::SourceDbReaderError),
     #[error(transparent)]
@@ -2860,6 +2909,8 @@ mod n1_src_import_source_db_importer_rs_display_tests {
                 SourceDbImportError::CutoverUnsettled => (),
                 SourceDbImportError::Schema22PostCommit { .. } => (),
                 SourceDbImportError::Schema22Preparation(..) => (),
+                SourceDbImportError::PublicationCapture { .. } => (),
+                SourceDbImportError::PublicationAdoption { .. } => (),
                 SourceDbImportError::Reader(..) => (),
                 SourceDbImportError::Direct(..) => (),
                 SourceDbImportError::Stage(..) => (),
@@ -2911,6 +2962,14 @@ mod n1_src_import_source_db_importer_rs_display_tests {
             source: example(),
         });
         check_source_db_import_error(SourceDbImportError::Schema22Preparation(example()));
+        check_source_db_import_error(SourceDbImportError::PublicationCapture {
+            vehicle_id: example(),
+            reason: "the capture directory is full".to_owned(),
+        });
+        check_source_db_import_error(SourceDbImportError::PublicationAdoption {
+            vehicle_id: example(),
+            reason: "the capture file is missing".to_owned(),
+        });
         check_source_db_import_error(SourceDbImportError::Reader(example()));
         check_source_db_import_error(SourceDbImportError::Direct(example()));
         check_source_db_import_error(SourceDbImportError::Stage(example()));

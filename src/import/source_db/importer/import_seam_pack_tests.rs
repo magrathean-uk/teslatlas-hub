@@ -1009,6 +1009,11 @@ mod seam_repair_packs;
 #[path = "seam_physical_route_tests.rs"]
 mod seam_physical_route;
 
+// Issue #60: coherent publication after an interrupted re-import; a child
+// module so it shares this fixture.
+#[path = "design_later_60_tests.rs"]
+mod design_later_60;
+
 /// One pack's `hub_pack_metadata` as a map.
 fn pack_metadata(store: &HubStore, digest: Sha256Digest) -> BTreeMap<String, String> {
     let path = ProjectionPackWriter::new(store.packs_dir()).content_path(digest);

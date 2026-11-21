@@ -251,12 +251,20 @@ fn kept_file(vehicle_id: Uuid, name: &str) -> Option<KeptFile> {
 /// Removes the vehicle's kept files the record `kept` does not name (an
 /// interrupted keep or conversion, or the superseded pair), under the
 /// publication gate the caller holds. Only regular files of the kept shapes
-/// go; anything else is left.
+/// go; anything else is left. A capture a pending import publication names
+/// is never removed, wherever its adoption left it (issue #60); when the
+/// pending publications cannot be read, nothing is removed.
 fn remove_superseded_kept_files(
     store: &HubStore,
     vehicle_id: Uuid,
     kept: Option<&crate::db::PhysicalV3Kept>,
 ) {
+    let Ok(holds) = store.import_publication_holds() else {
+        return;
+    };
+    if holds.holds_vehicle(vehicle_id) {
+        return;
+    }
     let current = kept.map(|kept| kept.archive.as_ref().map(|archive| archive.generation));
     let mut removed = false;
     let directory = physical_kept_dir(store);
@@ -275,7 +283,13 @@ fn remove_superseded_kept_files(
                 }
                 _ => false,
             };
+            let held = matches!(
+                file,
+                KeptFile::Archive(generation) | KeptFile::Source(generation)
+                    if holds.holds(vehicle_id, generation)
+            );
             if !named
+                && !held
                 && entry.file_type().is_ok_and(|kind| kind.is_file())
                 && std::fs::remove_file(entry.path()).is_ok()
             {
@@ -537,6 +551,11 @@ pub(crate) fn publish_physical_after_handback(
     publication_gate: &PublicationGate,
 ) -> Result<Vec<(Uuid, HandbackPhysicalOutcome)>, SourceDbImportError> {
     lower_handback_thread_priority();
+    // Issue #60: an interrupted import's publication is finished first, from
+    // its capture, so no handback plans an older replay base in its place.
+    for (vehicle_id, outcome) in resume_import_publications(store, cursor_key, publication_gate)? {
+        tracing::info!(%vehicle_id, ?outcome, "import publication resumed before the handback");
+    }
     let mut outcomes = Vec::new();
     for vehicle_id in store.physical_v3_kept_vehicles()? {
         let outcome =
@@ -569,6 +588,15 @@ fn publish_vehicle_after_handback(
     let Some(kept) = store.physical_v3_kept(vehicle_id)? else {
         return Ok(HandbackPhysicalOutcome::Pruned);
     };
+    // Issue #60: while an import's publication is pending its capture may
+    // already be the kept base, and the restart that finishes it needs every
+    // file, so nothing is pruned or planned until it is resolved.
+    if store.import_publication_holds()?.pending(vehicle_id) {
+        return Ok(HandbackPhysicalOutcome::Withheld(
+            "an import's publication is pending; the next start or window close finishes it"
+                .into(),
+        ));
+    }
     if store.collection_coverage_unreconciled()? {
         return Ok(HandbackPhysicalOutcome::Withheld(
             "a window's handback has not reached the store's coverage yet".into(),
@@ -586,6 +614,24 @@ fn publish_vehicle_after_handback(
         Some(true) => return Ok(HandbackPhysicalOutcome::Current),
         Some(false) => {}
     }
+    // Issue #60: after a committed import only its own adopted base may be
+    // planned, and the head is stamped with that import's revision.
+    let revision = match store.physical_v3_import_revision(vehicle_id)? {
+        None => None,
+        Some(revision)
+            if revision.kept.is_some()
+                && revision.kept == kept.archive.as_ref().map(|archive| archive.generation)
+                && store.import_publication_intent(vehicle_id)?.is_none() =>
+        {
+            Some(revision.run_id)
+        }
+        Some(_) => {
+            return Ok(HandbackPhysicalOutcome::Withheld(
+                "the kept base is not the committed import's; the next import publishes the head"
+                    .into(),
+            ));
+        }
+    };
     // An interrupted keep or conversion left files the record does not name.
     remove_superseded_kept_files(store, vehicle_id, Some(&kept));
     let withheld = |reason: String| Ok(HandbackPhysicalOutcome::Withheld(reason));
@@ -638,7 +684,7 @@ fn publish_vehicle_after_handback(
         Err(reason) => return withheld(reason),
     };
     let binding = source.binding.clone();
-    let outcome = match publish_planned_physical_route(
+    let outcome = match publish_planned_physical_route_at_revision(
         store,
         cursor_key,
         source.binding,
@@ -647,6 +693,7 @@ fn publish_vehicle_after_handback(
         Some(&run.ahead.packs),
         None,
         Some(&kept.stage),
+        revision,
     ) {
         Ok(Some(publication)) => Ok(HandbackPhysicalOutcome::Published(publication.kind)),
         Ok(None) => withheld("the window's plan cannot be held by the physical schema".into()),
@@ -822,3 +869,6 @@ fn lower_handback_thread_priority() {
         }
     }
 }
+
+// The import publication intent and its restart (issue #60).
+include!("import_publication.rs");
