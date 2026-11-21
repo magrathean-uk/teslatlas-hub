@@ -54,16 +54,26 @@ macro_rules! live_pack_offer_predicate {
     };
 }
 
+/// Whether the lease table exists. A v83 store that has not had its first
+/// upgraded writable start lacks it; the read-only paths (doctor, census)
+/// read that as an empty lease set (issue #98 review finding 5).
+fn device_pack_offers_present(connection: &Connection) -> Result<bool, StoreError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema
+             WHERE type = 'table' AND name = 'device_pack_offers')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)
+}
+
 fn device_pack_offers_table(connection: &Connection) -> Result<(), StoreError> {
     let present = |connection: &Connection| -> Result<bool, StoreError> {
-        connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_schema
-                 WHERE type = 'table' AND name = 'device_pack_offers')",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::Migrate)
+        device_pack_offers_present(connection).map_err(|error| match error {
+            StoreError::Query(error) => StoreError::Migrate(error),
+            other => other,
+        })
     };
     if present(connection)? {
         return Ok(());
@@ -340,6 +350,9 @@ fn pack_offer_rows(
     connection: &Connection,
     expiry_cutoff_ms: i64,
 ) -> Result<Vec<(String, String, i64)>, StoreError> {
+    if !device_pack_offers_present(connection)? {
+        return Ok(Vec::new());
+    }
     let mut statement = connection
         .prepare(concat!(
             "SELECT DISTINCT offer.sha256, offer.compressed_bytes FROM device_pack_offers AS offer

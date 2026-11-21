@@ -562,3 +562,31 @@ fn design_later_98_offer_write_binds_the_selected_head_and_import_revision() {
     assert_eq!(record(fixture.now_ms + 12), PackOfferRecord::HeadMoved);
     assert!(leased(&fixture, fixture.other_device, offers[0].digest, fixture.now_ms + 12));
 }
+
+#[test]
+fn design_later_98_read_only_inventory_reads_a_v83_store_without_the_lease_table() {
+    let temporary = crate::private_tempdir().expect("private test root");
+    let data_dir = temporary.path().join("store");
+    let store = HubStore::initialize(&data_dir).expect("store");
+    // A base v83 catalogue before its first upgraded writable start.
+    store
+        .open()
+        .expect("catalogue")
+        .execute_batch("DROP TABLE device_pack_offers")
+        .expect("base v83 shape");
+    drop(store);
+    let reader = HubStore::open_read_only(&data_dir).expect("read-only store");
+    let inventory = reader.catalogue_inventory().expect("doctor inventory");
+    assert_eq!(inventory.referenced_packs, 0);
+    reader.storage_census().expect("census");
+    let present: bool = reader
+        .open_read_only_connection()
+        .expect("reader")
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'device_pack_offers')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("schema");
+    assert!(!present, "the read-only path creates nothing");
+}

@@ -277,6 +277,7 @@ fn pack_storage_classes(
     connection: &Connection,
 ) -> Result<HashMap<String, PackStorageClass>, StoreError> {
     let mut classes = HashMap::new();
+    let leases = device_pack_offers_present(connection)?;
     for (class, sql) in [
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM pending_physical_v3_packs"),
         (PackStorageClass::CurrentHead, "SELECT sha256 FROM sync_packs"),
@@ -289,6 +290,9 @@ fn pack_storage_classes(
         (PackStorageClass::Delta, "SELECT sha256 FROM device_pack_offers WHERE kind = 'delta'"),
         (PackStorageClass::PreparedMap, "SELECT sha256 FROM device_pack_offers WHERE kind = 'prepared'"),
     ] {
+        if !leases && sql.contains("device_pack_offers") {
+            continue;
+        }
         let digests = connection
             .prepare(sql)
             .map_err(StoreError::Query)?
