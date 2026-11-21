@@ -490,9 +490,8 @@ fn kept_stage_files(
                 || entry.links != 1
                 || references.unattributable
                 || matches!(record, Some(None))
+                || holds.holds_vehicle(vehicle)
             {
-                (Some(PackStorageClass::Refused), true)
-            } else if holds.holds_vehicle(vehicle) {
                 (Some(PackStorageClass::Refused), true)
             } else if named_by.is_some_and(|generation| holds.holds(vehicle, generation)) {
                 (Some(PackStorageClass::ImportBase), true)
