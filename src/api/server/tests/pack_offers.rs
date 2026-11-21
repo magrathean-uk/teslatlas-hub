@@ -733,3 +733,47 @@ async fn design_later_98_changed_set_with_a_damaged_signature_is_not_leased() {
     assert_eq!(served.status(), StatusCode::OK);
     assert!(lease_rows(&store, phone.device_id) > 0);
 }
+
+#[tokio::test]
+async fn design_later_109_current_prepared_pack_streams_without_the_lease() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x09; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, head) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 2, "offers98", 1);
+    let head = store.stage_pending_physical_v3_admission(&gate, head).expect("A");
+    drop(gate);
+    let (artifact_id, digest) = prepared_month(&store, &key, &head, now, 0x51);
+    let phone = pair(&store, "issued phone", now);
+    let app = paired_router(store.clone(), &key);
+    let receipt_uri =
+        format!("/v1/vehicles/{}/sync/prepared-artefacts/{artifact_id}", binding.vehicle_id);
+    let issued = app.clone().oneshot(get(&receipt_uri, &phone.bearer, None)).await.unwrap();
+    assert_eq!(issued.status(), StatusCode::OK);
+    assert_eq!(lease_rows(&store, phone.device_id), 1, "the issued pack is leased");
+    // Both responses start while the lease lives; it ends before delivery.
+    let full = app.clone().oneshot(get(&pack_uri(digest), &phone.bearer, None)).await.unwrap();
+    let ranged = app
+        .clone()
+        .oneshot(get(&pack_uri(digest), &phone.bearer, Some("bytes=10-19")))
+        .await
+        .unwrap();
+    assert_eq!(full.status(), StatusCode::OK);
+    assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+    store
+        .open()
+        .unwrap()
+        .execute(
+            "UPDATE device_pack_offers SET offered_at_ms = 0, expires_at_ms = 1
+              WHERE device_id = ?1",
+            rusqlite::params![phone.device_id.to_string()],
+        )
+        .unwrap();
+    // The prepared receipt is still current, so neither body depends on the
+    // lease.
+    assert_eq!(Sha256Digest::of_bytes(&body(full).await), digest);
+    assert_eq!(body(ranged).await, vec![0x51; 10]);
+}

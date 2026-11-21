@@ -2256,32 +2256,41 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                         (pack, true)
                     }
                     Ok(None) => 'current: {
+                        // A current prepared object streams with the bearer
+                        // check alone; only an object that is not current
+                        // takes the lease path (issue #98 recheck).
+                        let mut prepared_failed = false;
+                        if let Some(cursor_key) = state.cursor_key.as_deref() {
+                            match crate::sync::prepared_map::current_pack(
+                                &state.store,
+                                cursor_key,
+                                digest,
+                                scope,
+                            ) {
+                                Ok(Some(pack)) => break 'current (pack, true),
+                                Ok(None) => {}
+                                Err(error) => {
+                                    tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                                    prepared_failed = true;
+                                }
+                            }
+                        }
                         // Issues #98/#109: a digest offered to this device
                         // stays fetchable for its lease after a rotation.
                         match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
                             Ok(Some((pack, delta))) => {
                                 delta_pack = delta;
                                 leased = true;
-                                break 'current (pack, true);
+                                (pack, true)
                             }
-                            Ok(None) => {}
-                            Err(response) => return response,
-                        }
-                        let Some(cursor_key) = state.cursor_key.as_deref() else {
-                            return prepared_pack_without_cursor_key(&state.store, digest, scope);
-                        };
-                        match crate::sync::prepared_map::current_pack(
-                            &state.store,
-                            cursor_key,
-                            digest,
-                            scope,
-                        ) {
-                            Ok(Some(pack)) => (pack, true),
-                            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                            Err(error) => {
-                                tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                            Ok(None) if prepared_failed => {
                                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
                             }
+                            Ok(None) if state.cursor_key.is_none() => {
+                                return prepared_pack_without_cursor_key(&state.store, digest, scope);
+                            }
+                            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                            Err(response) => return response,
                         }
                     }
                     Err(error) => {
