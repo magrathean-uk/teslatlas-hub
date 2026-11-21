@@ -284,7 +284,7 @@ impl HubStore {
             tracing::info!(%vehicle_id, "pack offer refused: the device or its grant moved");
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
-        let mut device_bytes = leased_bytes(&transaction, Some(&device), now_ms)?;
+        let mut device_bytes = leased_bytes(&transaction, Some(device.as_str()), now_ms)?;
         let mut store_bytes = leased_bytes(&transaction, None, now_ms)?;
         let mut unleased = 0_usize;
         for offer in offers {
@@ -301,16 +301,10 @@ impl HubStore {
                 tracing::info!(%vehicle_id, "pack offer refused: the object left the catalogue");
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             };
-            let device_charge = if holds_live_lease(&transaction, &digest, Some(&device), now_ms)? {
-                0
-            } else {
-                bytes
-            };
-            let store_charge = if holds_live_lease(&transaction, &digest, None, now_ms)? {
-                0
-            } else {
-                bytes
-            };
+            let held = holds_live_lease(&transaction, &digest, Some(device.as_str()), now_ms)?;
+            let device_charge = if held { 0 } else { bytes };
+            let held_in_store = held || holds_live_lease(&transaction, &digest, None, now_ms)?;
+            let store_charge = if held_in_store { 0 } else { bytes };
             if device_bytes + device_charge > budgets.device_bytes
                 || store_bytes + store_charge > budgets.store_bytes
             {

@@ -1193,7 +1193,7 @@ pub(super) fn offer_scope(
     device: &PairedDeviceRecord,
     method: &axum::http::Method,
 ) -> VehicleScope {
-    if method == axum::http::Method::HEAD {
+    if *method == axum::http::Method::HEAD {
         VehicleScope::Unrestricted
     } else {
         state.vehicle_scope(device)
