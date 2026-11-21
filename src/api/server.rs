@@ -2300,9 +2300,13 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                 }
             }
             // Issue #98 review: a rotation between the digest lookup and the
-            // head load leaves the digest on no current head; a live lease of
-            // this device still serves it.
-            Err(crate::db::StoreError::PhysicalV3AdmissionConflict) => {
+            // head load leaves the digest on no current head (a public
+            // replacement, or a blocked successor seen on the second read); a
+            // live lease of this device still serves it.
+            Err(
+                crate::db::StoreError::PhysicalV3AdmissionConflict
+                | crate::db::StoreError::PhysicalV3SecondHeadUnsupported(_),
+            ) => {
                 let Ok(now_ms) = current_epoch_ms() else {
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 };

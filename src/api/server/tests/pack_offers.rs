@@ -777,3 +777,69 @@ async fn design_later_109_current_prepared_pack_streams_without_the_lease() {
     assert_eq!(Sha256Digest::of_bytes(&body(full).await), digest);
     assert_eq!(body(ranged).await, vec![0x51; 10]);
 }
+
+#[tokio::test]
+async fn design_later_98_lease_serves_a_pack_whose_successor_is_blocked_during_lookup() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x98; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 3, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    drop(gate);
+    let phone = pair(&store, "leased phone", now);
+    let offers = first
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| crate::db::PackOffer {
+            digest: chunk.sha256,
+            kind: crate::db::PackOfferKind::Physical,
+        })
+        .collect::<Vec<_>>();
+    store
+        .record_pack_offers_at(phone.device_id, binding.vehicle_id, &first.receipt_id, &offers, now)
+        .expect("A leased");
+    let app = paired_router(store.clone(), &key);
+    // The lookup finds the digest on public A; the second read sees B staged
+    // as a blocked successor, not yet public.
+    let (_, successor) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("b"), &store, &key, 1, "offers98", 2);
+    let digest = first
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| chunk.sha256)
+        .find(|digest| successor.manifest.chunks.iter().all(|chunk| chunk.sha256 != *digest))
+        .expect("a chunk of A that B does not repeat");
+    let writer = store.clone();
+    let blocked = std::rc::Rc::new(std::cell::Cell::new(false));
+    let seen = blocked.clone();
+    crate::db::ROTATE_DURING_PHYSICAL_PACK_LOOKUP.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let gate = writer.try_acquire_publication_gate().expect("gate");
+            writer
+                .rotate_pending_physical_v3_admission_at(&gate, successor, now + 1)
+                .expect("blocked successor");
+            seen.set(true);
+        })));
+    });
+    let served = app.oneshot(get(&pack_uri(digest), &phone.bearer, None)).await.unwrap();
+    assert!(blocked.get(), "the successor was staged during the lookup");
+    let serve_state: String = store
+        .open()
+        .unwrap()
+        .query_row(
+            "SELECT serve_state FROM pending_physical_v3_admissions WHERE vehicle_id = ?1",
+            rusqlite::params![binding.vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(serve_state, "blocked_rotation");
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(Sha256Digest::of_bytes(&body(served).await), digest);
+}
