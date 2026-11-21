@@ -258,6 +258,7 @@ fn capture_import_publication(
             },
             updates: Sha256Digest::of_bytes(&updates_bytes).to_string(),
             committed: false,
+            superseding: None,
         };
         store
             .record_import_publication_intent(publication_gate, &intent)
@@ -465,10 +466,24 @@ fn resume_import_publication(
     intent: crate::db::ImportPublicationIntent,
 ) -> Result<ImportPublicationOutcome, SourceDbImportError> {
     let vehicle_id = intent.binding.vehicle_id;
+    if !intent.committed {
+        // The run never committed: its intent goes, and a committed intent
+        // it would have replaced is back and finished now (review finding 4).
+        return match store.restore_superseded_import_publication_intent(
+            publication_gate,
+            vehicle_id,
+            intent.run_id,
+        )? {
+            Some(previous) if previous.committed => {
+                resume_import_publication(store, cursor_key, publication_gate, previous)
+            }
+            _ => Ok(ImportPublicationOutcome::Abandoned),
+        };
+    }
     let current = store
         .physical_v3_import_revision(vehicle_id)?
         .is_some_and(|revision| revision.run_id == intent.run_id);
-    if !intent.committed || !current {
+    if !current {
         store.clear_import_publication_intent(publication_gate, vehicle_id, Some(intent.run_id))?;
         return Ok(ImportPublicationOutcome::Abandoned);
     }

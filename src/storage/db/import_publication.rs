@@ -26,6 +26,11 @@ pub(crate) struct ImportPublicationIntent {
     /// Set by the commit that consumed `run_id`.
     #[serde(default)]
     pub(crate) committed: bool,
+    /// The vehicle's committed intent this still-staging run would replace
+    /// (issue #60 review, finding 4): it stays live until this run commits,
+    /// and an abort, or a restart before that commit, puts it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) superseding: Option<Box<ImportPublicationIntent>>,
 }
 
 /// The vehicle's import revision (issue #60): the last committed import with
@@ -125,6 +130,7 @@ fn commit_import_publication_revision_in(
             continue;
         };
         intent.committed = true;
+        intent.superseding = None;
         let value = serde_json::to_string(&intent).map_err(StoreError::SerializeLifecycleRow)?;
         put_metadata_in(connection, &import_publication_intent_key(vehicle_id), &value)?;
         put_physical_v3_import_revision_in(
@@ -141,22 +147,43 @@ fn commit_import_publication_revision_in(
 }
 
 /// In the transaction that aborts import generation `run_id`: its intent, if
-/// it never committed, goes with it.
+/// it never committed, goes with it, and the committed intent it would have
+/// replaced is put back.
 fn drop_uncommitted_import_publication_intent_in(
     connection: &Connection,
     run_id: Uuid,
 ) -> Result<(), StoreError> {
     for (vehicle_id, intent) in import_publication_intents_in(connection)? {
-        if intent.is_some_and(|intent| intent.run_id == run_id && !intent.committed) {
-            connection
-                .execute(
-                    "DELETE FROM hub_metadata WHERE key = ?1",
-                    params![import_publication_intent_key(vehicle_id)],
-                )
-                .map_err(StoreError::Query)?;
+        if let Some(intent) = intent.filter(|intent| intent.run_id == run_id && !intent.committed) {
+            restore_superseded_import_publication_intent_in(connection, vehicle_id, intent)?;
         }
     }
     Ok(())
+}
+
+/// Replaces the vehicle's uncommitted `intent` with the committed intent it
+/// superseded, or removes it when it superseded none. Returns the intent put
+/// back.
+fn restore_superseded_import_publication_intent_in(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    intent: ImportPublicationIntent,
+) -> Result<Option<ImportPublicationIntent>, StoreError> {
+    let key = import_publication_intent_key(vehicle_id);
+    match intent.superseding {
+        Some(previous) => {
+            let value =
+                serde_json::to_string(&previous).map_err(StoreError::SerializeLifecycleRow)?;
+            put_metadata_in(connection, &key, &value)?;
+            Ok(Some(*previous))
+        }
+        None => {
+            connection
+                .execute("DELETE FROM hub_metadata WHERE key = ?1", params![key])
+                .map_err(StoreError::Query)?;
+            Ok(None)
+        }
+    }
 }
 
 /// Whether the vehicle's import revision admits `snapshot_id` (issue #60):
@@ -211,6 +238,9 @@ impl ImportPublicationHolds {
             None => {
                 self.vehicles.insert(vehicle_id);
             }
+        }
+        if let Some(previous) = &intent.superseding {
+            self.hold(vehicle_id, previous);
         }
     }
 }
@@ -273,7 +303,7 @@ pub(crate) fn require_no_pending_import_publication_in(
     for (key, value) in rows {
         let staging_only = matches!(
             serde_json::from_str::<ImportPublicationIntent>(&value),
-            Ok(intent) if !intent.committed
+            Ok(intent) if !intent.committed && intent.superseding.is_none()
         );
         if !staging_only {
             let vehicle_id = key
@@ -316,14 +346,16 @@ impl HubStore {
         .transpose()
     }
 
-    /// Records `intent` for its still-staging import generation, replacing
-    /// any earlier intent of the vehicle: the caller resolved that one first.
+    /// Records `intent` for its still-staging import generation. A committed
+    /// intent of the vehicle that is still recorded (its publication was
+    /// refused) is kept inside it until this run commits; any other earlier
+    /// intent is replaced: the caller resolved it first.
     pub(crate) fn record_import_publication_intent(
         &self,
         _publication_gate: &PublicationGate,
         intent: &ImportPublicationIntent,
     ) -> Result<(), StoreError> {
-        if intent.committed {
+        if intent.committed || intent.superseding.is_some() {
             return Err(StoreError::ImportGenerationConflict);
         }
         let vehicle_id = intent.binding.vehicle_id;
@@ -342,9 +374,48 @@ impl HubStore {
         if !staging {
             return Err(StoreError::ImportGenerationNotFound);
         }
-        let value = serde_json::to_string(intent).map_err(StoreError::SerializeLifecycleRow)?;
-        put_metadata_in(&transaction, &import_publication_intent_key(vehicle_id), &value)?;
+        let key = import_publication_intent_key(vehicle_id);
+        let earlier = metadata_value_in(&transaction, &key)?
+            .and_then(|value| serde_json::from_str::<ImportPublicationIntent>(&value).ok());
+        let superseding = earlier.and_then(|earlier| {
+            if earlier.committed {
+                Some(Box::new(earlier))
+            } else {
+                earlier.superseding
+            }
+        });
+        let recorded = ImportPublicationIntent {
+            superseding,
+            ..intent.clone()
+        };
+        let value = serde_json::to_string(&recorded).map_err(StoreError::SerializeLifecycleRow)?;
+        put_metadata_in(&transaction, &key, &value)?;
         transaction.commit().map_err(StoreError::LifecycleWrite)
+    }
+
+    /// For an intent whose run never committed: puts back the committed
+    /// intent it superseded, or removes it. Returns the intent put back,
+    /// which the caller then resolves.
+    pub(crate) fn restore_superseded_import_publication_intent(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        run_id: Uuid,
+    ) -> Result<Option<ImportPublicationIntent>, StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let Some(intent) =
+            metadata_value_in(&transaction, &import_publication_intent_key(vehicle_id))?
+                .and_then(|value| serde_json::from_str::<ImportPublicationIntent>(&value).ok())
+                .filter(|intent| intent.run_id == run_id && !intent.committed)
+        else {
+            return Ok(None);
+        };
+        let restored = restore_superseded_import_publication_intent_in(&transaction, vehicle_id, intent)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(restored)
     }
 
     /// Clears the vehicle's intent once its outcome is resolved: only the

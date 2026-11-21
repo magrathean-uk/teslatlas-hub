@@ -635,3 +635,80 @@ fn design_later_60_interrupted_capture_candidate_is_swept() {
     left.sort();
     assert_eq!(left, vec!["notes.txt".to_owned()]);
 }
+
+/// Review finding 4: the restart's publication of a committed import is
+/// refused for a reason that passes, then a retried import captures but
+/// never commits, by an abort or by a restart. The earlier committed intent
+/// stays live meanwhile and comes back with its capture, so the next restart
+/// finishes it.
+#[test]
+fn design_later_60_uncommitted_retry_keeps_the_earlier_committed_intent() {
+    for ending in ["abort", "restart"] {
+        let fixture = fixture();
+        let root = crate::private_tempdir().expect("stage root");
+        let vehicle = fixture.binding.vehicle_id;
+        publish_physical(&fixture, history_stage(root.path(), "base", &base_history()), None)
+            .expect("base head")
+            .expect("served base");
+        let history = successor_history();
+        let (earlier, stage, _) =
+            commit_captured_import(&fixture, root.path(), "earlier", &history, T + 3 * HOUR);
+        drop(stage);
+        let generation = earlier.kept.archive.as_ref().expect("archive").generation;
+        let updates = import_publication_dir(&fixture.store)
+            .join(import_publication_updates_name(vehicle, generation));
+        let aside = root.path().join("updates-aside.json");
+        std::fs::rename(&updates, &aside).expect("facts out of reach");
+        assert!(
+            matches!(resume(&fixture).as_slice(), [(_, ImportPublicationOutcome::Refused(_))]),
+            "{ending}"
+        );
+
+        let projected = project_vehicle(&history, CAR).expect("projection");
+        let run_id = begin_run(&fixture, T + 4 * HOUR);
+        let mut stage = history_stage(root.path(), "retry", &history);
+        capture_import_publication(
+            &fixture.store,
+            &fixture.gate,
+            run_id,
+            &fixture.binding,
+            stage.stage_mut(),
+            &projected.snapshot.drives,
+            &projected.snapshot.charges,
+            &updates_source(),
+        )
+        .expect("the retry captures");
+        drop(stage);
+        match ending {
+            "abort" => fixture.store.abort_import_generation(run_id).expect("abort"),
+            _ => {
+                fixture
+                    .store
+                    .open()
+                    .expect("catalogue")
+                    .execute("DELETE FROM import_generations", [])
+                    .expect("the restart drops abandoned generations");
+            }
+        }
+        if ending == "abort" {
+            assert!(
+                fixture
+                    .store
+                    .import_publication_intent(vehicle)
+                    .expect("intent")
+                    .is_some_and(|recorded| recorded.committed && recorded.run_id == earlier.run_id),
+                "the abort put the earlier committed intent back"
+            );
+        }
+
+        std::fs::rename(&aside, &updates).expect("facts back");
+        let outcomes = resume(&fixture);
+        assert!(
+            matches!(outcomes.as_slice(), [(_, ImportPublicationOutcome::Finished(Some(_)))]),
+            "{ending}: {outcomes:?}"
+        );
+        assert_routes_agree(&fixture, ending);
+        assert_eq!(fixture.store.import_publication_intent(vehicle).expect("intent"), None);
+        assert!(capture_files(&fixture).is_empty(), "{ending}: {:?}", capture_files(&fixture));
+    }
+}
