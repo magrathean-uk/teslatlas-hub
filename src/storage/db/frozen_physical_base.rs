@@ -8,6 +8,9 @@
 // ambiguous or not in its canonical form owns nothing it could name: every
 // sweep that reads it refuses instead of guessing, so no pack is deleted.
 
+/// Every `hub_metadata` row whose key starts with this belongs to the frozen
+/// set, whatever follows (a damaged separator or vehicle id included).
+const FROZEN_PHYSICAL_BASE_MEMBER_PREFIX: &str = "physical_v3_frozen_base";
 /// The `hub_metadata` key prefix of a vehicle's frozen physical base.
 const FROZEN_PHYSICAL_BASE_PREFIX: &str = "physical_v3_frozen_base:";
 /// The record format this build writes and reads.
@@ -264,14 +267,16 @@ pub(crate) fn frozen_physical_bases_in(
 ) -> Result<Vec<FrozenPhysicalBase>, StoreError> {
     let rows = connection
         .prepare(
-            // Any spelling of the prefix: a differently cased key is
-            // ambiguous and refuses the set below.
+            // Membership never depends on the bytes that identify the
+            // vehicle: any key that starts with the stem, in any case, is a
+            // frozen record, and one that is not the canonical key refuses
+            // the set below.
             "SELECT key, value FROM hub_metadata
               WHERE lower(substr(key, 1, length(?1))) = ?1
               ORDER BY key",
         )
         .map_err(StoreError::Query)?
-        .query_map(params![FROZEN_PHYSICAL_BASE_PREFIX], |row| {
+        .query_map(params![FROZEN_PHYSICAL_BASE_MEMBER_PREFIX], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(StoreError::Query)?

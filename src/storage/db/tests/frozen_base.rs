@@ -457,3 +457,53 @@ fn frozen_base_damaged_record_refuses_every_sweep_and_deletes_nothing() {
     store.reclaim_storage_at(fixture.now_ms).expect("reclaim");
     assert_frozen_packs_intact(store, &fixture.base, &fixture.logical_at_freeze);
 }
+
+#[test]
+fn frozen_base_key_with_a_damaged_separator_still_owns_its_packs() {
+    let fixture = frozen_fixture();
+    let store = &fixture.store;
+    let vehicle_id = fixture.base.vehicle_id;
+    let key = format!("physical_v3_frozen_base:{vehicle_id}");
+    let valid = frozen_value(store, vehicle_id).expect("record");
+    let outside = crate::private_tempdir().expect("backup parent");
+    let files = pack_files(store);
+    let damaged_keys = [
+        format!("physical_v3_frozen_base!{vehicle_id}"),
+        format!("physical_v3_frozen_base{vehicle_id}"),
+        format!("physical_v3_frozen_base:{vehicle_id}x"),
+        "physical_v3_frozen_base".to_owned(),
+    ];
+    for (index, damaged_key) in damaged_keys.into_iter().enumerate() {
+        // The value is intact and still names the packs; only the key is
+        // damaged, and the older head's retention has long expired.
+        let connection = store.open().expect("catalogue");
+        connection.execute("DELETE FROM hub_metadata WHERE key = ?1", [&key]).expect("remove key");
+        drop(connection);
+        put_metadata(store, &damaged_key, &valid);
+
+        assert!(matches!(
+            store.reclaim_storage_at(fixture.now_ms),
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+        ));
+        assert!(matches!(
+            store.repair_at(fixture.now_ms),
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+        ));
+        let refused = outside.path().join(format!("refused-{index}"));
+        crate::data_recovery::create_data_backup(store, &refused)
+            .expect_err("a damaged key refuses the backup");
+        assert!(!refused.exists());
+        assert_eq!(pack_files(store), files, "{damaged_key}: nothing was unlinked");
+
+        let connection = store.open().expect("catalogue");
+        connection.execute("DELETE FROM hub_metadata WHERE key = ?1", [&damaged_key]).expect("remove");
+        drop(connection);
+        put_metadata(store, &key, &valid);
+    }
+    // Whole again, the same backup carries the frozen packs.
+    let backup = outside.path().join("whole");
+    crate::data_recovery::create_data_backup(store, &backup).expect("backup");
+    for name in chunk_names(&fixture.first) {
+        assert!(backup.join("data").join("packs").join("sha256").join(&name).is_file(), "{name}");
+    }
+}
