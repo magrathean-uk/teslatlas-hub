@@ -42,23 +42,126 @@ fn physical_kept_dir(store: &HubStore) -> std::path::PathBuf {
     store.packs_dir().join(PHYSICAL_KEPT_DIRECTORY)
 }
 
-/// The kept raw stage: a private sealed stage under `.staging`, as
-/// [`SourceDbStage::open_sealed`] requires.
+/// The legacy kept raw stage an earlier build wrote: a private sealed stage
+/// under `.staging`, as [`SourceDbStage::open_sealed`] requires. It stays
+/// readable until a verified conversion to a kept archive commits.
 fn kept_stage_path(store: &HubStore, vehicle_id: Uuid) -> std::path::PathBuf {
     physical_kept_dir(store)
         .join(".staging")
         .join(format!("{vehicle_id}.sqlite"))
 }
 
-fn kept_source_path(store: &HubStore, vehicle_id: Uuid) -> std::path::PathBuf {
+/// The legacy source sessions beside a legacy raw stage.
+fn legacy_kept_source_path(store: &HubStore, vehicle_id: Uuid) -> std::path::PathBuf {
     physical_kept_dir(store).join(format!("{vehicle_id}.source.json"))
 }
 
-/// Keeps the sealed raw `stage` and the import's source sessions for the
-/// vehicle's next handback, replacing what an earlier import kept. A keep
-/// that fails forgets the vehicle's kept state, so a handback never plans
-/// from an older import; the next import keeps again. Returns the kept
-/// stage's recorded digest.
+/// The kept archive of one generation of the vehicle's replay base
+/// (DEC-250).
+fn kept_archive_name(vehicle_id: Uuid, generation: Uuid) -> String {
+    format!("{vehicle_id}.{generation}.kept")
+}
+
+fn kept_generation_source_name(vehicle_id: Uuid, generation: Uuid) -> String {
+    format!("{vehicle_id}.{generation}.source.json")
+}
+
+/// The source sessions file the record names.
+fn kept_source_path(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    kept: &crate::db::PhysicalV3Kept,
+) -> std::path::PathBuf {
+    match &kept.archive {
+        Some(archive) => physical_kept_dir(store)
+            .join(kept_generation_source_name(vehicle_id, archive.generation)),
+        None => legacy_kept_source_path(store, vehicle_id),
+    }
+}
+
+/// A digest of the import binding a kept archive belongs to.
+fn kept_binding_digest(binding: &ProjectionBinding) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"hub kept archive binding v1\n");
+    hash.update(binding.installation_id.as_bytes());
+    hash.update(binding.account_id.as_bytes());
+    hash.update(binding.vehicle_id.as_bytes());
+    hash.update(binding.generation.to_be_bytes());
+    hash.update(binding.selected_car_id.to_be_bytes());
+    hash.finalize().into()
+}
+
+fn kept_archive_identity(
+    binding: &ProjectionBinding,
+) -> crate::source_db_stage::KeptArchiveIdentity {
+    crate::source_db_stage::KeptArchiveIdentity {
+        vehicle_id: binding.vehicle_id,
+        binding: kept_binding_digest(binding),
+    }
+}
+
+/// A simulated crash at a named point of a keep or conversion (tests catch
+/// the panic): `files` after the new pair is durable, `swap` after the
+/// record names it, before the superseded files go.
+fn kept_crash_point(point: &'static str) {
+    #[cfg(test)]
+    if crate::source_db_stage::KEPT_ARCHIVE_CRASH_AT.with(|at| at.get() == Some(point)) {
+        crate::source_db_stage::KEPT_ARCHIVE_CRASH_AT.with(|at| at.set(None));
+        panic!("simulated crash at kept point {point}");
+    }
+    #[cfg(not(test))]
+    let _ = point;
+}
+
+fn sync_kept_dir(store: &HubStore) -> Result<(), String> {
+    std::fs::File::open(physical_kept_dir(store))
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| error.to_string())
+}
+
+/// Writes one generation's kept pair durably: the archive of `stage` and
+/// the source sessions `source`, then the directory. Returns the archive
+/// record; nothing names the files yet.
+fn write_kept_pair(
+    store: &HubStore,
+    binding: &ProjectionBinding,
+    stage: &SourceDbStage,
+    source: &[u8],
+) -> Result<(crate::db::PhysicalV3KeptArchive, String), String> {
+    let vehicle_id = binding.vehicle_id;
+    let generation = Uuid::new_v4();
+    let receipt = stage
+        .write_kept_archive(
+            physical_kept_dir(store),
+            &kept_archive_name(vehicle_id, generation),
+            kept_archive_identity(binding),
+        )
+        .map_err(|error| error.to_string())?;
+    write_private_file(
+        &physical_kept_dir(store).join(kept_generation_source_name(vehicle_id, generation)),
+        source,
+    )?;
+    sync_kept_dir(store)?;
+    kept_crash_point("files");
+    Ok((
+        crate::db::PhysicalV3KeptArchive {
+            generation,
+            format: receipt.format,
+            digest: receipt.digest.to_string(),
+            bytes: receipt.bytes,
+            decoded_bytes: receipt.decoded_bytes,
+        },
+        receipt.logical.to_string(),
+    ))
+}
+
+/// Keeps the sealed raw `stage`, as one compact kept archive, and the
+/// import's source sessions for the vehicle's next handback, replacing what
+/// an earlier import kept. The record goes first, so a crash part-way
+/// leaves nothing to plan and never an older import's base; the new pair is
+/// durable before one transaction names it; the superseded files go after.
+/// A keep that fails forgets the vehicle's kept state; the next import
+/// keeps again. Returns the kept stage's recorded digest.
 fn keep_physical_source(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -68,63 +171,221 @@ fn keep_physical_source(
     charges: &[ProjectionCharge],
 ) -> Option<String> {
     let vehicle_id = binding.vehicle_id;
-    let kept = (|| -> Result<crate::db::PhysicalV3Kept, String> {
-        // The record goes first: a crash part-way leaves nothing to plan.
+    let recorded = (|| -> Result<String, String> {
         store
             .record_physical_v3_kept(publication_gate, vehicle_id, None)
             .map_err(|error| error.to_string())?;
         store
             .record_physical_v3_handback_plan(publication_gate, vehicle_id, None)
             .map_err(|error| error.to_string())?;
-        let copy = stage
-            .copy_sealed_into(physical_kept_dir(store))
-            .map_err(|error| error.to_string())?;
-        // Its rows are authenticated by this digest at every handback, and
-        // each handback checks the pages of the copy it plans (M08-T19).
-        let digest = copy.sealed_logical_digest();
-        let copied = copy.path().to_path_buf();
-        drop(copy);
-        let digest = match digest {
-            Ok(digest) => digest,
-            Err(error) => {
-                let _ = std::fs::remove_file(&copied);
-                return Err(error.to_string());
-            }
-        };
-        std::fs::rename(&copied, kept_stage_path(store, vehicle_id)).map_err(|error| {
-            let _ = std::fs::remove_file(&copied);
-            error.to_string()
-        })?;
         let source = serde_json::to_vec(&KeptPhysicalSource {
             binding: binding.clone(),
             drives: drives.to_vec(),
             charges: charges.to_vec(),
         })
         .map_err(|error| error.to_string())?;
-        write_private_file(&kept_source_path(store, vehicle_id), &source)?;
-        Ok(crate::db::PhysicalV3Kept {
-            stage: digest.to_string(),
+        // Its rows are authenticated by this digest at every handback, and
+        // each handback checks the pages of the stage it plans (M08-T19).
+        let (archive, logical) = write_kept_pair(store, binding, stage, &source)?;
+        let kept = crate::db::PhysicalV3Kept {
+            stage: logical,
             source: Sha256Digest::of_bytes(&source).to_string(),
-        })
+            archive: Some(archive),
+        };
+        if !store
+            .swap_physical_v3_kept(publication_gate, vehicle_id, None, Some(&kept), true)
+            .map_err(|error| error.to_string())?
+        {
+            return Err("the kept record changed while it was replaced".into());
+        }
+        kept_crash_point("swap");
+        remove_superseded_kept_files(store, vehicle_id, Some(&kept));
+        Ok(kept.stage)
     })();
-    let recorded = kept.and_then(|kept| {
-        store
-            .record_physical_v3_kept(publication_gate, vehicle_id, Some(&kept))
-            .map(|()| kept.stage)
-            .map_err(|error| error.to_string())
-    });
     match recorded {
         Ok(stage) => Some(stage),
         Err(reason) => {
-        tracing::warn!(
-            %vehicle_id,
-            %reason,
-            "the import's physical stage was not kept; a handback leaves the 1.4 head refused \
-             until the next import"
-        );
-        forget_physical_kept(store, publication_gate, vehicle_id);
+            tracing::warn!(
+                %vehicle_id,
+                %reason,
+                "the import's physical stage was not kept; a handback leaves the 1.4 head refused \
+                 until the next import"
+            );
+            forget_physical_kept(store, publication_gate, vehicle_id);
             None
         }
+    }
+}
+
+/// What one file of the kept directory is, by name, for one vehicle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeptFile {
+    LegacySource,
+    Archive(Uuid),
+    Source(Uuid),
+    /// An archive or source file of a generation not yet renamed into place.
+    Partial(Uuid),
+}
+
+fn kept_file(vehicle_id: Uuid, name: &str) -> Option<KeptFile> {
+    let rest = name.strip_prefix(&format!("{vehicle_id}."))?;
+    if rest == "source.json" {
+        return Some(KeptFile::LegacySource);
+    }
+    let generation = rest.get(..36).and_then(|id| Uuid::parse_str(id).ok())?;
+    let tail = rest.get(36..)?;
+    match tail {
+        ".kept" => Some(KeptFile::Archive(generation)),
+        ".source.json" => Some(KeptFile::Source(generation)),
+        ".kept.partial" => Some(KeptFile::Partial(generation)),
+        _ => tail
+            .strip_prefix(".source.")
+            .and_then(|temporary| temporary.strip_suffix(".tmp"))
+            .filter(|temporary| Uuid::parse_str(temporary).is_ok())
+            .map(|_| KeptFile::Partial(generation)),
+    }
+}
+
+/// Removes the vehicle's kept files the record `kept` does not name (an
+/// interrupted keep or conversion, or the superseded pair), under the
+/// publication gate the caller holds. Only regular files of the kept shapes
+/// go; anything else is left.
+fn remove_superseded_kept_files(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    kept: Option<&crate::db::PhysicalV3Kept>,
+) {
+    let current = kept.map(|kept| kept.archive.as_ref().map(|archive| archive.generation));
+    let mut removed = false;
+    let directory = physical_kept_dir(store);
+    if let Ok(entries) = std::fs::read_dir(&directory) {
+        for entry in entries.flatten() {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Some(file) = kept_file(vehicle_id, &name) else {
+                continue;
+            };
+            let named = match (file, current) {
+                (KeptFile::LegacySource, Some(None)) => true,
+                (KeptFile::Archive(generation) | KeptFile::Source(generation), Some(Some(now))) => {
+                    generation == now
+                }
+                _ => false,
+            };
+            if !named
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+                && std::fs::remove_file(entry.path()).is_ok()
+            {
+                removed = true;
+            }
+        }
+    }
+    let legacy = kept_stage_path(store, vehicle_id);
+    if current != Some(None)
+        && std::fs::symlink_metadata(&legacy).is_ok_and(|metadata| metadata.is_file())
+        && std::fs::remove_file(&legacy).is_ok()
+    {
+        removed = true;
+        let _ = std::fs::File::open(directory.join(".staging")).and_then(|dir| dir.sync_all());
+    }
+    if removed {
+        let _ = sync_kept_dir(store);
+    }
+}
+
+/// The working stage a changed handback plans: the kept archive decoded,
+/// bounded, into one owned sealed stage and authenticated before any edit,
+/// or for a legacy record the raw stage authenticated and copied. A legacy
+/// raw stage is returned too, still open, for its conversion.
+fn open_kept_working(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    kept: &crate::db::PhysicalV3Kept,
+    binding: &ProjectionBinding,
+) -> Result<(crate::source_db_stage::OwnedSourceDbStage, Option<SourceDbStage>), String> {
+    if let Some(archive) = &kept.archive {
+        let working = SourceDbStage::decode_kept_archive(
+            physical_kept_dir(store),
+            &kept_archive_name(vehicle_id, archive.generation),
+            crate::source_db_stage::KeptArchiveExpected {
+                identity: kept_archive_identity(binding),
+                logical: &kept.stage,
+                digest: &archive.digest,
+                bytes: archive.bytes,
+                decoded_bytes: archive.decoded_bytes,
+            },
+        )
+        .map_err(|error| format!("the kept archive: {error}"))?;
+        return Ok((crate::source_db_stage::OwnedSourceDbStage::new(working), None));
+    }
+    // The kept stage is authenticated by its recorded logical digest and
+    // only copied. The run's one full integrity check is of the planned
+    // copy, after its last write, as the publication reads it (M08-T19).
+    let kept_stage = SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id))
+        .map_err(|error| format!("the kept stage: {error}"))?;
+    match kept_stage.sealed_logical_digest() {
+        Ok(digest) if digest.to_string() == kept.stage => {}
+        Ok(_) => return Err("the kept stage differs from its record".into()),
+        Err(error) => return Err(format!("the kept stage: {error}")),
+    }
+    let working = kept_stage
+        .copy_sealed_into(physical_kept_dir(store))
+        .map_err(|error| format!("a copy of the kept stage: {error}"))?;
+    Ok((
+        crate::source_db_stage::OwnedSourceDbStage::new(working),
+        Some(kept_stage),
+    ))
+}
+
+/// Converts a legacy kept raw stage, already authenticated against `kept`,
+/// to a kept archive (DEC-250): the new pair is written durably, one
+/// transaction replaces the record only while it is still `kept`, then the
+/// legacy files go. The recorded plan inputs stay: the stage's logical
+/// digest is unchanged. A failure leaves the legacy base as it was.
+fn convert_legacy_kept(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    kept: &crate::db::PhysicalV3Kept,
+    binding: &ProjectionBinding,
+    legacy: &SourceDbStage,
+    source: &[u8],
+) {
+    let vehicle_id = binding.vehicle_id;
+    let converted = (|| -> Result<(), String> {
+        let (archive, logical) = write_kept_pair(store, binding, legacy, source)?;
+        let replaced = logical == kept.stage
+            && store
+                .swap_physical_v3_kept(
+                    publication_gate,
+                    vehicle_id,
+                    Some(kept),
+                    Some(&crate::db::PhysicalV3Kept {
+                        stage: kept.stage.clone(),
+                        source: kept.source.clone(),
+                        archive: Some(archive),
+                    }),
+                    false,
+                )
+                .map_err(|error| error.to_string())?;
+        if !replaced {
+            remove_superseded_kept_files(store, vehicle_id, Some(kept));
+            return Err("the kept record changed or the archive's rows differ".into());
+        }
+        kept_crash_point("swap");
+        let now = store
+            .physical_v3_kept(vehicle_id)
+            .map_err(|error| error.to_string())?;
+        remove_superseded_kept_files(store, vehicle_id, now.as_ref());
+        Ok(())
+    })();
+    match converted {
+        Ok(()) => tracing::info!(%vehicle_id, "the kept raw stage was converted to a kept archive"),
+        Err(reason) => tracing::warn!(
+            %vehicle_id,
+            %reason,
+            "the kept raw stage stays as it is; its conversion is retried at the next handback"
+        ),
     }
 }
 
@@ -153,8 +414,7 @@ fn write_private_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String
 fn forget_physical_kept(store: &HubStore, publication_gate: &PublicationGate, vehicle_id: Uuid) {
     let _ = store.record_physical_v3_kept(publication_gate, vehicle_id, None);
     let _ = store.record_physical_v3_handback_plan(publication_gate, vehicle_id, None);
-    let _ = std::fs::remove_file(kept_stage_path(store, vehicle_id));
-    let _ = std::fs::remove_file(kept_source_path(store, vehicle_id));
+    remove_superseded_kept_files(store, vehicle_id, None);
 }
 
 #[cfg(test)]
@@ -218,13 +478,15 @@ fn publish_vehicle_after_handback(
         Some(true) => return Ok(HandbackPhysicalOutcome::Current),
         Some(false) => {}
     }
+    // An interrupted keep or conversion left files the record does not name.
+    remove_superseded_kept_files(store, vehicle_id, Some(&kept));
     let withheld = |reason: String| Ok(HandbackPhysicalOutcome::Withheld(reason));
-    let source = match std::fs::read(kept_source_path(store, vehicle_id)) {
+    let source_bytes = match std::fs::read(kept_source_path(store, vehicle_id, &kept)) {
         Ok(bytes) if Sha256Digest::of_bytes(&bytes).to_string() == kept.source => bytes,
         Ok(_) => return withheld("the kept source sessions differ from their record".into()),
         Err(error) => return withheld(format!("the kept source sessions: {error}")),
     };
-    let source: KeptPhysicalSource = match serde_json::from_slice(&source) {
+    let source: KeptPhysicalSource = match serde_json::from_slice(&source_bytes) {
         Ok(source) => source,
         Err(error) => return withheld(format!("the kept source sessions: {error}")),
     };
@@ -263,24 +525,12 @@ fn publish_vehicle_after_handback(
             crate::physical_publication::PhysicalV3PublicationKind::Unchanged,
         ));
     }
-    // The kept stage is authenticated by its recorded logical digest and
-    // only copied. The run's one full integrity check is of the planned
-    // copy, after its last write, as the publication reads it (M08-T19).
-    let kept_stage = match SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id)) {
-        Ok(stage) => stage,
-        Err(error) => return withheld(format!("the kept stage: {error}")),
+    let (working, legacy) = match open_kept_working(store, vehicle_id, &kept, &source.binding) {
+        Ok(opened) => opened,
+        Err(reason) => return withheld(reason),
     };
-    match kept_stage.sealed_logical_digest() {
-        Ok(digest) if digest.to_string() == kept.stage => {}
-        Ok(_) => return withheld("the kept stage differs from its record".into()),
-        Err(error) => return withheld(format!("the kept stage: {error}")),
-    }
-    let working = match kept_stage.copy_sealed_into(physical_kept_dir(store)) {
-        Ok(stage) => crate::source_db_stage::OwnedSourceDbStage::new(stage),
-        Err(error) => return withheld(format!("a copy of the kept stage: {error}")),
-    };
-    drop(kept_stage);
-    match publish_planned_physical_route(
+    let binding = source.binding.clone();
+    let outcome = match publish_planned_physical_route(
         store,
         cursor_key,
         source.binding,
@@ -298,7 +548,11 @@ fn publish_vehicle_after_handback(
             crate::physical_publication::SourceDbPhysicalPublicationError::Stage(error),
         )) => withheld(format!("the planned copy of the kept stage: {error}")),
         Err(error) => Err(error),
+    };
+    if let Some(legacy) = legacy {
+        convert_legacy_kept(store, publication_gate, &kept, &binding, &legacy, &source_bytes);
     }
+    outcome
 }
 
 /// The early answer of a handback (M08-T19): when the vehicle's current head
@@ -380,18 +634,8 @@ fn prepare_month_of_served_head(
 ) {
     let vehicle_id = binding.vehicle_id;
     let prepared = (|| -> Result<(), String> {
-        let kept_stage = SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id))
-            .map_err(|error| format!("the kept stage: {error}"))?;
-        match kept_stage.sealed_logical_digest() {
-            Ok(digest) if digest.to_string() == kept.stage => {}
-            Ok(_) => return Err("the kept stage differs from its record".into()),
-            Err(error) => return Err(format!("the kept stage: {error}")),
-        }
-        let working = kept_stage
-            .copy_sealed_into(physical_kept_dir(store))
-            .map_err(|error| format!("a copy of the kept stage: {error}"))?;
-        drop(kept_stage);
-        let mut working = crate::source_db_stage::OwnedSourceDbStage::new(working);
+        let (mut working, legacy) = open_kept_working(store, vehicle_id, kept, binding)?;
+        drop(legacy);
         let result = (|| -> Result<(), String> {
             plan_physical_stage(store, binding, working.stage_mut(), packs)
                 .map_err(|error| format!("the plan: {error:?}"))?;

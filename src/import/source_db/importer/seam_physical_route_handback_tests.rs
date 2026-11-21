@@ -2028,12 +2028,13 @@ fn handback_with_a_new_drive_plans_in_full_verifying_once() {
     assert!(fresh.mirror.drives.contains_key(&(HUB_ID_BASE + 102)), "the window's drive");
 }
 
-/// M08-T19: a kept stage whose pages SQLite's integrity check refuses, its
-/// rows intact, is still refused by a handback that plans in full; without
+/// M08-T19: a legacy kept raw stage whose pages SQLite's integrity check
+/// refuses, its rows intact, is still refused by a handback that plans in full; without
 /// the one remaining check its rows would match the record and publish.
 #[test]
 fn handback_refuses_a_damaged_kept_stage() {
     let (fixture, _root, env) = planned_then_refused(true);
+    kept_archive::make_legacy(&fixture);
     let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
     let connection = Connection::open(&path).expect("kept stage");
     connection
@@ -2176,11 +2177,12 @@ fn misfile_sample_2101_in_the_index(path: &Path) {
     assert_eq!(row, original, "the table row is unchanged");
 }
 
-/// M08-T19: a kept stage whose rows no longer have the recorded content
-/// digest (its SQLite intact, its accounting unchanged) is refused.
+/// M08-T19: a legacy kept raw stage whose rows no longer have the recorded
+/// content digest (its SQLite intact, its accounting unchanged) is refused.
 #[test]
 fn handback_refuses_a_kept_stage_that_differs_from_its_record() {
     let (fixture, _root, env) = planned_then_refused(true);
+    kept_archive::make_legacy(&fixture);
     let path = kept_stage_path(&fixture.store, fixture.binding.vehicle_id);
     let connection = Connection::open(&path).expect("kept stage");
     let changed = connection
@@ -2415,6 +2417,10 @@ fn handback_refuses_a_prior_pack_whose_decoded_bytes_differ_from_its_digest() {
 /// `m08_t19_lab_measure` with `--ignored`, both given `LAB_DIR` (and the
 /// sizes `build` reads); `measure` prints one `M08T19` line with the outcome,
 /// CPU and wall seconds, packs written and whether the head was served.
+// DEC-250: the compact kept archive replaces the raw kept stage.
+#[path = "seam_physical_route_kept_archive_tests.rs"]
+mod kept_archive;
+
 mod m08_t19_lab {
     use super::*;
     use crate::source_db_projection::SourceDbPositionPhysicalV2_2;

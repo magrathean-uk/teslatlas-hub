@@ -985,6 +985,77 @@ impl HubStore {
         Ok(())
     }
 
+    /// Replaces the vehicle's kept record in one transaction (DEC-250): only
+    /// when the record now is `expected` (`None`: absent), to `kept`
+    /// (`None`: forgotten), and with `clear_plan` its recorded plan inputs
+    /// go in the same commit. Returns whether it replaced the record; the
+    /// files the record names are the caller's, written durably before and
+    /// removed only after.
+    pub(crate) fn swap_physical_v3_kept(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        expected: Option<&PhysicalV3Kept>,
+        kept: Option<&PhysicalV3Kept>,
+        clear_plan: bool,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Query)?;
+        let current: Option<String> = transaction
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let current = current
+            .map(|value| {
+                serde_json::from_str::<PhysicalV3Kept>(&value)
+                    .map_err(|_| StoreError::PhysicalV3AdmissionConflict)
+            })
+            .transpose()?;
+        if current.as_ref() != expected {
+            return Ok(false);
+        }
+        match kept {
+            Some(kept) => {
+                let value =
+                    serde_json::to_string(kept).map_err(StoreError::SerializeLifecycleRow)?;
+                transaction.execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![physical_v3_kept_key(vehicle_id), value],
+                )
+            }
+            None => transaction.execute(
+                "DELETE FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+            ),
+        }
+        .map_err(StoreError::Query)?;
+        if clear_plan {
+            transaction
+                .execute(
+                    "DELETE FROM hub_metadata WHERE key = ?1",
+                    params![physical_v3_handback_plan_key(vehicle_id)],
+                )
+                .map_err(StoreError::Query)?;
+        }
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(true)
+    }
+
+    /// Every kept archive the catalogue references, by vehicle (backup
+    /// selection, DEC-250). A record that does not read back is refused.
+    pub(crate) fn physical_v3_kept_archives(
+        &self,
+    ) -> Result<Vec<(Uuid, PhysicalV3KeptArchive)>, StoreError> {
+        physical_v3_kept_archives_in(&self.open_read_only_connection()?)
+    }
+
     /// The import seam planned at a handback from the kept source sessions
     /// and the coverage now (M03-T22), in one IMMEDIATE transaction. It
     /// commits the Hub's side of the plan only when the plan restates no
@@ -1641,6 +1712,36 @@ fn physical_v3_seam_coverage_key(vehicle_id: Uuid) -> String {
     format!("physical_v3_seam_coverage:{vehicle_id}")
 }
 
+/// Every kept archive `connection`'s catalogue references, by vehicle
+/// (DEC-250). A record that does not read back is refused.
+pub(crate) fn physical_v3_kept_archives_in(
+    connection: &Connection,
+) -> Result<Vec<(Uuid, PhysicalV3KeptArchive)>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let mut archives = Vec::new();
+    for (key, value) in rows {
+        let vehicle_id = key
+            .strip_prefix("physical_v3_kept:")
+            .and_then(|id| id.parse::<Uuid>().ok())
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let kept: PhysicalV3Kept =
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        if let Some(archive) = kept.archive {
+            archives.push((vehicle_id, archive));
+        }
+    }
+    Ok(archives)
+}
+
 /// The `hub_metadata` key of the stage and source kept for the vehicle's
 /// handback (M03-T22).
 fn physical_v3_kept_key(vehicle_id: Uuid) -> String {
@@ -1667,12 +1768,31 @@ pub(crate) struct PhysicalV3HandbackPlan {
     pub(crate) prepared: bool,
 }
 
-/// What is kept for a vehicle's handback (M03-T22): the digests of the raw
-/// physical stage and of the import's source sessions.
+/// What is kept for a vehicle's handback (M03-T22): the logical digest of
+/// the physical stage and the digest of the import's source sessions. With
+/// `archive` the base is one compact kept archive and its generation's
+/// source file (DEC-250); without it, a record an earlier build wrote, the
+/// legacy raw stage and source file, readable until a verified conversion
+/// replaces the record.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhysicalV3Kept {
     pub(crate) stage: String,
     pub(crate) source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) archive: Option<PhysicalV3KeptArchive>,
+}
+
+/// The kept archive of a vehicle's replay base (DEC-250): its files are
+/// `<vehicle>.<generation>.kept` and `<vehicle>.<generation>.source.json`
+/// in the kept directory.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PhysicalV3KeptArchive {
+    pub(crate) generation: Uuid,
+    pub(crate) format: u32,
+    /// SHA-256 of the whole archive file.
+    pub(crate) digest: String,
+    pub(crate) bytes: u64,
+    pub(crate) decoded_bytes: u64,
 }
 
 /// The coverage digest each planned head was planned with; none recorded is

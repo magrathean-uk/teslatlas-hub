@@ -1812,6 +1812,10 @@ pub enum SourceDbStageError {
     InvalidPageCursor,
     #[error("page limit must be between 1 and {MAX_PAGE_SIZE}")]
     InvalidPageSize,
+    #[error("kept archive refused: {0}")]
+    KeptArchiveInvalid(&'static str),
+    #[error("kept archive decodes past its {maximum}-byte bound")]
+    KeptArchiveDecodedSizeExceeded { maximum: u64 },
 }
 
 // Editing a sealed physical stage before publication (M03-T21).
@@ -1824,6 +1828,16 @@ pub(crate) use sealed_edit::StageChildTable;
 mod sealed_copy;
 #[cfg(test)]
 pub(crate) use sealed_copy::AFTER_SEALED_COPY;
+
+// The compact kept replay base: one compressed, versioned archive of a
+// sealed physical stage (DEC-250).
+#[path = "stage/kept_archive.rs"]
+mod kept_archive;
+#[cfg(test)]
+pub(crate) use kept_archive::{KEPT_ARCHIVE_CRASH_AT, KEPT_ARCHIVE_FORMAT};
+pub(crate) use kept_archive::{
+    KeptArchiveExpected, KeptArchiveIdentity,
+};
 
 #[cfg(test)]
 #[path = "stage/tests.rs"]
@@ -1894,6 +1908,8 @@ mod n1_src_import_source_db_stage_rs_display_tests {
                 SourceDbStageError::IntegrityCheckFailed(..) => (),
                 SourceDbStageError::InvalidPageCursor => (),
                 SourceDbStageError::InvalidPageSize => (),
+                SourceDbStageError::KeptArchiveInvalid(..) => (),
+                SourceDbStageError::KeptArchiveDecodedSizeExceeded { .. } => (),
             }
             assert_name_free(&error);
         }
@@ -2011,5 +2027,9 @@ mod n1_src_import_source_db_stage_rs_display_tests {
         check_source_db_stage_error(SourceDbStageError::IntegrityCheckFailed(example()));
         check_source_db_stage_error(SourceDbStageError::InvalidPageCursor);
         check_source_db_stage_error(SourceDbStageError::InvalidPageSize);
+        check_source_db_stage_error(SourceDbStageError::KeptArchiveInvalid(example()));
+        check_source_db_stage_error(SourceDbStageError::KeptArchiveDecodedSizeExceeded {
+            maximum: example(),
+        });
     }
 }
