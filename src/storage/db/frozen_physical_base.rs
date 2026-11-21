@@ -323,13 +323,19 @@ pub(crate) fn frozen_physical_bases_in(
         )
         .map_err(StoreError::Query)?
         .query_map(params![FROZEN_PHYSICAL_BASE_MEMBER_PREFIX], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            // The value is read as bytes: a TEXT value that is not UTF-8 is
+            // a damaged record (keyed below), not a query failure.
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })
         .map_err(StoreError::Query)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(StoreError::Query)?;
     rows.iter()
-        .map(|(key, value)| frozen_physical_base_from_row(key, value))
+        .map(|(key, value)| {
+            let value = std::str::from_utf8(value)
+                .map_err(|_| StoreError::FrozenPhysicalBaseInvalid { key: key.clone() })?;
+            frozen_physical_base_from_row(key, value)
+        })
         .collect()
 }
 

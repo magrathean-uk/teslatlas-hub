@@ -694,6 +694,34 @@ fn frozen_base_census_json_has_no_frozen_class_until_a_record_exists() {
 }
 
 #[test]
+fn frozen_base_value_that_is_not_utf8_is_a_keyed_refusal_and_doctor_inventory_survives() {
+    let fixture = frozen_fixture();
+    let store = &fixture.store;
+    let vehicle_id = fixture.base.vehicle_id;
+    let key = format!("physical_v3_frozen_base:{vehicle_id}");
+    let valid = frozen_value(store, vehicle_id).expect("record");
+    // A TEXT value holding bytes that are not UTF-8, under the canonical key.
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "UPDATE hub_metadata SET value = CAST(x'80ff' AS TEXT) WHERE key = ?1",
+            [&key],
+        )
+        .expect("damage");
+    let refused = |result: Result<(), StoreError>| match result {
+        Err(StoreError::FrozenPhysicalBaseInvalid { key: named }) => assert_eq!(named, key),
+        other => panic!("expected the keyed refusal, got {other:?}"),
+    };
+    refused(frozen_physical_bases_in(&store.open().expect("catalogue")).map(|_| ()));
+    refused(store.catalogue_check());
+    // Doctor's inventory still describes the store, so its report prints.
+    store.catalogue_inventory().expect("inventory survives the damaged record");
+    put_metadata(store, &key, &valid);
+    store.catalogue_check().expect("whole again");
+}
+
+#[test]
 fn frozen_base_one_digit_change_after_preflight_refuses_the_encrypted_backup() {
     use crate::data_recovery::{
         EncryptedBackupRequest, TestHookAction, TestKdfParams, clear_test_hook,
