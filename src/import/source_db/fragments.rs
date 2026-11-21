@@ -98,6 +98,8 @@ pub struct StagedProjectionPacks {
     /// A private current-run digest index, retained only until the caller
     /// atomically publishes or discards this candidate.
     pub(crate) projection_state: Option<SourceDbProjectionStateCapture>,
+    /// The repair candidate index captured with this candidate (M03-T26).
+    pub(crate) repair_candidates: Option<crate::import::broken_drive_repair::BrokenDriveCandidateIndex>,
     cleanup_on_drop: bool,
 }
 
@@ -129,8 +131,17 @@ impl StagedProjectionPacks {
             geofences,
             selected_car,
             projection_state,
+            repair_candidates: None,
             cleanup_on_drop: true,
         }
+    }
+
+    pub(crate) fn with_repair_candidates(
+        mut self,
+        index: crate::import::broken_drive_repair::BrokenDriveCandidateIndex,
+    ) -> Self {
+        self.repair_candidates = Some(index);
+        self
     }
 
     /// Published chunks are owned by the Hub catalogue, not this candidate.
@@ -355,7 +366,8 @@ fn write_staged_full_snapshot_once(
     };
 
     write_drive_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
-    write_position_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
+    let repair_candidates =
+        write_position_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
     write_charge_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
     let emitted_updates =
         write_staged_update_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
@@ -381,7 +393,8 @@ fn write_staged_full_snapshot_once(
         geofences,
         projection_state,
         selected_car,
-    ))
+    )
+    .with_repair_candidates(repair_candidates))
 }
 
 fn staged_geofences(stage: &SourceDbStage) -> Result<Vec<SourceDbGeofence>, SourceDbFragmentError> {
@@ -564,23 +577,31 @@ fn write_position_fragments(
     sink: &mut PackSink<'_>,
     limits: SourceDbFragmentLimits,
     report: &mut ProjectionReport,
-) -> Result<(), SourceDbFragmentError> {
+) -> Result<crate::import::broken_drive_repair::BrokenDriveCandidateIndex, SourceDbFragmentError> {
     let mut projected_drives = HashMap::new();
     let mut source_drives = Vec::new();
     for_each_page::<SourceDbDrive, _>(stage, SourceDbStageTable::Drives, |drive| {
         if let Some(projected) = project_drive_from_stage(stage, &drive, car.id)? {
-            projected_drives.insert(drive.id, projected);
+            projected_drives.insert(drive.id, Arc::new(projected));
         }
         source_drives.push(drive);
         Ok(())
     })?;
     let mut broken_drives = BrokenDriveTracker::new(&source_drives, car.id);
+    for_each_page::<SourceDbState, _>(stage, SourceDbStageTable::States, |state| {
+        broken_drives.observe_state(&state);
+        Ok(())
+    })?;
+    for_each_page::<SourceDbChargingProcess, _>(stage, SourceDbStageTable::ChargingProcesses, |process| {
+        broken_drives.observe_charging_process(&process);
+        Ok(())
+    })?;
     let held_drive_id = handed_over_drive_id(&source_drives, car.id);
     let detachment = Arc::new(PositionDetachmentPolicy::new(&source_drives, car.id, held_drive_id));
     let mut expected_detached = 0_u64;
     drop(source_drives);
-    let projected_drives = Arc::new(projected_drives);
-    let mut projection_pool = PositionProjectionPool::new(car.id, projected_drives.clone(), detachment.clone());
+    let mut projection_pool =
+        PositionProjectionPool::new(car.id, Arc::new(projected_drives), detachment.clone());
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     let mut ordinal = 0_u64;
     let mut after_id = 0_i64;
@@ -625,7 +646,8 @@ fn write_position_fragments(
         return Err(SourceDbProjectionError::PositionDetachmentAccounting.into());
     }
     report.broken_drives = broken_drives.count();
-    accumulator.flush(sink)
+    accumulator.flush(sink)?;
+    Ok(broken_drives.into_candidate_index())
 }
 
 fn append_projected_positions(
@@ -654,10 +676,10 @@ fn append_projected_positions(
             sink,
             drive_is_present,
             || Ok((1, serialized_bytes(&position)?)),
-            || Ok((1, serialized_bytes(&drive)?)),
+            || Ok((1, serialized_bytes(drive.as_ref())?)),
         )?;
         if accumulator.drive_ids.insert(drive.id) {
-            accumulator.drives.push(drive);
+            accumulator.drives.push(drive.as_ref().clone());
         }
         accumulator.positions.push(position);
         report.projected_positions = report
@@ -949,7 +971,7 @@ struct PositionProjectionJob {
 
 struct ProjectedPosition {
     position: ProjectionPosition,
-    drive: Option<ProjectionDrive>,
+    drive: Option<Arc<ProjectionDrive>>,
 }
 
 struct PositionProjectionResult {
@@ -972,7 +994,11 @@ struct PositionProjectionPool {
 }
 
 impl PositionProjectionPool {
-    fn new(car_id: i64, drives: Arc<HashMap<i64, ProjectionDrive>>, detachment: Arc<PositionDetachmentPolicy>) -> Self {
+    fn new(
+        car_id: i64,
+        drives: Arc<HashMap<i64, Arc<ProjectionDrive>>>,
+        detachment: Arc<PositionDetachmentPolicy>,
+    ) -> Self {
         let workers = thread::available_parallelism()
             .map(|value| value.get())
             .unwrap_or(1)
@@ -1002,7 +1028,7 @@ impl PositionProjectionPool {
                             let drive = match row.value.drive_id {
                                 None => None,
                                 Some(drive_id) => match drives.get(&drive_id) {
-                                    Some(drive) => Some(drive.clone()),
+                                    Some(drive) => Some(Arc::clone(drive)),
                                     None => {
                                         detached += 1;
                                         None

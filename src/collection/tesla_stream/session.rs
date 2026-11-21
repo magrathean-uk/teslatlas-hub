@@ -62,7 +62,9 @@ use super::{
         terminal_credential_delay,
     },
     stream_socket_config, unsubscribe_frame,
-    wire::{StreamUpdate, parse_data_update_diagnosed, subscribe_frame_zeroizing},
+    wire::{
+        StreamUpdate, parse_data_update_diagnosed, subscribe_frame_zeroizing, subscribed_elements,
+    },
 };
 
 // R52: the WebSocket crate logs each frame it reads and writes at trace level
@@ -193,12 +195,20 @@ impl TestSeams {
 /// passed, the signal fires, so every phase ends and the run does not retry.
 /// Unlike an ordinary shutdown, a window end leaves the Hub no authority to
 /// send: the socket is dropped with no further write (no unsubscribe, no Close).
+///
+/// The quiet stop (#86) comes before the ordinary signal while the collector waits
+/// for its credential unit: a subscribed session stops reading and sending (no
+/// Ping, no unsubscribe, no Close) and the run starts no new attempt. The ordinary
+/// signal then ends the session as usual, or the window's end drops the socket.
+/// A dropped quiet sender is no stop.
 pub(super) struct Shutdown {
     receiver: oneshot::Receiver<()>,
     fired: bool,
     window: Option<SendPermit>,
     /// The window ended the attempt; nothing more may be written.
     window_ended: bool,
+    quiet: Option<oneshot::Receiver<()>>,
+    quiet_fired: bool,
 }
 
 impl Shutdown {
@@ -208,6 +218,55 @@ impl Shutdown {
             fired: false,
             window: None,
             window_ended: false,
+            quiet: None,
+            quiet_fired: false,
+        }
+    }
+
+    fn with_quiet(mut self, quiet: oneshot::Receiver<()>) -> Self {
+        self.quiet = Some(quiet);
+        self
+    }
+
+    /// Waits for the ordinary signal (or the window's end) or the quiet stop,
+    /// whichever comes first: `true` is the quiet stop, which stays fired. Cancel
+    /// safe: the receivers are polled in place, so a `select!` branch that wins
+    /// first loses no signal.
+    async fn wait_or_quiet(&mut self) -> bool {
+        if self.fired {
+            return false;
+        }
+        if self.quiet_fired {
+            return true;
+        }
+        let Some(quiet) = self.quiet.as_mut() else {
+            self.wait().await;
+            return false;
+        };
+        let quieted = tokio::select! {
+            biased;
+            cut = signal_or_window_end(&mut self.receiver, self.window.as_ref()) => {
+                Err(cut)
+            }
+            received = quiet => Ok(received.is_ok()),
+        };
+        match quieted {
+            Err(cut) => {
+                self.window_ended |= cut;
+                self.fired = true;
+                false
+            }
+            Ok(received) => {
+                // A completed receiver is never polled again.
+                self.quiet = None;
+                if received {
+                    self.quiet_fired = true;
+                    true
+                } else {
+                    self.wait().await;
+                    false
+                }
+            }
         }
     }
 
@@ -260,22 +319,34 @@ impl Shutdown {
         if self.fired {
             return;
         }
-        match &self.window {
-            None => {
-                let _ = (&mut self.receiver).await;
-            }
-            Some(permit) => {
-                tokio::select! {
-                    biased;
-                    _ = &mut self.receiver => {}
-                    cut = permit.ended() => {
-                        tracing::debug!(?cut, "the collection window ended the stream");
-                        self.window_ended = true;
-                    }
+        if signal_or_window_end(&mut self.receiver, self.window.as_ref()).await {
+            self.window_ended = true;
+        }
+        self.fired = true;
+    }
+}
+
+/// The ordinary signal or the window's end, whichever comes first: `true` is the
+/// window's end. Cancel safe.
+async fn signal_or_window_end(
+    receiver: &mut oneshot::Receiver<()>,
+    window: Option<&SendPermit>,
+) -> bool {
+    match window {
+        None => {
+            let _ = receiver.await;
+            false
+        }
+        Some(permit) => {
+            tokio::select! {
+                biased;
+                _ = receiver => false,
+                cut = permit.ended() => {
+                    tracing::debug!(?cut, "the collection window ended the stream");
+                    true
                 }
             }
         }
-        self.fired = true;
     }
 }
 
@@ -393,6 +464,7 @@ struct RunState {
 /// Counts of one session's inbound messages, logged once when it ends (R52).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FrameCounts {
+    /// Non-duplicate telemetry frames delivered to the collector.
     pub(crate) accepted: u32,
     pub(crate) duplicates: u32,
     pub(crate) rejected: u32,
@@ -413,6 +485,12 @@ struct SessionState {
     first_accepted_at: Option<Instant>,
     unknown_error_type: Option<String>,
     rejected_reasons: std::collections::BTreeMap<&'static str, u32>,
+    /// Element counts of `column_count` refusals: observed count to frames.
+    /// Counts only, never a value (R52).
+    short_row_elements: std::collections::BTreeMap<u32, u32>,
+    /// Element counts of accepted frames that carried extra trailing columns:
+    /// observed count to frames. Counts only, never a value (R52).
+    long_row_elements: std::collections::BTreeMap<u32, u32>,
     /// Consecutive rejected frames with no accepted frame between them (R33).
     rejected_streak: u32,
     /// The Ping schedule, the dead-socket and data-silence deadlines and the
@@ -728,12 +806,27 @@ fn event_for(class: &FailureClass, state: &RetryState) -> Option<StreamEvent> {
     }
 }
 
-/// Two samples are the same when their time and all 11 values are equal, with
+/// Most distinct element counts one session keeps per summary map: a server
+/// that varied its row length on every frame cannot grow the session state.
+const ELEMENT_COUNT_KEYS_MAX: usize = 8;
+
+/// Counts one frame under its observed element count (R52: a count, never a
+/// value). A count that is new once the map is full is dropped.
+fn count_elements(counts: &mut std::collections::BTreeMap<u32, u32>, elements: u32) {
+    if let Some(frames) = counts.get_mut(&elements) {
+        *frames = frames.saturating_add(1);
+    } else if counts.len() < ELEMENT_COUNT_KEYS_MAX {
+        counts.insert(elements, 1);
+    }
+}
+
+/// Two samples are the same when their time and all 12 values are equal, with
 /// `f64` compared bitwise (R26).
-fn same_sample(a: &StreamUpdate, b: &StreamUpdate) -> bool {
+pub(super) fn same_sample(a: &StreamUpdate, b: &StreamUpdate) -> bool {
     let bits = |value: Option<f64>| value.map(f64::to_bits);
     a.timestamp_ms == b.timestamp_ms
         && bits(a.elevation) == bits(b.elevation)
+        && a.est_heading == b.est_heading
         && bits(a.est_lat) == bits(b.est_lat)
         && bits(a.est_lng) == bits(b.est_lng)
         && bits(a.est_range) == bits(b.est_range)
@@ -1008,13 +1101,26 @@ impl TeslaStreamSupervisor {
     /// error that makes continuing impossible or unsafe (R12). Every other
     /// condition ends one session or check and is retried by the schedules of
     /// section 4, so C3 does not have to rebuild the supervisor.
+    #[cfg(test)]
     pub(crate) async fn run(
         self,
         shutdown: oneshot::Receiver<()>,
     ) -> Result<(), StreamSupervisorError> {
+        self.run_with_quiet_stop(shutdown, None).await
+    }
+
+    /// The run with a quiet stop (#86): see `Shutdown`.
+    pub(crate) async fn run_with_quiet_stop(
+        self,
+        shutdown: oneshot::Receiver<()>,
+        quiet: Option<oneshot::Receiver<()>>,
+    ) -> Result<(), StreamSupervisorError> {
         // R50: revoked at run start and whenever the run ends, even by an abort.
         let _gate = GateGuard::new(self.power_gate.clone());
         let mut shutdown = Shutdown::new(shutdown);
+        if let Some(quiet) = quiet {
+            shutdown = shutdown.with_quiet(quiet);
+        }
         let audit = RunAudit::new(
             self.audit_store.clone(),
             self.vehicle_id,
@@ -1030,8 +1136,19 @@ impl TeslaStreamSupervisor {
         };
         let mut delay = start_delay(self.draw());
         loop {
-            if until(&mut shutdown, sleep(delay)).await.is_none() {
-                return Ok(());
+            let stopped = tokio::select! {
+                biased;
+                quiet = shutdown.wait_or_quiet() => Some(quiet),
+                () = sleep(delay) => None,
+            };
+            match stopped {
+                None => {}
+                Some(false) => return Ok(()),
+                // After the quiet stop no new attempt starts.
+                Some(true) => {
+                    shutdown.wait().await;
+                    return Ok(());
+                }
             }
             match self.attempt(&mut shutdown, &audit, &mut run).await {
                 Outcome::Stop(result) => return result,
@@ -1237,6 +1354,7 @@ impl TeslaStreamSupervisor {
     ) -> Live<T> {
         enum Wake<T> {
             Shutdown,
+            Quiet,
             Done(T),
             Message(Option<Result<Message, WebSocketError>>),
             Dead,
@@ -1248,7 +1366,7 @@ impl TeslaStreamSupervisor {
             let ping_at = clocks.next_ping();
             let wake = tokio::select! {
                 biased;
-                () = shutdown.wait() => Wake::Shutdown,
+                quiet = shutdown.wait_or_quiet() => if quiet { Wake::Quiet } else { Wake::Shutdown },
                 value = &mut work => Wake::Done(value),
                 message = socket.next() => Wake::Message(message),
                 () = sleep_until(dead_at) => Wake::Dead,
@@ -1256,6 +1374,18 @@ impl TeslaStreamSupervisor {
             };
             match wake {
                 Wake::Shutdown => return Live::Shutdown,
+                // The quiet stop: the work may settle (a queued lock wait must
+                // take and release the lock), but its outcome is dropped, so no
+                // token reaches a write. Nothing is read or sent until the
+                // ordinary signal or the window's end.
+                Wake::Quiet => {
+                    tokio::select! {
+                        biased;
+                        () = shutdown.wait() => {}
+                        _ = &mut work => shutdown.wait().await,
+                    }
+                    return Live::Shutdown;
+                }
                 Wake::Done(value) => return Live::Done(value),
                 Wake::Dead => {
                     *end_reason = "dead_socket";
@@ -1613,6 +1743,8 @@ impl TeslaStreamSupervisor {
             first_accepted_at: None,
             unknown_error_type: None,
             rejected_reasons: Default::default(),
+            short_row_elements: Default::default(),
+            long_row_elements: Default::default(),
             rejected_streak: 0,
             clocks,
             counts: FrameCounts::default(),
@@ -1628,7 +1760,7 @@ impl TeslaStreamSupervisor {
             Instant::now().saturating_duration_since(first) > Duration::from_secs(60)
         });
         run.unknown_error_type = state.unknown_error_type.clone();
-        self.log_summary(&state, end.class == Some(FailureClass::Protocol));
+        self.log_summary(&state, &end);
         self.finish_subscribed(socket, end, shutdown, audit, session, &state)
             .await
     }
@@ -1759,7 +1891,7 @@ impl TeslaStreamSupervisor {
 
     /// One summary line per session (R52): counts only, never a frame value, a
     /// sample time, the tag or the endpoint's path.
-    fn log_summary(&self, state: &SessionState, protocol: bool) {
+    fn log_summary(&self, state: &SessionState, end: &SessionEnd) {
         let counts = &state.counts;
         #[cfg(test)]
         if let Some(summaries) = &self.seams.summaries {
@@ -1771,17 +1903,21 @@ impl TeslaStreamSupervisor {
         macro_rules! emit_summary { ($level:ident) => { tracing::$level!(
             host = %self.endpoint_host,
             region = ?self.region,
+            end_cause = ?end.cause,
             accepted = counts.accepted,
             duplicates = counts.duplicates,
             rejected = counts.rejected,
             rejected_reasons = ?state.rejected_reasons,
+            subscribed_elements = subscribed_elements(),
+            column_count_elements = ?state.short_row_elements,
+            extra_column_elements = ?state.long_row_elements,
             implausible_time = counts.implausible_time,
             fields_invalid = counts.fields_invalid,
             unknown_messages = counts.unknown_messages,
             ignored_errors = counts.ignored_errors,
             "stream session summary"
         ); }; }
-        if protocol {
+        if end.class == Some(FailureClass::Protocol) || end.cause == EndCause::QueueFull {
             emit_summary!(info);
         } else {
             emit_summary!(debug);
@@ -1804,6 +1940,7 @@ impl TeslaStreamSupervisor {
     ) -> SessionEnd {
         enum Wake {
             Shutdown,
+            Quiet,
             Message(Option<Result<Message, WebSocketError>>),
             DeadSocket,
             Silence,
@@ -1819,7 +1956,7 @@ impl TeslaStreamSupervisor {
             let stable_at = state.clocks.stable_at();
             let wake = tokio::select! {
                 biased;
-                () = shutdown.wait() => Wake::Shutdown,
+                quiet = shutdown.wait_or_quiet() => if quiet { Wake::Quiet } else { Wake::Shutdown },
                 message = socket.next() => Wake::Message(message),
                 () = sleep_until(dead_at) => Wake::DeadSocket,
                 () = sleep_until(silent_at) => Wake::Silence,
@@ -1833,6 +1970,12 @@ impl TeslaStreamSupervisor {
             };
             match wake {
                 Wake::Shutdown => return SessionEnd::shutdown(),
+                // #86: nothing is read or sent until the ordinary signal, which ends
+                // the session as usual, or the window's end, which drops the socket.
+                Wake::Quiet => {
+                    shutdown.wait().await;
+                    return SessionEnd::shutdown();
+                }
                 Wake::DeadSocket => {
                     state.end_reason = "dead_socket";
                     // No inbound frame of any kind for three ping intervals (or
@@ -2048,8 +2191,18 @@ impl TeslaStreamSupervisor {
         state: &mut SessionState,
     ) -> Step {
         let (mut update, mut fields_invalid) = match parse_data_update_diagnosed(text) {
-            Ok(update) => update,
-            Err((_error, reason)) => return self.reject(state, reason),
+            Ok(parsed) => {
+                if parsed.elements > subscribed_elements() {
+                    count_elements(&mut state.long_row_elements, parsed.elements);
+                }
+                (parsed.update, parsed.fields_invalid)
+            }
+            Err(rejection) => {
+                if let Some(elements) = rejection.elements {
+                    count_elements(&mut state.short_row_elements, elements);
+                }
+                return self.reject(state, rejection.reason);
+            }
         };
         // R24: a gear text that is the session's own token is a reflected
         // credential, not a reading. It is dropped as an invalid field before
@@ -2090,8 +2243,6 @@ impl TeslaStreamSupervisor {
         }
         if duplicate {
             state.counts.duplicates += 1;
-        } else {
-            state.counts.accepted += 1;
         }
         if !state.accepted_seen {
             state.accepted_seen = true;
@@ -2118,6 +2269,7 @@ impl TeslaStreamSupervisor {
             if let Some(end) = self.deliver(telemetry, shutdown).await {
                 return Step::End(end);
             }
+            state.counts.accepted += 1;
             run.last_delivered = Some(update);
         }
         Step::Continue

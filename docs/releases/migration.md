@@ -23,9 +23,13 @@ database, do not import it with this release.
 
 1. Back up the source application and keep a recoverable copy. Do not remove the original
    installation after the first successful import.
-2. Update the source application to release 4.4.0 or later, start it once, and
+2. Update the source application to release 4.5.0 or later, start it once, and
    let its database changes finish. A newer release is not automatically
-   supported: the check tells you.
+   supported: the check tells you. Release 4.5.0 adds one database migration to
+   4.4.0, so a 4.4.0 source is refused until it is updated. It also adds missing
+   elevation to ended drives and updates their ascent and descent, including
+   drives already imported; the next import brings those changed values into
+   the Hub.
 3. Prepare your server address, SSH port, user and authentication. The account
    must be able to access the source application Docker deployment; if it needs sudo,
    select that option in the Mac form. Do not grant broad permissions simply

@@ -1245,6 +1245,15 @@ fn publishes_stable_vehicle_full_snapshots_with_rising_markers() {
 
 #[test]
 fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
+    test_selected_command_post_commit_finalizer(false);
+}
+
+#[test]
+fn selected_command_reports_a_withheld_physical_head_as_a_failure() {
+    test_selected_command_post_commit_finalizer(true);
+}
+
+fn test_selected_command_post_commit_finalizer(check_withheld: bool) {
     let temporary = crate::private_tempdir().expect("temporary Hub store");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     let cursor_key = CursorKey::from_bytes([57; 32]);
@@ -1407,6 +1416,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             physical_stage: Some(physical_stage(&[])),
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )
@@ -1441,6 +1451,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             physical_stage: Some(physical_stage(&[])),
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )
@@ -1470,6 +1481,54 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
         first_physical.kind,
         crate::physical_publication::PhysicalV3PublicationKind::FirstHead
     );
+    if check_withheld {
+        let connection = store.open().unwrap();
+        connection
+            .execute(
+                "INSERT INTO collection_coverage
+                    (seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, sealed)
+                 VALUES (1, 'fixture', 1700000000000, 1700003600000, '[]', 'handback')",
+                [],
+            )
+            .unwrap();
+        let charge_id = crate::db::hub_ids::HUB_ID_BASE + 1;
+        connection
+            .execute(
+                "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+                 VALUES (?1, ?2, 1, json_object(
+                     'id', ?2, 'car_id', 1, 'start_date_ms', 1700000100000,
+                     'end_date_ms', 1700000200000
+                 ))",
+                rusqlite::params![legacy.vehicle_id.to_string(), charge_id],
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .physical_v3_current_head_served(legacy.vehicle_id)
+                .unwrap(),
+            Some(false)
+        );
+
+        let error = finish_selected_schema_22_publication(
+            &store,
+            &cursor_key,
+            CapturedSourceDbImport {
+                report: legacy.clone(),
+                binding,
+                updates_v2_2: source.clone(),
+                atomic_schema_22: Some(completed.updates_schema_22),
+                physical_stage: Some(physical_stage(&[])),
+                physical_seam: Some(crate::import::source_db::seam::SeamPackPlan::default()),
+                physical_source: None,
+                source_basis: SourceDbImportBasis::default(),
+                publication_gate: store.try_acquire_publication_gate().unwrap(),
+            },
+        )
+        .expect_err("a withheld phone sync target makes the selected import incomplete");
+        assert!(error.to_string().contains("phone sync"));
+        assert!(store.v2_head(legacy.vehicle_id).unwrap().is_some());
+        return;
+    }
     for (updates, expected_kind, expected_sequence) in [
         (
             vec![],
@@ -1493,6 +1552,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
                 physical_stage: Some(physical_stage(&updates)),
                 physical_seam: None,
                 physical_source: None,
+                source_basis: SourceDbImportBasis::default(),
                 publication_gate: store.try_acquire_publication_gate().unwrap(),
             },
         )
@@ -1576,6 +1636,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             physical_stage: None,
             physical_seam: None,
             physical_source: None,
+            source_basis: SourceDbImportBasis::default(),
             publication_gate,
         },
     )
@@ -2685,6 +2746,52 @@ fn broken_drive_stage(source: &SourceDbHistory, directory: &Path) -> SourceDbSta
     }
     stage.seal().unwrap();
     stage
+}
+
+#[test]
+fn broken_drive_repair_plan_index_is_withdrawn_when_its_refresh_fails() {
+    let temporary = crate::private_tempdir().unwrap();
+    let database = temporary.path().join("hub");
+    let store = HubStore::initialize(&database).unwrap();
+    let cursor_key = CursorKey::from_bytes([72; 32]);
+    let request = SourceDbImportRequest {
+        new_import_source: false, source_key: "broken-drive-repair-index-refresh".into(),
+        scope: SourceDbImportScope::Selected(1), imported_at_ms: 1_700_000_000_000,
+    };
+    let mut source = history();
+    source.drives = vec![completed_drive(10)];
+    for id in [1, 2] {
+        let mut broken = completed_drive(id);
+        broken.start_date_ms = id * 100;
+        broken.end_date_ms = None;
+        broken.distance_km = None;
+        broken.duration_min = None;
+        source.drives.push(broken);
+    }
+    let first = broken_drive_stage(&source, &temporary.path().join("first"));
+    let prior = publish_staged_history(&store, &cursor_key, &request, &first).unwrap();
+    let now = 1_800_000_000_000;
+    assert!(store.plan_drive_repairs(prior.vehicle_id, now).unwrap().index_present);
+
+    // The next import commits, then its index write fails.
+    let raw = rusqlite::Connection::open(store.database_path()).unwrap();
+    raw.execute_batch(
+        "CREATE TRIGGER fail_repair_head BEFORE INSERT ON drive_repair_index_heads
+         BEGIN SELECT RAISE(ABORT, 'test index write failure'); END;",
+    )
+    .unwrap();
+    for id in [1, 2] {
+        source.positions.push(serde_json::from_value(serde_json::json!({
+            "id": 100 + id, "car_id": 1, "drive_id": id,
+            "date_ms": id * 100, "latitude": 51.0, "longitude": 0.0
+        })).unwrap());
+    }
+    let second = broken_drive_stage(&source, &temporary.path().join("second"));
+    let next = publish_staged_history(&store, &cursor_key, &request, &second).unwrap();
+    assert!(!next.skipped);
+    let report = store.plan_drive_repairs(prior.vehicle_id, now).unwrap();
+    assert!(!report.index_present, "no plan uses the index the import made stale");
+    assert!(report.planned_keys.is_empty());
 }
 
 #[test]

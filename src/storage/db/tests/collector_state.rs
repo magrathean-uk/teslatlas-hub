@@ -49,6 +49,9 @@ fn cs_account(state: &str, reason: &str) -> CollectorAccountRow {
         since_ms: CS_W0,
         rate_limited_until_ms: None,
         next_probe_ms: None,
+        unreachable_until_ms: None,
+        consecutive_unreachable: 0,
+        inventory_unavailable: false,
     }
 }
 
@@ -579,6 +582,30 @@ fn owner_actions_load_oldest_first_until_applied() {
     let rows = store.load_collector_state_rows().unwrap();
     assert_eq!(rows.actions.len(), 1);
     assert_eq!(rows.actions[0].action_id, resume);
+}
+
+#[test]
+fn repeated_inventory_failures_show_as_healthy_detail_until_a_list_is_accepted() {
+    let (_temporary, store) = cs_store();
+    store.acquire_supervised_collector_lease(CS_W0).unwrap();
+    let view = || store.collector_readiness_view(&ReadinessContext::context_free(true, CS_W0 + 1));
+    let account = |failing: bool| CollectorRowsWrite {
+        now_ms: CS_W0,
+        account: Some(CollectorAccountRow {
+            inventory_unavailable: failing,
+            ..cs_account("collecting", "collecting")
+        }),
+        ..CollectorRowsWrite::default()
+    };
+    cs_write(&store, &account(true));
+    let failing = view();
+    assert_eq!(failing.attention, None);
+    assert_eq!(failing.service, Ok(()));
+    assert_eq!(failing.detail, ["collector_inventory_unavailable"]);
+    let rows = store.load_collector_state_rows().unwrap();
+    assert!(rows.account.is_some_and(|row| row.inventory_unavailable));
+    cs_write(&store, &account(false));
+    assert!(view().detail.is_empty(), "one accepted list clears it");
 }
 
 #[test]
@@ -1580,4 +1607,50 @@ fn cs_p3_lift_and_c3_reset_roll_back_together() {
     let auth = store.load_collector_auth_row().unwrap().unwrap();
     assert_eq!((auth.state.as_str(), auth.collecting), ("ready", true));
     assert_eq!(cs_p3_auth_written_ms(&store), Some(CS_W0 + 50_000));
+}
+
+#[test]
+fn astra_p06_restored_open_window_keeps_recorded_collection_gap() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    let vehicle_key = vehicle.vehicle_id.to_string();
+    let connection = store.open().expect("catalogue");
+    let opened = 10_000;
+    let gap = (11_000, 12_000);
+    let final_row = 13_000;
+
+    assert!(record_coverage_open(&connection, 1, "synthetic-grant", opened).unwrap());
+    connection
+        .execute(
+            "INSERT INTO collection_gaps(kind, started_at_ms, ended_at_ms, alert, created_at_ms)
+             VALUES ('hub_down', ?1, ?2, 0, ?1)",
+            [gap.0, gap.1],
+        )
+        .expect("persisted gap");
+    connection
+        .execute(
+            "INSERT INTO materialised_positions(vehicle_id, position_id, car_id, position_json)
+             VALUES (?1, ?2, 1, ?3)",
+            params![
+                vehicle_key,
+                hub_ids::HUB_ID_BASE,
+                serde_json::json!({"date_ms": final_row}).to_string(),
+            ],
+        )
+        .expect("later local position");
+
+    connection
+        .execute(
+            "INSERT INTO collection_gaps(kind, started_at_ms, alert, created_at_ms)
+             VALUES ('hub_stopped', ?1, 0, ?2)",
+            [final_row - 100, final_row + 100],
+        )
+        .expect("backup's sealed lease gap");
+
+    assert_eq!(seal_restored_open_windows(&connection, None).unwrap(), 1);
+    assert_eq!(
+        coverage_intervals_for_vehicle(&connection, &vehicle_key).unwrap(),
+        vec![(opened, gap.0), (gap.1, final_row + 1)]
+    );
 }

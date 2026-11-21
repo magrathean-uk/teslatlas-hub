@@ -59,6 +59,7 @@ impl SecretText {
     pub(crate) fn new(kind: &'static str, capacity: usize) -> Self {
         Self { value: Zeroizing::new(String::with_capacity(capacity)), kind, observer: current_secret_observer() }
     }
+    #[cfg(any(test, feature = "journey-doubles"))]
     pub(crate) fn copy(kind: &'static str, text: &str) -> Self {
         let mut value = Self::new(kind, text.len()); value.value.push_str(text); value
     }

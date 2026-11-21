@@ -1874,3 +1874,105 @@ fn r53_a_configured_car_the_list_never_names_waits_for_the_inventory_cadence_and
     assert_eq!(core.scheduler.vehicles[&core_id(2)].hold, VehicleHold::Removed);
     assert_eq!(core.scheduler.vehicles[&core_id(2)].reason, "vehicle_removed");
 }
+
+// ---- Issues #114 and #115: the tick's stored phase and presence ------------
+
+/// Issue #115 (P06-F10): an unchanged discovery advances the car's durable
+/// current observation once the stored one is older than the presence bound, and
+/// a repeat inside the bound still writes nothing.
+#[tokio::test]
+async fn astra_p06_unchanged_discovery_advances_durable_presence() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            let car = || vec![core_vehicle(1, "asleep")];
+            let received = |bed: &TickBed| -> i64 {
+                bed.query(
+                    "SELECT received_at_ms FROM current_observations
+                      WHERE record_type = 'owner_api_discovery_v1'",
+                )
+            };
+            bed.list(car()).await;
+            let first = bed.wall();
+            assert_eq!(received(&bed), first);
+            // Thirty seconds later the repeat writes nothing.
+            bed.advance(Duration::from_secs(30));
+            bed.list(car()).await;
+            assert_eq!(received(&bed), first);
+            assert_eq!(seam.tick_commits(), 1);
+            // Once the stored observation is older than the bound, the repeat
+            // advances it, from the scheduler's cached view.
+            let refresh_ms = u64::try_from(crate::db::DISCOVERY_PRESENCE_REFRESH_MS).unwrap();
+            bed.advance(Duration::from_millis(refresh_ms - 30_000));
+            bed.list(car()).await;
+            let second = bed.wall();
+            assert_eq!(second - first, crate::db::DISCOVERY_PRESENCE_REFRESH_MS);
+            assert_eq!(received(&bed), second);
+            assert_eq!(seam.tick_commits(), 2);
+            // And the next repeat inside the bound writes nothing again.
+            bed.advance(Duration::from_secs(30));
+            bed.list(car()).await;
+            assert_eq!(received(&bed), second);
+            assert_eq!(seam.tick_commits(), 2);
+        })
+        .await;
+}
+
+/// Issue #114 (P06-F08): a delayed reply showing an older drive is discarded by
+/// storage, and it no longer moves the car's persisted phase to driving.
+#[tokio::test]
+async fn astra_p06_discarded_poll_does_not_change_durable_scheduler_phase() {
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam.clone(), async {
+            let mut bed = TickBed::owner();
+            bed.list(vec![core_vehicle(1, "online")]).await;
+            // A parked read is stored, stamped with its receipt time.
+            let (due, _) = bed.read_due().await;
+            assert_eq!(due, 1);
+            let parked_at = bed.wall();
+            let phase = |bed: &TickBed| bed.store.load_collector_state_rows().unwrap().vehicles[0]
+                .phase
+                .clone();
+            assert_eq!(phase(&bed), "online");
+            // The next reply arrives later but carries an older drive.
+            bed.advance(Duration::from_secs(30));
+            let now = bed.now();
+            bed.scheduler.begin_tick();
+            let mut fields = parked_fields();
+            fields["drive_state"]["shift_state"] = json!("D");
+            fields["drive_state"]["speed"] = json!(40);
+            fields["drive_state"]["timestamp"] = json!(parked_at - 10_000);
+            let snapshot = VehicleData::for_test(1, fields);
+            assert!(poll_phase(&snapshot).is_session(), "the reply shows driving");
+            let received_at_ms = bed.wall();
+            let (reply_phase, eligible) = read_reply_phase(
+                &bed.store,
+                &bed.scheduler,
+                bed.provider,
+                core_id(1),
+                &snapshot,
+                received_at_ms,
+                true,
+            );
+            bed.scheduler
+                .vehicle_succeeded(core_id(1), reply_phase, eligible, now);
+            let vehicle = bed.scheduler.vehicles[&core_id(1)].vehicle.clone();
+            let mut batch = TickBatch::default();
+            batch.snapshots.push(SnapshotItem {
+                vehicle,
+                snapshot,
+                received_at_ms,
+            });
+            batch.note_result(now);
+            bed.commit(batch).await;
+            let observed: i64 = bed.query(
+                "SELECT observed_at_ms FROM current_observations
+                  WHERE record_type = 'owner_api_vehicle_data_v1'",
+            );
+            assert_eq!(observed, parked_at, "storage kept the parked reading");
+            assert_eq!(phase(&bed), "online", "the discarded reply moved no phase");
+        })
+        .await;
+}

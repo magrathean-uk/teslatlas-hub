@@ -14,17 +14,145 @@ impl CatalogueCheckpointGuard {
     }
 
     fn finish(&mut self) -> Result<(), tesatlas_hub::db::StoreError> {
+        if !self.armed {
+            return Ok(());
+        }
         let result = self.store.checkpoint_catalogue_for_immutable_read();
         self.armed = false;
         result
+    }
+
+    /// The final checkpoint of a stopping service (issue #38): it runs only
+    /// while the shutdown budget has time left, and only for what is left of
+    /// it. A checkpoint that is skipped, or still running when the budget
+    /// ends, leaves the write-ahead log to SQLite's recovery at the next
+    /// open; nothing committed is lost. Says whether it completed.
+    #[cfg(unix)]
+    fn finish_within(
+        &mut self,
+        budget: &tesatlas_hub::runtime::shutdown::ShutdownBudget,
+    ) -> Result<bool, tesatlas_hub::db::StoreError> {
+        if !self.armed {
+            return Ok(true);
+        }
+        self.armed = false;
+        let store = self.store.clone();
+        checkpoint_within(budget, move || store.checkpoint_catalogue_for_immutable_read())
+    }
+}
+
+/// Runs `checkpoint` on its own thread and waits for it only within what is
+/// left of the budget's work stages (issue #38, review F1). A checkpoint
+/// still running when the budget ends is left to finish or to be cut off by
+/// the process exit; SQLite's write-ahead log keeps every commit either way.
+fn checkpoint_within<F>(
+    budget: &tesatlas_hub::runtime::shutdown::ShutdownBudget,
+    checkpoint: F,
+) -> Result<bool, tesatlas_hub::db::StoreError>
+where
+    F: FnOnce() -> Result<(), tesatlas_hub::db::StoreError> + Send + 'static,
+{
+    if budget.work_exhausted() {
+        return Ok(false);
+    }
+    let thread = match std::thread::Builder::new()
+        .name("hub-final-checkpoint".to_owned())
+        .spawn(checkpoint)
+    {
+        Ok(thread) => thread,
+        Err(error) => {
+            tracing::warn!(%error, "the final checkpoint did not start");
+            return Ok(false);
+        }
+    };
+    match tesatlas_hub::runtime::shutdown::join_within(thread, budget, "final checkpoint") {
+        Ok(Ok(result)) => result.map(|()| true),
+        Ok(Err(_)) => Ok(false),
+        Err((_still_running, timeout)) => {
+            tracing::warn!(error = %timeout, "the final checkpoint did not finish within the shutdown budget");
+            Ok(false)
+        }
     }
 }
 
 impl Drop for CatalogueCheckpointGuard {
     fn drop(&mut self) {
-        if self.armed {
+        // A service whose shutdown budget is spent does not start another
+        // unbounded checkpoint on its way out.
+        if !self.armed {
+            return;
+        }
+        let budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+        if budget.is_stopping() {
+            let store = self.store.clone();
+            let _ = checkpoint_within(&budget, move || store.checkpoint_catalogue_for_immutable_read());
+        } else {
             let _ = self.store.checkpoint_catalogue_for_immutable_read();
         }
+    }
+}
+
+#[cfg(test)]
+mod final_checkpoint_budget_tests {
+    use std::{
+        sync::{Arc, atomic::{AtomicU64, Ordering}, mpsc},
+        time::Duration,
+    };
+
+    use tesatlas_hub::runtime::shutdown::{MonotonicClock, ShutdownBudget};
+
+    #[derive(Default)]
+    struct HandClock(AtomicU64);
+
+    impl MonotonicClock for HandClock {
+        fn now(&self) -> Duration {
+            Duration::from_millis(self.0.load(Ordering::SeqCst))
+        }
+    }
+
+    /// Issue #38, review F1: a final checkpoint that starts with one second
+    /// left and then stalls in the filesystem for 25 seconds does not hold
+    /// the stop past the budget; the stop goes on without it.
+    #[test]
+    fn design_later_38_a_slow_final_checkpoint_gets_only_the_remaining_budget() {
+        let clock = Arc::new(HandClock::default());
+        let budget = Arc::new(ShutdownBudget::new(
+            Arc::clone(&clock) as Arc<dyn MonotonicClock>,
+            Duration::from_secs(50),
+            Duration::from_secs(10),
+        ));
+        budget.begin();
+        clock.0.store(39_000, Ordering::SeqCst);
+        let (release, released) = mpsc::channel::<()>();
+        let (finished_tx, finished) = mpsc::channel();
+        let stalling = Arc::clone(&clock);
+        let stopping = Arc::clone(&budget);
+        std::thread::spawn(move || {
+            let outcome = super::checkpoint_within(&stopping, move || {
+                stalling.0.store(64_000, Ordering::SeqCst);
+                let _ = released.recv();
+                Ok(())
+            });
+            let _ = finished_tx.send(outcome);
+        });
+        let outcome = finished.recv_timeout(Duration::from_secs(5));
+        let _ = release.send(());
+        let completed = outcome
+            .expect("the stop waited for the stalled checkpoint")
+            .expect("a skipped checkpoint is not an error");
+        assert!(!completed, "the stalled checkpoint is reported as not completed");
+    }
+
+    /// A checkpoint that finishes within the budget is reported complete.
+    #[test]
+    fn design_later_38_a_prompt_final_checkpoint_completes() {
+        let budget = ShutdownBudget::new(
+            Arc::new(HandClock::default()),
+            Duration::from_secs(50),
+            Duration::from_secs(10),
+        );
+        budget.begin();
+        assert!(super::checkpoint_within(&budget, || Ok(())).expect("checkpoint"));
     }
 }
 
@@ -51,14 +179,14 @@ fn source_db_version_confirmation(
     if accept_schema_evidence {
         (
             "compatible",
-            "v4_4_compatible_schema",
+            "v4_5_compatible_schema",
             "The recognised source schema was verified and the version limitation was acknowledged. The source database is read-only and ready for import; its data is never deleted.",
         )
     } else {
         (
             "confirmation_required",
-            "v4_4_version_unconfirmed",
-            "A schema check cannot establish the source application's running release. Confirm release 4.4.0 or later, then retry with --accept-schema-evidence.",
+            "v4_5_version_unconfirmed",
+            "A schema check cannot establish the source application's running release. Confirm release 4.5.0 or later, then retry with --accept-schema-evidence.",
         )
     }
 }
@@ -74,13 +202,13 @@ fn source_check_success_report(
         if accept_schema_evidence {
             (
                 "compatible",
-                "v4_4_compatible_schema",
+                "v4_5_compatible_schema",
                 "The read-only source database has the recognised history schema. The source application's release is unknown; no Tesla credentials were inspected or imported.",
             )
         } else {
             (
                 "confirmation_required",
-                "v4_4_schema_acknowledgement_required",
+                "v4_5_schema_acknowledgement_required",
                 "The source database has the recognised history schema, but the source application's release is unknown. Acknowledge schema-only history import before continuing.",
             )
         }
@@ -99,7 +227,7 @@ fn source_check_success_report(
         "sourceTotals":snapshot.source_totals,"sourceNeverMutated":true,
         "credentialScope":"history-only","credentialsInspected":false,
         "applicationVersionStatus":if history_only {"unknown"} else {"operator-acknowledged"},
-        "versionEvidence":"database_schema_only","schemaEvidence":"v4_4_compatible_schema",
+        "versionEvidence":"database_schema_only","schemaEvidence":"v4_5_compatible_schema",
         "versionAcknowledged":accept_schema_evidence,"guidance":guidance,
         "sourceSchemaRecognised":true,"schemaSetLabel":schema_set_label(snapshot.schema.pinned_migration_set_sha256)
     })
@@ -114,8 +242,8 @@ fn source_check_failure_report(
     guidance: &str,
 ) -> serde_json::Value {
     let recognition = match reason_code {
-        "older_than_v4_4_compatible_schema"
-        | "newer_than_v4_4_compatible_schema"
+        "older_than_v4_5_compatible_schema"
+        | "newer_than_v4_5_compatible_schema"
         | "schema_mismatch" => Some(false),
         _ => None,
     };
@@ -167,18 +295,18 @@ fn source_check_failure_details(
             found, ..
         }) => (
             "incompatible",
-            "older_than_v4_4_compatible_schema",
+            "older_than_v4_5_compatible_schema",
             Some(*found),
-            "This source database has the earlier reviewed schema. Back up the source application, update it to release 4.4.0 or newer, start it once and let its migrations finish, then retry.",
+            "This source database has the earlier reviewed schema. Back up the source application, update it to release 4.5.0 or newer, start it once and let its migrations finish, then retry.",
         ),
         SourceDbReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
             found,
             ..
         }) => (
             "incompatible",
-            "newer_than_v4_4_compatible_schema",
+            "newer_than_v4_5_compatible_schema",
             Some(*found),
-            "This Hub build supports the reviewed source application v4.4-compatible schema only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
+            "This Hub build supports the reviewed source application v4.5-compatible schema only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
         ),
         SourceDbReaderError::Schema(_) | SourceDbReaderError::MissingMigrationVersion => (
             "incompatible",

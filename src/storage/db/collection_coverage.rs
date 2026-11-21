@@ -3,8 +3,9 @@
 /// Schema v80: the collection windows this store covers, written beside the
 /// window ledger so the import cutoff travels with `hub.sqlite` through backup,
 /// restore and a new host. `gaps_json` holds the window's collection gaps at
-/// handback; `vehicle_ends_json` and `sealed` record how a window left open in
-/// a restored store was sealed per vehicle.
+/// handback; `vehicle_ends_json` holds each vehicle's end of the window (the
+/// close for a vehicle with collection evidence at handback, the vehicle's last
+/// Hub row after a restore seal) and `sealed` records how the window closed.
 const COLLECTION_COVERAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS collection_coverage (
     seq INTEGER PRIMARY KEY,
     grant_digest TEXT NOT NULL,
@@ -151,10 +152,14 @@ pub fn record_coverage_open(
 
 /// The collection gaps the store recorded inside `[opened_ms, closed_ms]`,
 /// clamped to it. An open gap runs to the close.
+/// When restoring, exclude the backup's account stop, open or since closed by a
+/// resumed window's first start: sealing the lease
+/// gives it an earlier start than its creation and it can overlap stored rows.
 fn store_gaps_within(
     connection: &Connection,
     opened_ms: i64,
     closed_ms: i64,
+    include_backup_stop: bool,
 ) -> Result<Vec<CoverageGap>, CoverageError> {
     if !named_table_present(connection, "collection_gaps")? {
         return Ok(Vec::new());
@@ -162,9 +167,11 @@ fn store_gaps_within(
     let mut statement = connection.prepare(
         "SELECT vehicle_id, started_at_ms, ended_at_ms FROM collection_gaps
          WHERE started_at_ms < ?2 AND (ended_at_ms IS NULL OR ended_at_ms > ?1)
+           AND (?3 OR kind != 'hub_stopped' OR vehicle_id IS NOT NULL
+                OR started_at_ms = created_at_ms)
          ORDER BY gap_id",
     )?;
-    let rows = statement.query_map(params![opened_ms, closed_ms], |row| {
+    let rows = statement.query_map(params![opened_ms, closed_ms, include_backup_stop], |row| {
         Ok((
             row.get::<_, Option<String>>(0)?,
             row.get::<_, i64>(1)?,
@@ -190,7 +197,9 @@ fn store_gaps_within(
 /// Records a window's handback: closes its row, or inserts the closed row when
 /// the store lacks it (the mirror of a ledger handback). The gaps are the
 /// handback's own plus the collection gaps the store holds inside the window.
-/// The same transaction closes the drives and charges still open at their last
+/// A vehicle covers the whole window only when an observation of it arrived
+/// inside the window; any other vehicle's end is the open, so it is not
+/// covered (#102). The same transaction closes the drives and charges still open at their last
 /// evidence (M03-T20, `close_open_sessions_at_handback`). Idempotent: a
 /// window already sealed is left as it is and closes nothing again. Returns
 /// `false` when the store has no coverage table yet.
@@ -223,37 +232,43 @@ pub fn record_coverage_handback(
         }
     }
     let mut gaps = window.gaps.clone();
-    for gap in store_gaps_within(&transaction, window.opened_at_ms, window.closed_at_ms)? {
+    for gap in store_gaps_within(&transaction, window.opened_at_ms, window.closed_at_ms, true)? {
         if !gaps.contains(&gap) {
             gaps.push(gap);
         }
     }
     let gaps_json = serde_json::to_string(&gaps)
         .map_err(|error| CoverageError::Malformed(error.to_string()))?;
+    let ends_json =
+        Value::Object(handback_vehicle_ends(&transaction, window.opened_at_ms, window.closed_at_ms)?)
+            .to_string();
     if existing.is_some() {
         transaction.execute(
             "UPDATE collection_coverage
-             SET opened_at_ms = ?2, closed_at_ms = ?3, gaps_json = ?4, sealed = ?5
+             SET opened_at_ms = ?2, closed_at_ms = ?3, gaps_json = ?4, sealed = ?5,
+                 vehicle_ends_json = ?6
              WHERE seq = ?1",
             params![
                 window.seq,
                 window.opened_at_ms,
                 window.closed_at_ms,
                 gaps_json,
-                COVERAGE_SEALED_HANDBACK
+                COVERAGE_SEALED_HANDBACK,
+                ends_json
             ],
         )?;
     } else {
         transaction.execute(
             "INSERT INTO collection_coverage
                  (seq, grant_digest, opened_at_ms, closed_at_ms, gaps_json, vehicle_ends_json, sealed)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 window.seq,
                 window.grant_digest,
                 window.opened_at_ms,
                 window.closed_at_ms,
                 gaps_json,
+                ends_json,
                 COVERAGE_SEALED_HANDBACK
             ],
         )?;
@@ -261,6 +276,62 @@ pub fn record_coverage_handback(
     close_open_sessions_at_handback(&transaction, &|_| window.closed_at_ms)?;
     transaction.commit()?;
     Ok(true)
+}
+
+/// The end of a handed-back window per registered vehicle (#102): the close
+/// for a vehicle with an observation received inside `[opened_ms, closed_ms]`,
+/// the open (no coverage) for one without. Raw rows are pruned once the
+/// lifecycle has applied them, so the newest row per record type in
+/// `current_observations` counts too, as does a Hub-range row dated inside
+/// the window (it exists only because an observation of the vehicle was
+/// collected). The Hub's own lifecycle events and the import source's current
+/// position are not evidence of collection.
+fn handback_vehicle_ends(
+    connection: &Connection,
+    opened_ms: i64,
+    closed_ms: i64,
+) -> Result<serde_json::Map<String, Value>, CoverageError> {
+    let raw = named_table_present(connection, "raw_observations")?;
+    let current = named_table_present(connection, "current_observations")?;
+    let vehicles: Vec<String> = {
+        let mut statement =
+            connection.prepare("SELECT vehicle_id FROM vehicles ORDER BY vehicle_id")?;
+        statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?
+    };
+    let mut ends = serde_json::Map::new();
+    for vehicle in vehicles {
+        let observed_in_raw = raw
+            && connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM raw_observations
+                  WHERE vehicle_id = ?1 AND received_at_ms BETWEEN ?2 AND ?3
+                    AND json_extract(payload_json, '$.record_type')
+                        IS NOT 'hub_lifecycle_event_v1')",
+                params![vehicle, opened_ms, closed_ms],
+                |row| row.get::<_, bool>(0),
+            )?;
+        let observed = observed_in_raw
+            || (current
+                && connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM current_observations
+                      WHERE vehicle_id = ?1 AND received_at_ms BETWEEN ?2 AND ?3
+                        AND record_type IS NOT ?4)",
+                    params![
+                        vehicle,
+                        opened_ms,
+                        closed_ms,
+                        crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )?);
+        let observed = observed
+            || latest_hub_row_moment(connection, &vehicle, opened_ms, Some(closed_ms))?
+                .is_some();
+        let end = if observed { closed_ms } else { opened_ms };
+        ends.insert(vehicle, Value::from(end));
+    }
+    Ok(ends)
 }
 
 /// Closes, at their last evidence, the drives and charges the lifecycle still
@@ -385,7 +456,21 @@ fn last_hub_row_ms(
     vehicle: &str,
     opened_ms: i64,
 ) -> Result<i64, CoverageError> {
-    let latest: Option<i64> = connection.query_row(
+    let latest = latest_hub_row_moment(connection, vehicle, opened_ms, None)?;
+    Ok(latest
+        .map_or(opened_ms, |latest| latest.saturating_add(1))
+        .max(opened_ms))
+}
+
+/// The latest moment of `vehicle`'s Hub-range rows (as `last_hub_row_ms`
+/// reads them) from `from_ms` on, and up to `to_ms` when given.
+fn latest_hub_row_moment(
+    connection: &Connection,
+    vehicle: &str,
+    from_ms: i64,
+    to_ms: Option<i64>,
+) -> Result<Option<i64>, CoverageError> {
+    Ok(connection.query_row(
         "SELECT MAX(moment) FROM (
              SELECT CAST(COALESCE(json_extract(drive_json, '$.end_date_ms'),
                                   json_extract(drive_json, '$.start_date_ms')) AS INTEGER) AS moment
@@ -406,18 +491,16 @@ fn last_hub_row_ms(
                FROM lifecycle_open_rows
               WHERE vehicle_id = ?1 AND domain IN ('position', 'charge_sample')
                 AND source_row_id BETWEEN ?2 AND ?3
-         ) WHERE moment >= ?4",
+         ) WHERE moment >= ?4 AND (?5 IS NULL OR moment <= ?5)",
         params![
             vehicle,
             hub_ids::HUB_ID_BASE,
             hub_ids::HUB_ID_MAX,
-            opened_ms
+            from_ms,
+            to_ms
         ],
         |row| row.get(0),
-    )?;
-    Ok(latest
-        .map_or(opened_ms, |latest| latest.saturating_add(1))
-        .max(opened_ms))
+    )?)
 }
 
 /// Seals every window that is open in the store, except `running` (the grant
@@ -468,15 +551,19 @@ pub fn seal_restored_open_windows(
             closed_ms = closed_ms.max(end);
             ends.insert(vehicle.clone(), Value::from(end));
         }
+        let gaps = store_gaps_within(&transaction, opened_ms, closed_ms, false)?;
+        let gaps_json = serde_json::to_string(&gaps)
+            .map_err(|error| CoverageError::Malformed(error.to_string()))?;
         transaction.execute(
             "UPDATE collection_coverage
-             SET closed_at_ms = ?2, vehicle_ends_json = ?3, sealed = ?4
+             SET closed_at_ms = ?2, vehicle_ends_json = ?3, sealed = ?4, gaps_json = ?5
              WHERE seq = ?1 AND closed_at_ms IS NULL",
             params![
                 seq,
                 closed_ms,
                 Value::Object(ends.clone()).to_string(),
-                COVERAGE_SEALED_RESTORE
+                COVERAGE_SEALED_RESTORE,
+                gaps_json,
             ],
         )?;
         sealed += 1;

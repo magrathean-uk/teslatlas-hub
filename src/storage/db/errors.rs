@@ -106,6 +106,16 @@ pub enum StoreError {
     CreateBackupDirectory(std::io::Error),
     #[error("Hub backup copy-byte calculation overflowed")]
     BackupCapacityOverflow,
+    #[error(
+        "a new Hub backup cannot carry the unconverted legacy replay base of vehicle {0}; \
+         the next changed hand-back converts it to a kept archive"
+    )]
+    BackupLegacyKeptBase(Uuid),
+    #[error(
+        "a Hub backup needs the legacy replay base of vehicle {vehicle_id} converted to a kept \
+         archive first, and the conversion failed: {reason}"
+    )]
+    BackupLegacyKeptConversion { vehicle_id: Uuid, reason: String },
     #[error("cannot copy Hub backup pack from {source_path} to {destination}: {source_error}")]
     CopyBackupPack {
         source_path: PathBuf,
@@ -441,6 +451,8 @@ pub enum StoreError {
     InvalidStoredGeneration,
     #[error("stored count is invalid")]
     InvalidStoredCount,
+    #[error("a drive repair record is invalid: {0}")]
+    DriveRepairRecord(&'static str),
     #[error("{0} lifecycle session(s) require reconstruction")]
     QuarantinedLifecycle(usize),
     #[error("{}", unsupported_schema_message(*.0))]
@@ -635,6 +647,8 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::BackupDestinationIsLiveDatabase => (),
                 StoreError::CreateBackupDirectory(..) => (),
                 StoreError::BackupCapacityOverflow => (),
+                StoreError::BackupLegacyKeptBase(..) => (),
+                StoreError::BackupLegacyKeptConversion { .. } => (),
                 StoreError::CopyBackupPack { .. } => (),
                 StoreError::BackupPackSizeMismatch { .. } => (),
                 StoreError::OpenBackupPack(..) => (),
@@ -775,6 +789,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::InvalidStoredUuid(..) => (),
                 StoreError::InvalidStoredGeneration => (),
                 StoreError::InvalidStoredCount => (),
+                StoreError::DriveRepairRecord(..) => (),
                 StoreError::QuarantinedLifecycle(..) => (),
                 StoreError::UnsupportedSchema(..) => (),
                 StoreError::PreSeamCollectedRows { .. } => (),
@@ -869,6 +884,11 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::BackupDestinationIsLiveDatabase);
         check_store_error(StoreError::CreateBackupDirectory(example()));
         check_store_error(StoreError::BackupCapacityOverflow);
+        check_store_error(StoreError::BackupLegacyKeptBase(Uuid::nil()));
+        check_store_error(StoreError::BackupLegacyKeptConversion {
+            vehicle_id: Uuid::nil(),
+            reason: String::new(),
+        });
         check_store_error(StoreError::CopyBackupPack {
             source_path: example(),
             destination: example(),
@@ -1063,6 +1083,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::InvalidStoredUuid(example()));
         check_store_error(StoreError::InvalidStoredGeneration);
         check_store_error(StoreError::InvalidStoredCount);
+        check_store_error(StoreError::DriveRepairRecord(example()));
         check_store_error(StoreError::QuarantinedLifecycle(example()));
         check_store_error(StoreError::UnsupportedSchema(example()));
         check_store_error(StoreError::PreSeamCollectedRows {

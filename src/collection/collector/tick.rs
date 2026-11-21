@@ -441,6 +441,72 @@ struct TickCommit<'a> {
     offline_drive_timeout: Duration,
 }
 
+/// The phase and sleep eligibility a successful read gives the scheduler (issue
+/// #114). Storage discards a reply older than the car's current read of the same
+/// provider, so such a reply moves no phase and shows no use: the car keeps its
+/// phase. A car with no stored read, or a failed lookup, takes the reply's own.
+fn read_reply_phase(
+    store: &HubStore,
+    scheduler: &VehicleScheduler,
+    provider: CollectorProvider,
+    vehicle_id: VehicleId,
+    snapshot: &VehicleData,
+    received_at_ms: i64,
+    req_not_unlocked: bool,
+) -> (PollPhase, bool) {
+    let reply = (
+        poll_phase(snapshot),
+        sleep_eligible_with_policy(snapshot, req_not_unlocked),
+    );
+    let Some(record) = scheduler.vehicles.get(&vehicle_id) else {
+        return reply;
+    };
+    let Some(hub_id) = record.hub_id else {
+        return reply;
+    };
+    match store.current_observed_at_ms(hub_id, provider_vehicle_data_record_type(provider)) {
+        Ok(Some(stored)) if stored > observation_timestamp(snapshot, received_at_ms) => {
+            (record.phase, true)
+        }
+        _ => reply,
+    }
+}
+
+/// C3 R14's rule with the bounded presence refresh: a discovery the rule skips is
+/// still delivered once the car's newest delivered observation is older than
+/// [`crate::db::DISCOVERY_PRESENCE_REFRESH_MS`], so an unchanged state keeps the
+/// durable current observation advancing.
+fn discovery_action_with_presence(
+    state: &str,
+    last_reach: Option<&str>,
+    current_discovery_state: Option<&str>,
+    last_stored_obs_ms: Option<i64>,
+    received_at_ms: i64,
+) -> crate::db::DiscoveryAction {
+    match crate::db::discovery_action(state, last_reach, current_discovery_state) {
+        crate::db::DiscoveryAction::Skip
+            if crate::db::discovery_presence_refresh_due(last_stored_obs_ms, received_at_ms) =>
+        {
+            crate::db::DiscoveryAction::Deliver
+        }
+        action => action,
+    }
+}
+
+/// The scheduler's cached R14 view of a car with its cached newest delivered
+/// observation time, or `None` when the transaction must read them.
+fn cached_discovery_facts(
+    scheduler: &VehicleScheduler,
+    id: VehicleId,
+) -> Option<(Option<String>, Option<String>, Option<i64>)> {
+    let (last_reach, current) = scheduler.cached_discovery_view(id)?;
+    let last_stored_obs_ms = scheduler
+        .vehicles
+        .get(&id)
+        .and_then(|vehicle| vehicle.last_stored_obs_ms);
+    Some((last_reach, current, last_stored_obs_ms))
+}
+
 /// C3 R14 for one discovery candidate, inside the tick transaction. The cached
 /// lifecycle facts decide when they are current; otherwise the transaction reads
 /// them once. Returns the vehicle's identity use through `output`, and whether an
@@ -451,12 +517,14 @@ fn store_discovery_in_transaction(
     commit: &TickCommit<'_>,
     registered: &Registered,
     item: &DiscoveryItem,
-    cached: Option<(Option<String>, Option<String>)>,
+    cached: Option<(Option<String>, Option<String>, Option<i64>)>,
     output: &mut TickTxOutput,
 ) -> Result<bool, CollectorError> {
     let vehicle = &item.vehicle;
-    let (last_reach, current, read) = match cached {
-        Some((last_reach, current)) => (last_reach, current, None),
+    let (last_reach, current, last_stored_obs_ms, read) = match cached {
+        Some((last_reach, current, last_stored_obs_ms)) => {
+            (last_reach, current, last_stored_obs_ms, None)
+        }
         None => {
             let snapshot = HubStore::collector_lifecycle_snapshot_in_transaction(
                 transaction,
@@ -465,12 +533,18 @@ fn store_discovery_in_transaction(
             (
                 snapshot.last_reach.clone(),
                 snapshot.current_discovery_state.clone(),
+                snapshot.last_stored_obs_ms,
                 Some(snapshot),
             )
         }
     };
-    let action =
-        crate::db::discovery_action(&vehicle.state, last_reach.as_deref(), current.as_deref());
+    let action = discovery_action_with_presence(
+        &vehicle.state,
+        last_reach.as_deref(),
+        current.as_deref(),
+        last_stored_obs_ms,
+        item.received_at_ms,
+    );
     let input = ObservationInput {
         source_id: registered.source_id,
         vehicle_id: registered.hub_id,
@@ -779,7 +853,7 @@ fn write_tick_in_transaction(
         let identity = registered
             .get(&item.vehicle.id)
             .ok_or(CollectorError::SnapshotWithoutListedVehicle)?;
-        let cached = scheduler.cached_discovery_view(item.vehicle.id);
+        let cached = cached_discovery_facts(scheduler, item.vehicle.id);
         if store_discovery_in_transaction(
             store,
             transaction,
@@ -934,13 +1008,15 @@ fn tick_needs_transaction(
         return true;
     }
     batch.discoveries.iter().any(
-        |item| match scheduler.cached_discovery_view(item.vehicle.id) {
+        |item| match cached_discovery_facts(scheduler, item.vehicle.id) {
             None => true,
-            Some((last_reach, current)) => {
-                crate::db::discovery_action(
+            Some((last_reach, current, last_stored_obs_ms)) => {
+                discovery_action_with_presence(
                     &item.vehicle.state,
                     last_reach.as_deref(),
                     current.as_deref(),
+                    last_stored_obs_ms,
+                    item.received_at_ms,
                 ) != crate::db::DiscoveryAction::Skip
             }
         },
@@ -1458,65 +1534,45 @@ where
     use futures_util::StreamExt;
     let mut pending: futures_util::stream::FuturesUnordered<TickFuture<'_>> =
         requests.into_iter().collect();
-    // C3 R11, C4 R56 g: the stream queues are drained at least every
-    // `K_STREAM_DRAIN_CAP` while requests are pending, so a slow request or an
-    // authentication wait cannot fill a queue and end the stream. The interval is
-    // measured from the previous drain, whatever the loop did before this tick, and
-    // an expired deadline is serviced before any ready request (B2 clarification 3).
-    let pump_armed = pump.as_ref().is_some_and(StreamPump::armed);
+    // Keep draining between request results. A ready result gets a turn even
+    // if a stream's queue remains backlogged.
     while !pending.is_empty() {
-        let drain_at = pump.as_ref().map_or_else(Instant::now, StreamPump::deadline);
-        tokio::select! {
-            biased;
-            () = async move {
-                if pump_armed {
-                    tokio::time::sleep_until(drain_at).await;
-                } else {
-                    std::future::pending::<()>().await;
+        let completed = match pump.as_mut() {
+            Some(pump) => pump.while_waiting(run.scheduler, pending.next()).await?,
+            None => pending.next().await,
+        };
+        if let Some((key, result)) = completed {
+            // C3 R2: time is read through the scheduler's clock seam.
+            let now = run.scheduler.clock.mono_now();
+            run.batch.note_result(now);
+            match handle(run, key, result, now) {
+                Ok(ReadFlow::Continue)
+                    if !run.scheduler.mode.is_owner_wire()
+                        || !run.scheduler.wait_running(WaitReason::RateLimited, now) => {}
+                Ok(flow) => {
+                    // After an Owner-wire 429 the shared authentication fuse
+                    // has kept the other requests from sending. Stop polling
+                    // them, just as for a sign-out. Commit the received results
+                    // and account state, then drop the pending requests and
+                    // release the cars so they can be scheduled again.
+                    run.commit_now(now).await?;
+                    drop(pending);
+                    run.scheduler.release_in_flight();
+                    return Ok(flow);
                 }
-            } => {
-                if let Some(pump) = pump.as_mut() {
-                    pump.drain(run.scheduler).await?;
-                    if pump.backlog() {
-                        tokio::task::yield_now().await;
+                Err(error) => {
+                    // A result that ends the run must not hide the error that
+                    // ended it. The loss of the process's sensitive access (R47,
+                    // B2 clarification) writes nothing: the admission that
+                    // guards the store is what failed. Any other error that ends
+                    // a run keeps the snapshots already received in this tick:
+                    // they are stored, best effort, and the error that ended
+                    // collection is reported, not a store fault met on the way
+                    // out.
+                    if !loses_sensitive_access(&error) {
+                        let _ = run.commit_now(now).await;
                     }
-                }
-            }
-            Some((key, result)) = pending.next() => {
-                // C3 R2: time is read through the scheduler's clock seam.
-                let now = run.scheduler.clock.mono_now();
-                run.batch.note_result(now);
-                match handle(run, key, result, now) {
-                    Ok(ReadFlow::Continue) => {}
-                    Ok(ReadFlow::SignedOut) => {
-                        // The rest of the tick's requests are not sent (R47), but
-                        // what the tick already received is stored first, with the
-                        // account's stop and its gap (R5, R8). The requests still
-                        // pending are dropped, which settles what they counted
-                        // (a request the credential unit never sent counted nothing;
-                        // a Fleet request's guard, taken when it was built, takes
-                        // its start back though it was never polled), and no car
-                        // stays marked in flight: it would otherwise be hidden from
-                        // every later tick, after the stop is lifted too.
-                        run.commit_now(now).await?;
-                        drop(pending);
-                        run.scheduler.release_in_flight();
-                        return Ok(ReadFlow::SignedOut);
-                    }
-                    Err(error) => {
-                        // A result that ends the run must not hide the error that
-                        // ended it. The loss of the process's sensitive access (R47,
-                        // B2 clarification) writes nothing: the admission that
-                        // guards the store is what failed. Any other error that ends
-                        // a run keeps the snapshots already received in this tick:
-                        // they are stored, best effort, and the error that ended
-                        // collection is reported, not a store fault met on the way
-                        // out.
-                        if !loses_sensitive_access(&error) {
-                            let _ = run.commit_now(now).await;
-                        }
-                        return Err(error);
-                    }
+                    return Err(error);
                 }
             }
         }

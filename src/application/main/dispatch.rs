@@ -233,6 +233,32 @@ where
     .await
 }
 
+/// The bounded observation's command result: it succeeds only when the
+/// observation stopped cleanly and any window close was handed back. A failed
+/// handback leaves the window unfinished, so it fails the command (P17-F07).
+#[cfg(unix)]
+fn observation_outcome(
+    observe_result: std::io::Result<()>,
+    handback: Result<Option<tesatlas_hub::collection::window::Handback>, OperatorRefusal>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match &handback {
+        Ok(Some(handback)) => tracing::info!(reason = handback.reason.code(), "collection window closed"),
+        Ok(None) => {}
+        Err(refusal) => tracing::error!(code = %refusal.code, "collection window handback failed"),
+    }
+    match (observe_result, handback) {
+        (Err(error), _) => {
+            tracing::error!(%error, "Hub bounded observation stopped unexpectedly");
+            Err(error.into())
+        }
+        (Ok(()), Err(refusal)) => Err(refusal.into()),
+        (Ok(()), Ok(_)) => {
+            tracing::info!("Hub bounded observation stopped cleanly");
+            Ok(())
+        }
+    }
+}
+
 use tesatlas_hub::runtime::operator::{
     self as operator,
     admission::{OperatorRefusal, Route},
@@ -1351,7 +1377,74 @@ fn open_command_credential_vault(store: HubStore, admission: std::sync::Arc<Admi
     }
 }
 
+/// Serve's start, phase by phase (M08-T32): one log line per phase with its
+/// duration and the catalogue opens it made, so that a slow start says where
+/// its time went.
+struct StartPhases {
+    started: Instant,
+    last: Instant,
+    database_path: Option<PathBuf>,
+    opens: tesatlas_hub::db::CatalogueOpenCounts,
+}
+
+impl StartPhases {
+    fn new(started: Instant) -> Self {
+        Self {
+            started,
+            last: Instant::now(),
+            database_path: None,
+            opens: tesatlas_hub::db::CatalogueOpenCounts::default(),
+        }
+    }
+
+    fn milliseconds(duration: Duration) -> u64 {
+        u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// The catalogue whose opens the later phases count.
+    fn count_opens_of(&mut self, data_dir: &Path) {
+        let database_path = data_dir.join("hub.sqlite");
+        self.opens = tesatlas_hub::db::catalogue_open_counts_at(&database_path);
+        self.database_path = Some(database_path);
+    }
+
+    /// The lifetime lock, with the directory-creation flushes it made: none on
+    /// an existing data folder.
+    #[cfg(unix)]
+    fn lifetime_lock(&mut self, directory_flushes: u64) {
+        let now = Instant::now();
+        tracing::info!(
+            phase = "lifetime_lock",
+            duration_ms = Self::milliseconds(now - self.last),
+            since_start_ms = Self::milliseconds(now - self.started),
+            directory_flushes,
+            "Hub start phase"
+        );
+        self.last = now;
+    }
+
+    fn phase(&mut self, phase: &'static str) {
+        let now = Instant::now();
+        let opens = self
+            .database_path
+            .as_deref()
+            .map_or(self.opens, tesatlas_hub::db::catalogue_open_counts_at);
+        tracing::info!(
+            phase,
+            duration_ms = Self::milliseconds(now - self.last),
+            since_start_ms = Self::milliseconds(now - self.started),
+            catalogue_opens = opens.opens.saturating_sub(self.opens.opens),
+            catalogue_opens_without_hold =
+                opens.opens_without_hold.saturating_sub(self.opens.opens_without_hold),
+            "Hub start phase"
+        );
+        self.last = now;
+        self.opens = opens;
+    }
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let run_started = Instant::now();
     #[cfg(feature = "credential-relocation-fixture")]
     credential_relocation_fixture::require_dispatch(&cli)?;
     let config_path = cli.config.unwrap_or_else(default_config_path);
@@ -1449,7 +1542,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Err(if *history_only {
             "history-only import requires --accept-schema-evidence; the database schema is reviewed but the source application version remains unknown"
         } else {
-            "History import requires --accept-schema-evidence after confirming source application release 4.4.0 or later"
+            "History import requires --accept-schema-evidence after confirming source application release 4.5.0 or later"
         }.into());
     }
 
@@ -1552,6 +1645,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Long-lived service, import, credential, and recovery commands take the
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
+    let mut serve_start = matches!(&cli.command, Command::Serve).then(|| StartPhases::new(run_started));
+    #[cfg(unix)]
+    let directory_flushes_before = tesatlas_hub::hub_user_process::directory_creation_flushes();
     #[cfg(unix)]
     let admitted_user_hub = if operator::admission::requires_user_hub_admission(&cli.command)
         || matches!(&cli.command, Command::BackupPlaintextDirectory { .. })
@@ -1566,7 +1662,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         ) {
             validate_history_only_config(&config)?;
         }
-        Some(AdmittedUserHub::admit(&config.data_dir)?)
+        let admitted = AdmittedUserHub::admit(&config.data_dir)?;
+        if let Some(phases) = serve_start.as_mut() {
+            phases.lifetime_lock(
+                tesatlas_hub::hub_user_process::directory_creation_flushes()
+                    .saturating_sub(directory_flushes_before),
+            );
+        }
+        Some(admitted)
     } else {
         None
     };
@@ -1819,7 +1922,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // catalogue. A missing, emptied or replaced one is refused here, before
     // `hub.sqlite` is created or initialised, so it never comes up as new.
     tesatlas_hub::storage::setup_marker::check_catalogue(&config.data_dir)?;
-    let store = HubStore::initialize(&config.data_dir)?;
+    let store = match serve_start.as_mut() {
+        Some(phases) => {
+            phases.count_opens_of(&config.data_dir);
+            HubStore::initialize_with_phases(&config.data_dir, &mut |phase| phases.phase(phase))?
+        }
+        None => HubStore::initialize(&config.data_dir)?,
+    };
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
         Command::Init => {
@@ -1873,9 +1982,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve => {
             #[cfg(unix)]
             {
+                let mut phases =
+                    serve_start.take().ok_or("Serve reached runtime without its start phases")?;
+                // One idle connection keeps the catalogue's shared memory
+                // mapped for the start and the life of Serve, so every later
+                // open of this process reuses it rather than truncating and
+                // rebuilding it (M08-T32, guest run P6j).
+                let catalogue_hold = store.hold_catalogue()?;
                 #[cfg(target_os = "macos")]
                 let (summary_now_ms, admitted_idle) = {
                     store.checkpoint_catalogue_for_immutable_read()?;
+                    phases.phase("wal_checkpoint");
                     let development_mode =
                         tesatlas_hub::macos_launch_agent::development_serve_mode(
                             tesatlas_hub::platform::name_migration::env::var_os(
@@ -1905,13 +2022,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     // The Fixture mode serves the fixture's own measurement
                     // time (C6 R28 (c)); every other mode keeps the system clock.
-                    (
-                        tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
-                            development_mode,
-                            &config.data_dir,
-                        )?,
-                        admitted_idle,
-                    )
+                    let summary_now_ms = tesatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+                        development_mode,
+                        &config.data_dir,
+                    )?;
+                    phases.phase("admission");
+                    (summary_now_ms, admitted_idle)
                 };
                 #[cfg(not(target_os = "macos"))]
                 let (summary_now_ms, admitted_idle): (Option<i64>, bool) = (None, false);
@@ -1934,26 +2050,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 // The service holds the window authority: one controller on
                 // the process-wide egress gate. The collector runs only inside
                 // an Open window, under the supervisor; the API is served
-                // whatever the collector does (design 2.8, ruling R5).
-                let collector_ready = collector_can_start(&store, &config)?;
-                // The runtime inventory counts every observation and pack
-                // reference, so its cost grows with the store: it runs on a
-                // blocking task once the operator channel is bound and the
-                // listener is open, and can never delay serving (M08-T22).
-                let log_inventory: server::ListeningHook = {
-                    let store = store.clone();
-                    let config = config.clone();
-                    Box::new(move || {
-                        drop(tokio::task::spawn_blocking(move || {
-                            log_runtime_inventory(&store, &config);
-                        }));
-                    })
-                };
-                if collector_ready {
-                    // Once per start: a clamped stream timeout or an ignored
-                    // key (C3 R21).
-                    config.collector.log_start_notices();
-                }
+                // whatever the collector does (design 2.8, ruling R5). Its
+                // credential status is read once the listener is bound, and
+                // the collector is held until then (M08-T32).
+                // Issue #51: after the listener is bound, one tracked worker
+                // logs the inventory and then reconciles the pack store in
+                // the background (orphan final names, missing or damaged
+                // objects). Starting it never waits for it, and the service
+                // stop cancels and joins it within the shutdown budget.
+                let diagnostics_worker = std::sync::Arc::new(
+                    tesatlas_hub::runtime::shutdown::TrackedWorker::new("pack reconciliation"),
+                );
                 // A data-only restore leaves signed data without its cursor
                 // key: the service then waits in its recovery state, before
                 // the API could create a new key, until the operator's
@@ -1964,7 +2071,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let (authority, resumed) =
                     start_window_authority(&config.data_dir, &operator_home()?)?;
                 tracing::info!(
-                    collector_ready,
                     window = ?authority.status().phase,
                     resumed = ?resumed,
                     provider = ?config.collector.provider,
@@ -1980,11 +2086,20 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     config.clone(),
                     std::sync::Arc::clone(&admission),
                     std::sync::Arc::clone(&recovery),
-                );
+                )
+                .held_until_status_known();
                 let supervisor = operator::authority::SupervisorThread::spawn(
                     std::sync::Arc::clone(&authority),
                     collector_slot.clone(),
                 )?;
+                let held_collector = collector_slot.clone();
+                let collector_status_kick = supervisor.reload_kicker();
+                // One shutdown budget for the whole stop (issue #38): it
+                // starts on the first accepted stop, during the recovery
+                // wait too, and every stage below takes from it. Accepting
+                // the stop closes operator admission at once.
+                let shutdown_budget = tesatlas_hub::runtime::shutdown::ShutdownBudget::process();
+                let stop_supervisor = supervisor.stopper();
                 let channel = operator::channel::ChannelServer::bind(
                     &config.data_dir,
                     std::sync::Arc::new(operator::authority::OperatorService::new(
@@ -2007,8 +2122,55 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         window_trust_authority(authority.host_id())?,
                         &config.data_dir,
                     )
-                    .with_recovery(std::sync::Arc::clone(&recovery))),
+                    .with_recovery(std::sync::Arc::clone(&recovery))
+                    .with_shutdown(std::sync::Arc::clone(&shutdown_budget))),
                 )?;
+                phases.phase("operator_channel");
+                // Once the listener is bound and accepting, on a blocking
+                // task, never delaying serving: the collector's credential
+                // status, which then releases the held collector, and the
+                // runtime inventory, which counts every observation and pack
+                // reference, so its cost grows with the store (M08-T22).
+                let on_listening: server::ListeningHook = {
+                    let store = store.clone();
+                    let config = config.clone();
+                    let worker = std::sync::Arc::clone(&diagnostics_worker);
+                    Box::new(move || {
+                        phases.phase("bind");
+                        drop(tokio::task::spawn_blocking(move || {
+                            match collector_can_start(&store, &config) {
+                                Ok(collector_ready) => {
+                                    phases.phase("credential_status");
+                                    tracing::info!(collector_ready, "collector credential status read");
+                                    if collector_ready {
+                                        // Once per start: a clamped stream
+                                        // timeout or an ignored key (C3 R21).
+                                        config.collector.log_start_notices();
+                                    }
+                                }
+                                Err(error) => {
+                                    phases.phase("credential_status");
+                                    tracing::warn!(%error, "collector credential status unavailable; each collector start reads it again");
+                                }
+                            }
+                            // Each collector start reads the status again
+                            // itself; the hold only kept that read behind the
+                            // listener.
+                            held_collector.status_known();
+                            collector_status_kick();
+                            let started = worker.start(move |cancelled| {
+                                log_runtime_inventory(&store, &config);
+                                if !cancelled() {
+                                    log_pack_reconciliation(&store, cancelled);
+                                }
+                            });
+                            if let Err(error) = started {
+                                tracing::warn!(%error, "pack reconciliation did not start");
+                            }
+                        }));
+                    })
+                };
+                let quiesce_backup = std::sync::Arc::clone(&backup_schedule);
                 let recovery_stop = if recovery.pending() {
                     tracing::warn!(
                         "this Hub's signed data has no cursor key; the API starts after restore-recovery-credentials"
@@ -2024,6 +2186,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
+                if recovery_stop.is_some() {
+                    shutdown_budget.begin();
+                    quiesce_backup.request_stop();
+                    stop_supervisor(&shutdown_budget);
+                }
+                let control_budget = std::sync::Arc::clone(&shutdown_budget);
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -2035,6 +2203,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     stopped
                 } else {
                     run_macos_serve_with_optional_proxy(
+                        std::sync::Arc::clone(&shutdown_budget),
                         command_proxy,
                         false,
                         |_ready, _shutdown| async { Ok(()) },
@@ -2046,7 +2215,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                                 server_admission,
                                 cursor_key,
                                 summary_now_ms,
-                                Some(log_inventory),
+                                Some(on_listening),
                                 async move {
                                     let _ = shutdown.await;
                                 },
@@ -2054,26 +2223,78 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             .await
                         },
                         async move {
-                            tokio::select! {
+                            let control = tokio::select! {
                                 error = control_admission.wait_until_invalid() => {
                                     MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
                                 }
                                 _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
                                 _ = sigterm.recv() => MacServeControl::Shutdown,
-                            }
+                            };
+                            // Accept the stop: operator admission closes
+                            // (the budget is stopping), new backups are
+                            // refused and the window supervisor stops its
+                            // collector, all before the listener drains.
+                            control_budget.begin();
+                            quiesce_backup.request_stop();
+                            stop_supervisor(&control_budget);
+                            control
                         },
                     )
                     .await
                 };
-                drop(channel);
-                tokio::task::spawn_blocking(move || backup_schedule.stop()).await?;
-                tokio::task::spawn_blocking(move || supervisor.stop()).await?;
+                // The operator channel, the backup schedule and the window
+                // supervisor (with its collector and handback publications)
+                // stop together, each within what is left of the budget.
+                shutdown_budget.begin();
+                backup_schedule.request_stop();
+                diagnostics_worker.request_stop();
+                let backup_budget = std::sync::Arc::clone(&shutdown_budget);
+                let supervisor_budget = std::sync::Arc::clone(&shutdown_budget);
+                let diagnostics_budget = std::sync::Arc::clone(&shutdown_budget);
+                let (channel_stop, backup_stop, supervisor_stop, diagnostics_stop) = tokio::join!(
+                    tokio::task::spawn_blocking(move || drop(channel)),
+                    tokio::task::spawn_blocking(move || backup_schedule.stop_within(&backup_budget)),
+                    tokio::task::spawn_blocking(move || supervisor.stop_within(&supervisor_budget)),
+                    tokio::task::spawn_blocking(move || diagnostics_worker.stop_within(&diagnostics_budget)),
+                );
                 drop(authority);
-                match &serve_result {
-                    Ok(()) => tracing::info!("Hub serve stopped cleanly"),
-                    Err(error) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                drop(catalogue_hold);
+                let mut cleanup_errors = Vec::new();
+                if let Err(error) = channel_stop {
+                    cleanup_errors.push(format!("operator channel stop failed: {error}"));
+                }
+                for stop in [backup_stop, supervisor_stop, diagnostics_stop] {
+                    match stop {
+                        Ok(Ok(())) => {}
+                        Ok(Err(timeout)) => cleanup_errors.push(timeout.to_string()),
+                        Err(error) => cleanup_errors.push(format!("a shutdown stage failed: {error}")),
+                    }
+                }
+                for error in &cleanup_errors {
+                    tracing::warn!(%error, "Hub serve shutdown stage");
+                }
+                // The final checkpoint runs only with budget left; the stop
+                // is reported clean only after it succeeded.
+                let checkpointed = catalogue_checkpoint.finish_within(&shutdown_budget);
+                match (&serve_result, cleanup_errors.is_empty(), &checkpointed) {
+                    (Ok(()), true, Ok(true)) => tracing::info!("Hub serve stopped cleanly"),
+                    (Err(error), _, _) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                    (Ok(()), _, Err(error)) => {
+                        tracing::error!(%error, "Hub serve stopped; the final checkpoint failed")
+                    }
+                    (Ok(()), _, _) => tracing::warn!(
+                        "Hub serve stopped within its shutdown budget, not cleanly; the store recovers at its next open"
+                    ),
                 }
                 serve_result?;
+                checkpointed?;
+                if !cleanup_errors.is_empty() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        cleanup_errors.join("; "),
+                    )
+                    .into());
+                }
             }
         }
         #[cfg(unix)]
@@ -2134,19 +2355,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 },
             )
             .await;
-            match &observe_result {
-                Ok(()) => tracing::info!("Hub bounded observation stopped cleanly"),
-                Err(error) => {
-                    tracing::error!(%error, "Hub bounded observation stopped unexpectedly")
-                }
-            }
-            match handback {
-                Ok(Some(handback)) => tracing::info!(reason = handback.reason.code(), "collection window closed"),
-                Ok(None) => {}
-                Err(refusal) => tracing::warn!(code = %refusal.code, "collection window handback failed"),
-            }
             drop(authority);
-            observe_result?;
+            observation_outcome(observe_result, handback)?;
         }
         #[cfg(unix)]
         Command::Migrate { .. } | Command::TakeOverSourceToken { .. } => {
@@ -2175,6 +2385,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let report = store.repair()?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        Command::StorageCensus { reclaim } => {
+            if reclaim {
+                println!("{}", serde_json::to_string(&store.reclaim_storage()?)?);
+            } else {
+                println!("{}", serde_json::to_string(&store.storage_census()?)?);
+            }
+        }
         // Encrypted by default (M06-T08): one authenticated bundle in the
         // destination folder, keeping every earlier generation.
         Command::Backup { destination } => {
@@ -2184,6 +2401,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             // The command's existing private folder: owner-only, by mode and
             // by ACL, where the volume enforces ownership (M06-T14).
             request.private_destination = true;
+            // The configured scratch budget and folder, and the three space
+            // needs shown before the run starts (M06-T21).
+            request.scratch_budget_bytes = config.backup.scratch_budget_bytes;
+            request.scratch_directory = config.backup.scratch_directory.as_deref();
+            let needs = tesatlas_hub::data_recovery::encrypted_backup_space_needs(&store, &request)
+                .map_err(|error| backup_refusal(&store, error))?;
+            eprintln!("{}", backup_space_needs_text(&needs));
             let report = tesatlas_hub::data_recovery::create_encrypted_backup(&store, &request)
                 .map_err(|error| backup_refusal(&store, error))?;
             println!("{}", serde_json::to_string(&report)?);
@@ -2206,6 +2430,22 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
+}
+
+/// The three space needs of an encrypted backup, one line, before it starts
+/// (M06-T21).
+fn backup_space_needs_text(needs: &tesatlas_hub::data_recovery::EncryptedBackupSpaceNeeds) -> String {
+    let budget = needs
+        .scratch_budget_bytes
+        .map_or_else(|| "no budget".to_owned(), |budget| format!("budget {budget} bytes"));
+    format!(
+        "Backup space needs: catalogue {} bytes; scratch {} bytes in {} ({budget}); destination {} bytes in {}",
+        needs.catalogue_bytes,
+        needs.scratch_bytes,
+        needs.scratch_directory.display(),
+        needs.destination_bytes,
+        needs.destination.display(),
+    )
 }
 
 /// A refusal caused by refused pre-upgrade credentials names the command that
@@ -2395,6 +2635,7 @@ mod backup_recovery_repair_tests {
                 password: tesatlas_hub::runtime::backup_schedule::PasswordSource::File(password_file),
                 keep: None,
                 cancel: Arc::new(AtomicBool::new(false)),
+                scratch: Default::default(),
             })
             .expect("the scheduled runner writes a bundle");
         let bundle = PathBuf::from(report["path"].as_str().expect("bundle path"));
@@ -2571,5 +2812,72 @@ mod status_privacy_tests {
             .expect("diagnostic fields");
         assert_eq!(status.location_name, None, "redacted status must not reveal the current address");
         assert_eq!(status.battery_level, Some(81));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod observation_outcome_tests {
+    use super::*;
+
+    #[test]
+    fn astra_p17_f07_failed_window_handback_fails_the_observation() {
+        let refusal = OperatorRefusal::new("window_io", "the window ledger could not be written");
+        let error = observation_outcome(Ok(()), Err(refusal))
+            .expect_err("a failed handback must fail the command");
+        assert!(error.to_string().contains("window ledger"), "{error}");
+    }
+
+    #[test]
+    fn astra_p17_f07_observation_outcome_keeps_success_and_observation_errors() {
+        observation_outcome(Ok(()), Ok(None)).expect("a clean stop without a close succeeds");
+        let error = observation_outcome(Err(std::io::Error::other("collector failed")), Ok(None))
+            .expect_err("an observation error still fails the command");
+        assert!(error.to_string().contains("collector failed"), "{error}");
+    }
+}
+
+/// Issue #51: the background pack reconciliation of one service run. Logs
+/// its status and counts with diagnostic codes, never a digest or a path.
+#[cfg(unix)]
+fn log_pack_reconciliation(store: &HubStore, cancelled: &dyn Fn() -> bool) {
+    use tesatlas_hub::db::PackReconciliationStatus as Status;
+    tracing::info!(status = "running", "Hub pack reconciliation");
+    let status = match store.reconcile_packs(cancelled) {
+        Ok(report) if report.complete => Status::Completed(report),
+        Ok(report) => Status::Incomplete(report),
+        Err(error) => Status::Failed(error.to_string()),
+    };
+    match status {
+        Status::Completed(report) | Status::Incomplete(report) => {
+            let codes = report.codes().join(",");
+            let fields = (
+                report.final_names,
+                report.unreferenced_finals,
+                report.unclassified_finals,
+                report.referenced_checked,
+                report.missing_objects + report.not_regular_objects,
+                report.size_mismatches,
+                report.digest_mismatches,
+            );
+            let status = if report.complete { "completed" } else { "incomplete" };
+            if codes.is_empty() {
+                tracing::info!(status, final_names = fields.0, checked = fields.3, "Hub pack reconciliation");
+            } else {
+                tracing::warn!(
+                    status,
+                    codes = %codes,
+                    final_names = fields.0,
+                    unreferenced = fields.1,
+                    unclassified = fields.2,
+                    checked = fields.3,
+                    missing = fields.4,
+                    size_mismatches = fields.5,
+                    digest_mismatches = fields.6,
+                    "Hub pack reconciliation"
+                );
+            }
+        }
+        Status::Failed(error) => tracing::warn!(status = "failed", %error, "Hub pack reconciliation"),
+        Status::Pending | Status::Running => {}
     }
 }

@@ -6,9 +6,9 @@ import Foundation
 struct HubSourceCheckResult: Equatable {
     /// Source application release of the reviewed source set this Hub admits;
     /// it must match the `requiredVersion` of a successful source check.
-    static let requiredSourceRelease = "4.4.0"
+    static let requiredSourceRelease = "4.5.0"
     /// Reason code of a successful check against that reviewed set.
-    static let compatibleReasonCode = "v4_4_compatible_schema"
+    static let compatibleReasonCode = "v4_5_compatible_schema"
 
     let compatible: Bool
     let message: String

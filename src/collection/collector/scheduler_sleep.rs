@@ -233,6 +233,34 @@ fn begin_suspension(
     }
 }
 
+/// End a suspension early because the car's stream cannot watch it
+/// (FIX-SUSPEND-FALLBACK): the stream ended for a protocol fault or a confirmed
+/// refusal, so a drive that starts during the suspension would go unseen until its
+/// end. The car, still reported online, goes back to Online with a read due now and
+/// the Online cadence after it, as if no stream watcher existed; the Online idle
+/// timer does not suspend it again while the stream stays unusable. Only a car
+/// reported online is moved: an Asleep or Offline car is never read, so it is
+/// never woken. Logged once, `stream_unusable_polling`.
+fn end_suspension_for_unusable_stream(
+    timing: &Timing,
+    vehicle: &mut ScheduledVehicle,
+    now: Instant,
+    wall_ms: i64,
+) {
+    enter_phase(
+        timing,
+        vehicle,
+        PollPhase::Online,
+        now,
+        wall_ms,
+        "stream_unusable_polling",
+    );
+    vehicle.suspension_read = false;
+    vehicle.gated_read = None;
+    vehicle.suspend_at = None;
+    vehicle.next_read_due = Some(now);
+}
+
 /// A list or record says `online` for a car that was Asleep or Offline (C3 R34,
 /// R35). Returns whether the car's stream power gate must be revoked (it entered
 /// Suspended).
@@ -379,7 +407,9 @@ impl VehicleScheduler {
             }
             match vehicle.phase {
                 PollPhase::Online => {
-                    if vehicle.suspend_at.is_some_and(|at| at <= now) {
+                    // An unusable stream cannot watch a Suspended car: the car
+                    // stays on the Online cadence until the stream is healthy.
+                    if vehicle.suspend_at.is_some_and(|at| at <= now) && !vehicle.stream.unusable {
                         let until = deadline_after(now, vehicle.settings.suspend);
                         begin_suspension(
                             &timing,
@@ -392,6 +422,12 @@ impl VehicleScheduler {
                         );
                         revoke.push(*id);
                     }
+                }
+                PollPhase::Suspended
+                    if vehicle.stream.unusable
+                        && vehicle.reported_state.as_deref() == Some("online") =>
+                {
+                    end_suspension_for_unusable_stream(&timing, vehicle, now, wall_ms);
                 }
                 PollPhase::Suspended => {
                     if vehicle.suspended_until.is_some_and(|at| at <= now) {
@@ -437,6 +473,8 @@ impl VehicleScheduler {
                         "update_stale",
                     );
                     clear_pending_reads(vehicle);
+                    // Let the next online list confirm reachability again.
+                    vehicle.reported_state = None;
                 }
                 _ => {}
             }
@@ -595,7 +633,11 @@ impl VehicleScheduler {
             return;
         }
         if evidence.parked_gear && vehicle.phase == PollPhase::Driving {
-            make_read_due(vehicle);
+            // The first Park frame can bring a normal read forward. Further
+            // frames must leave a failed read's retry or state check time in place.
+            if vehicle.consecutive_failures == 0 && !vehicle.unavailable_check {
+                make_read_due(vehicle);
+            }
             return;
         }
         if evidence.wants_read
@@ -740,6 +782,7 @@ impl VehicleScheduler {
                     .restart_not_before
                     .is_some_and(|restart| now < restart);
                 if !waiting {
+                    vehicle.stream.unusable = false;
                     vehicle.stream.outage_reported = false;
                     vehicle.stream.outage_started = None;
                     vehicle.stream.outage_failures = 0;
@@ -747,6 +790,16 @@ impl VehicleScheduler {
             }
         }
         stop
+    }
+
+    /// The stream reported a protocol fault or a confirmed refusal
+    /// (FIX-SUSPEND-FALLBACK): unlike a plain network loss, it will not watch the
+    /// car until it is healthy again, so a Suspended car falls back to the Online
+    /// cadence at the next tick (`advance_timers`).
+    fn stream_unusable(&mut self, id: VehicleId) {
+        if let Some(vehicle) = self.vehicles.get_mut(&id) {
+            vehicle.stream.unusable = true;
+        }
     }
 
     /// A stream run ended with an error (C3 R28 run spacing; C4 R12, R56 a2, e):

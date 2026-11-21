@@ -164,6 +164,71 @@ const PAIRED_TOKENS: [&str; 8] = [
 ];
 
 #[tokio::test]
+async fn astra_p06_current_route_reads_one_catalogue_snapshot() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source = store
+        .register_source(&SourceDescriptor::new("owner_api", "snapshot-fixture"), T0)
+        .expect("source");
+    let vehicle_id = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "1").with_tesla_identity(Some(1), None),
+            T0,
+        )
+        .expect("vehicle")
+        .vehicle_id;
+    store
+        .accept_owner_observation_and_lifecycle(
+            &ObservationInput {
+                source_id: source.source_id,
+                vehicle_id,
+                observed_at_ms: T0,
+                payload: stamped_vehicle_data(T0),
+            },
+            T0,
+            1,
+        )
+        .expect("initial online observation");
+    mark_vehicle_published(&store, vehicle_id);
+    let app = router_for_state(
+        AppState::new(store.clone(), false, false, false, None, None, None, None)
+            .with_summary_now_ms(Some(T0 + 1_000)),
+        CorsPolicy::default(),
+    );
+    let uri = format!("/v1/vehicles/{vehicle_id}/current");
+
+    crate::db::after_current_observations_read(move || {
+        store
+            .accept_owner_observation_and_lifecycle(
+                &ObservationInput {
+                    source_id: source.source_id,
+                    vehicle_id,
+                    observed_at_ms: T0 + 1_000,
+                    payload: serde_json::json!({
+                        "record_type": "owner_api_discovery_v1",
+                        "source_vehicle_state": "asleep",
+                    }),
+                },
+                T0 + 1_000,
+                1,
+            )
+            .expect("new tick committed during the current request");
+    });
+
+    let (status, _, body) = get_bytes(&app, &uri).await;
+    assert_eq!(status, StatusCode::OK);
+    let first: serde_json::Value = serde_json::from_slice(&body).expect("current response");
+    assert_eq!(first["observed_at_ms"], T0);
+    assert_eq!(first["activity_state"], "online");
+
+    let (status, _, body) = get_bytes(&app, &uri).await;
+    assert_eq!(status, StatusCode::OK);
+    let second: serde_json::Value = serde_json::from_slice(&body).expect("current response");
+    assert_eq!(second["observed_at_ms"], T0 + 1_000);
+    assert_eq!(second["activity_state"], "asleep");
+}
+
+#[tokio::test]
 async fn c6_st_s33_http() {
     // A store holding C6 ST-S1's rows and the stored car the observation made.
     let temp = crate::private_tempdir().expect("temp directory");

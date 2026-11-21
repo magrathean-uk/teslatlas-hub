@@ -1269,6 +1269,9 @@ fn ct58_a_persisted_refusal_survives_a_restart_until_the_configuration_changes()
                 since_ms: CORE_W0,
                 rate_limited_until_ms: None,
                 next_probe_ms: None,
+                unreachable_until_ms: None,
+                consecutive_unreachable: 0,
+                inventory_unavailable: false,
             }),
             gap_inserts: vec![crate::db::CollectorGapInsert {
                 vehicle_id: None,
@@ -2275,6 +2278,9 @@ fn r7_a_new_fleet_application_or_region_changes_the_fingerprint_and_resets_a_sto
                 since_ms: CORE_W0,
                 rate_limited_until_ms: None,
                 next_probe_ms: None,
+                unreachable_until_ms: None,
+                consecutive_unreachable: 0,
+                inventory_unavailable: false,
             }),
             ..Default::default()
         },

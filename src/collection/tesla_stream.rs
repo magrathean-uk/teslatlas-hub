@@ -48,8 +48,8 @@ const K_MAX_MESSAGE: usize = 64 * 1024;
 
 /// Size at which the socket flushes its write buffer, in bytes. The library
 /// requires it to be smaller than the write-buffer limit ([`K_MAX_MESSAGE`]);
-/// the Hub's own frames are at most a subscribe frame of about 8.3 KiB (R8),
-/// and 16 KiB keeps every one of them in a single flush.
+/// each send flushes the message, including a subscribe frame larger than this
+/// threshold.
 const WRITE_FLUSH_BYTES: usize = 16 * 1024;
 
 /// Longest wait for the server's Close frame after the Hub's own (R10). 2 s is

@@ -367,8 +367,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             importSource: { [weak self] in self?.importPressed() },
             connectTesla: { [weak self] in self?.connectTeslaPressed() },
             accountMenu: { [weak self] in self?.teslaAccountMenu() ?? NSMenu() },
-            appearance: { [weak self] in self?.appearancePressed() }
+            appearance: { [weak self] in self?.appearancePressed() },
+            addressLookupEnabled: { [weak self] in
+                guard let self, !self.controller.previewMode else { return nil }
+                return self.controller.addressLookupEnabled
+            },
+            setAddressLookup: { [weak self] enabled in self?.setAddressLookup(enabled) }
         )
+    }
+
+    /// Settings' address-lookup switch (DEC-246): writes the answer, then restarts a
+    /// running Hub so it reads it.
+    private func setAddressLookup(_ enabled: Bool) {
+        guard actionsAvailable else { HubUIPresentation.playRefusalSound(); return }
+        let changed: Bool
+        do { changed = try controller.setAddressLookup(enabled) } catch { showError(error); return }
+        settingsPage.apply(snapshot: lastPresentedSnapshot)
+        guard changed, controller.snapshot.health == .running else { return }
+        restartPressed()
     }
 
     var navigationAvailable: Bool {
@@ -1164,7 +1180,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard case .success = result else { return }
             let alert = NSAlert()
             alert.messageText = HubL10n.text("hub.ImportSheetController.26.1691", fallback: "Import History")
-            alert.informativeText = ImportAfterWindowsSheetController.importedMessage
+            alert.informativeText = [ImportAfterWindowsSheetController.importedMessage,
+                                     self?.controller.lastImportSummary?.text()]
+                .compactMap { $0 }.joined(separator: "\n\n")
             HubUIPresentation.presentInformation(alert)
             self?.update()
         }

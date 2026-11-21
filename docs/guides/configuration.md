@@ -78,7 +78,7 @@ the listed method. The common request headers are `Authorization`,
 | Routes | Method | Additional request headers |
 | --- | --- | --- |
 | `/healthz`, `/readyz`, `/.well-known/teslatlas-hub`, `/v1/vehicles` | GET | None |
-| `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives` | GET | None |
+| `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives`, `/v1/vehicles/{vehicle_id}/charges`, `/v1/vehicles/{vehicle_id}/drives/{session_id}`, `/v1/vehicles/{vehicle_id}/charges/{session_id}`, `/v1/vehicles/{vehicle_id}/drives/{session_id}/positions`, `/v1/vehicles/{vehicle_id}/charges/{session_id}/samples` | GET | None |
 | `/v1/pairings/{pairing_id}/claim`, `/v1/device/rotate`, `/v1/device/revoke` | POST | None |
 | `/v1/vehicles/{vehicle_id}/sync/manifest`, `/v1/vehicles/{vehicle_id}/sync/noop` | GET | `X-Teslatlas-Supported-Schemas`, `X-Teslatlas-Sync-Capability`, `X-Teslatlas-Sync-Profile` |
 | `/v1/packs/sha256/{object_name}` | GET | `Range`, `If-Range` |
@@ -208,8 +208,9 @@ only the first.
 
 `status` adds `collectionAttention`, `readinessDetail` (healthy states worth showing:
 `collector_cap_warning`, `collector_rate_limited`, `collector_vehicle_paused`,
-`collector_tesla_unreachable` and `collector_gap_unnotified`, which never repeat the
-attention), `collectorRunning` and, with the redacted lease timing in `collector`, a
+`collector_tesla_unreachable`, `collector_gap_unnotified` and
+`collector_inventory_unavailable` (the vehicle list failed three times in a row; one
+accepted list clears it), which never repeat the attention), `collectorRunning` and, with the redacted lease timing in `collector`, a
 `collectorCadenceError` only while a cadence rule is broken. `collectorRunning` is true
 while the collector holds an unexpired lease, including a terminal one; lease times do not
 show when a process really stopped. `doctor` reports the same under `collector`
@@ -284,7 +285,10 @@ stream_health_timeout_seconds = 60
 ```
 
 A request for a car's data is sent only when Tesla's list says the car is online
-and the Hub has evidence that it is in use. A parked car is left alone for its
+and the Hub has evidence that it is in use. A software install is the one
+exception, on purpose: once the Hub has seen an install start it keeps reading
+the car at `updating_poll_seconds`, also while the list says offline or a read
+gets no answer, until the install ends or goes stale. A parked car is left alone for its
 suspension (`suspend_min`) so that it can fall asleep. The Hub never wakes a car.
 
 What each interval is for:
@@ -463,7 +467,7 @@ keep working.
 
 | Account state | What caused it | What ends it |
 |---|---|---|
-| Owner API refused (Legacy) | A 403 that names the Fleet API, a 403 that repeats after one token refresh and one resend, a 410, or every collected car refused | Choose a provider or consented Fleet API polling, or `collector retry` if Tesla's refusal was lifted |
+| Owner API refused (Legacy) | A 403 that names the Fleet API, a 403 that repeats after one token refresh and one resend, a 410, or every collected car refused | Choose a provider or consented Fleet API polling, make a fresh sign-in or change the collection configuration, then restart; `collector retry` does not lift it |
 | Provider refused | The provider answered 402, 410 or 403 as above | Resolve it with the provider, then `collector retry`, or change the provider settings |
 | Billing suspended (Fleet) | Tesla answered 402 | The Hub asks for the car list every 6 hours and at the start of each month, and resumes on the first answer |
 | Fleet access refused | 403 on the car list | Re-consent in Tesla's console, then `collector retry` |
@@ -590,19 +594,24 @@ route (profile `receiver-v1`, `protocol/profiles/receiver-v1/1.0.0/`).
 
 ## Geocoding and terrain
 
-Address lookup (geocoding) is on by default in the TOML file: `enabled = true`
-and no `endpoint`, which means the public OpenStreetMap Nominatim service at
-`https://nominatim.openstreetmap.org/`. With no endpoint set, lookups go to that
-service, whose usage policy applies:
-<https://operations.osmfoundation.org/policies/nominatim/>. The Mac app, the Debian
-package and the Docker guide's example configuration write `enabled = false`, so
-lookups stay off there until the Mac app's setup step offers the choice or you set
-`enabled = true`.
+Address lookup (geocoding) is off by default in every build, source builds and the
+Mac app alike, and there is no default provider: with no `[geocoder]` table, or
+`enabled = false`, no position leaves the machine for address lookup. Turning it on
+needs both `enabled = true` and an `endpoint`; `enabled = true` without an endpoint
+is refused when the configuration loads.
+
+The Mac app's onboarding offers address lookup on its last step, off unless you
+tick it. It names the provider, OpenStreetMap Nominatim at
+`https://nominatim.openstreetmap.org/`, and says that positions are sent to it.
+Your answer is written to `[geocoder]` (with that endpoint when you turn it on),
+and Settings > Address lookup changes it later and restarts a running Hub. The
+public service's usage policy applies:
+<https://operations.osmfoundation.org/policies/nominatim/>.
 
 ```toml
 [geocoder]
 enabled = true
-# endpoint = "https://geocoder.example.net/"   # omit it for the public default
+endpoint = "https://nominatim.openstreetmap.org/"   # or your own Nominatim-compatible service
 language = "en"
 timeout_seconds = 30
 ```

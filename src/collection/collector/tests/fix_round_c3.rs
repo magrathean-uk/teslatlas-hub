@@ -89,7 +89,9 @@ fn stream_with_producer(
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
+        held_frame: None,
     }];
     let delivered = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&delivered);
@@ -722,7 +724,9 @@ fn idle_stream() -> (Vec<VehicleStreamRuntime>, mpsc::Sender<StreamEvent>) {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: None,
+        held_frame: None,
     }];
     (streams, events)
 }

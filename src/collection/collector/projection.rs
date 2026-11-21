@@ -1296,13 +1296,24 @@ fn observation_vehicle_state(payload: &Value) -> String {
         .to_owned()
 }
 
+/// The time that orders a polling reply: the latest plausible time of its
+/// groups and of the reply itself. A reply whose drive group is older than the
+/// stored one can still carry newer charge, climate or vehicle facts, and is
+/// ordered by them so the store does not discard it whole (P06-F07); each group
+/// is still judged by its own time in the lifecycle projection.
 fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
     let fields = snapshot.fields();
-    let candidates = [
+    let group_time = |group: &str| {
         fields
-            .get("drive_state")
+            .get(group)
             .and_then(Value::as_object)
-            .and_then(|drive_state| drive_state.get("timestamp")),
+            .and_then(|group| group.get("timestamp"))
+    };
+    let candidates = [
+        group_time("drive_state"),
+        group_time("charge_state"),
+        group_time("climate_state"),
+        group_time("vehicle_state"),
         fields.get("timestamp"),
     ];
     let maximum = received_at_ms.saturating_add(K_SKEW_MS);
@@ -1310,7 +1321,8 @@ fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
         .into_iter()
         .flatten()
         .filter_map(Value::as_i64)
-        .find(|timestamp| (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum))
+        .filter(|timestamp| (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum))
+        .max()
         .unwrap_or(received_at_ms)
 }
 
@@ -1330,4 +1342,200 @@ fn assert_runtime_sensitive_access(
     admission
         .assert_sensitive_access()
         .map_err(|_| CollectorError::SensitiveAccessUnavailable)
+}
+
+#[cfg(test)]
+mod astra_p06_f07_tests {
+    use super::*;
+
+    fn poll(drive_ms: i64, charge_ms: i64, battery_level: i64) -> ManualCollection {
+        ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA0KF000009", "online")],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                serde_json::json!({
+                    "drive_state": {"timestamp": drive_ms, "shift_state": null},
+                    "charge_state": {"timestamp": charge_ms, "battery_level": battery_level}
+                }),
+            )],
+            failures: vec![],
+        }
+    }
+
+    #[test]
+    fn astra_p06_issue_late_drive_keeps_newer_battery_facts() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t0 = 1_800_000_000_000_i64;
+        let first = persist_collection_atomic_for_provider(
+            &store,
+            &poll(t0, t0, 50),
+            t0 + 1_000,
+            CollectorProvider::Legacy,
+        )
+        .expect("first poll");
+        assert_eq!(first.observations_inserted, 1);
+        // The drive group is one second older than the stored reply's; the
+        // charge group and its battery reading are newer.
+        let second = persist_collection_atomic_for_provider(
+            &store,
+            &poll(t0 - 1_000, t0 + 60_000, 51),
+            t0 + 61_000,
+            CollectorProvider::Legacy,
+        )
+        .expect("second poll");
+        assert_eq!(second.observations_inserted, 1, "the newer battery reading is stored");
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let lifecycle = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("lifecycle query")
+            .expect("lifecycle state");
+        let state = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
+        assert_eq!(state.last_battery_fact_ms, Some(t0 + 60_000));
+        assert!(
+            state.last_drive_timestamp_ms.is_none_or(|ms| ms <= t0),
+            "the older drive group stays stale"
+        );
+    }
+
+    #[test]
+    fn astra_p06_issue_newer_group_in_an_older_reply_is_kept() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t = 1_800_000_000_000_i64;
+        let persist = |reply: ManualCollection, received_at_ms: i64| {
+            persist_collection_atomic_for_provider(
+                &store,
+                &reply,
+                received_at_ms,
+                CollectorProvider::Legacy,
+            )
+            .expect("poll")
+        };
+        assert_eq!(persist(poll(t + 2_000, t, 50), t + 3_000).observations_inserted, 1);
+        // Ordered at t + 1000, before the stored reply at t + 2000, yet the
+        // charge group is newer than the stored charge group.
+        let newer_battery = persist(poll(t + 1_000, t + 1_000, 51), t + 4_000);
+        assert_eq!(newer_battery.observations_inserted, 1, "the newer battery group is stored");
+        // Every group older than the stored ones: still discarded.
+        let stale = persist(poll(t + 1_500, t - 1_000, 49), t + 5_000);
+        assert_eq!(stale.observations_inserted, 0);
+        assert_eq!(stale.observations_already_present, 1);
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let lifecycle = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("lifecycle query")
+            .expect("lifecycle state");
+        let state = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
+        assert_eq!(state.last_battery_fact_ms, Some(t + 1_000));
+    }
+
+    fn poll_with_vehicle(
+        group_ms: i64,
+        charge_ms: i64,
+        battery_level: i64,
+        car_version: &str,
+        vehicle_name: &str,
+    ) -> ManualCollection {
+        ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA0KF000009", "online")],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                serde_json::json!({
+                    "drive_state": {"timestamp": group_ms, "shift_state": null},
+                    "charge_state": {"timestamp": charge_ms, "battery_level": battery_level},
+                    "vehicle_state": {
+                        "timestamp": group_ms,
+                        "car_version": car_version,
+                        "vehicle_name": vehicle_name
+                    }
+                }),
+            )],
+            failures: vec![],
+        }
+    }
+
+    #[test]
+    fn astra_p06_issue_older_reply_keeps_newer_vehicle_metadata() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let t = 1_800_000_000_000_i64;
+        let persist = |reply: ManualCollection, received_at_ms: i64| {
+            persist_collection_atomic_for_provider(
+                &store,
+                &reply,
+                received_at_ms,
+                CollectorProvider::Legacy,
+            )
+            .expect("poll")
+        };
+        let car = || {
+            let database = store.open().expect("database");
+            let car_json: String = database
+                .query_row("SELECT car_json FROM materialised_cars", [], |row| row.get(0))
+                .expect("materialised car");
+            let display_name: Option<String> = database
+                .query_row("SELECT display_name FROM vehicles", [], |row| row.get(0))
+                .expect("vehicle row");
+            let car: Value = serde_json::from_str(&car_json).expect("car JSON");
+            (
+                car["firmware_version"].as_str().map(str::to_owned),
+                car["name"].as_str().map(str::to_owned),
+                display_name,
+            )
+        };
+        let current = |version: &str, name: &str| {
+            (
+                Some(version.to_owned()),
+                Some(name.to_owned()),
+                Some(name.to_owned()),
+            )
+        };
+
+        let first = persist(poll_with_vehicle(t + 2_000, t, 50, "2026.40.2", "Renamed"), t + 3_000);
+        assert_eq!(first.observations_inserted, 1);
+        assert_eq!(car(), current("2026.40.2", "Renamed"));
+
+        // Admitted for its newer charge group (battery 51), but its drive and
+        // vehicle groups are older than the stored ones.
+        let older = persist(poll_with_vehicle(t + 1_000, t + 1_000, 51, "2026.40.1", "Original"), t + 4_000);
+        assert_eq!(older.observations_inserted, 1, "the newer battery group is stored");
+        assert_eq!(car(), current("2026.40.2", "Renamed"), "stale metadata does not regress");
+
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let state = |store: &HubStore| {
+            let lifecycle = store
+                .load_lifecycle_state(vehicle_id)
+                .expect("lifecycle query")
+                .expect("lifecycle state");
+            OpenSessionState::decode(&lifecycle.open_session_json).expect("open session")
+        };
+        assert_eq!(state(&store).last_battery_fact_ms, Some(t + 1_000));
+
+        // A newer vehicle group still updates the metadata.
+        let newer = persist(poll_with_vehicle(t + 5_000, t + 5_000, 52, "2026.44.1", "Latest"), t + 6_000);
+        assert_eq!(newer.observations_inserted, 1);
+        assert_eq!(car(), current("2026.44.1", "Latest"));
+        assert_eq!(state(&store).last_car_metadata_fact_ms, Some(t + 5_000));
+    }
 }

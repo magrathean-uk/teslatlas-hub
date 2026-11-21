@@ -178,25 +178,32 @@ impl HubStore {
         let result = self.rotate_pending_physical_v3_admission_inner(
             &candidate, delta.as_ref(), retained_at_ms, serve_state,
         );
+        // A failed commit acknowledgement can still leave both objects
+        // catalogued. Give both candidates the same reference-aware cleanup.
         candidate.retain_catalogued_objects();
+        if let Some(delta) = delta.as_mut() {
+            delta.retain_catalogued_objects();
+        }
         match result {
-            Ok(admission) => {
-                if let Some(delta) = delta.as_mut() { delta.retain_catalogued_objects(); }
-                Ok(admission)
-            }
+            Ok(admission) => Ok(admission),
             Err(error) => {
+                let written_chunks = candidate
+                    .chunks
+                    .iter()
+                    .filter(|chunk| chunk.may_remove_unpublished_file())
+                    .map(|chunk| (chunk.metadata.sha256, chunk.path.as_path()));
+                let written_deltas = delta
+                    .iter()
+                    .flat_map(|delta| &delta.packs)
+                    .filter(|pack| pack.created)
+                    .map(|pack| (pack.sha256, pack.path.as_path()));
                 let mut cleanup_error = None;
-                for chunk in &candidate.chunks {
-                    if chunk.ownership()
-                        == crate::hub_pack::ProjectionPackOwnership::Created
-                        && let Err(source) = self.remove_unretained_pack(
-                            publication_gate,
-                            chunk.metadata.sha256,
-                            &chunk.path,
-                        ) && cleanup_error.is_none()
-                        {
-                            cleanup_error = Some(source);
-                        }
+                for (digest, path) in written_chunks.chain(written_deltas) {
+                    if let Err(source) = self.remove_unretained_pack(publication_gate, digest, path)
+                        && cleanup_error.is_none()
+                    {
+                        cleanup_error = Some(source);
+                    }
                 }
                 Err(cleanup_error.unwrap_or(error))
             }
@@ -978,6 +985,75 @@ impl HubStore {
         Ok(())
     }
 
+    /// Replaces the vehicle's kept record in one transaction (DEC-250): only
+    /// when the record now is `expected` (`None`: absent), to `kept`
+    /// (`None`: forgotten), and with `clear_plan` its recorded plan inputs
+    /// go in the same commit. Returns whether it replaced the record; the
+    /// files the record names are the caller's, written durably before and
+    /// removed only after.
+    pub(crate) fn swap_physical_v3_kept(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        expected: Option<&PhysicalV3Kept>,
+        kept: Option<&PhysicalV3Kept>,
+        clear_plan: bool,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Query)?;
+        let current: Option<String> = transaction
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let current = current
+            .map(|value| {
+                serde_json::from_str::<PhysicalV3Kept>(&value)
+                    .map_err(|_| StoreError::PhysicalV3AdmissionConflict)
+            })
+            .transpose()?;
+        if current.as_ref() != expected {
+            return Ok(false);
+        }
+        match kept {
+            Some(kept) => {
+                let value =
+                    serde_json::to_string(kept).map_err(StoreError::SerializeLifecycleRow)?;
+                transaction.execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![physical_v3_kept_key(vehicle_id), value],
+                )
+            }
+            None => transaction.execute(
+                "DELETE FROM hub_metadata WHERE key = ?1",
+                params![physical_v3_kept_key(vehicle_id)],
+            ),
+        }
+        .map_err(StoreError::Query)?;
+        if clear_plan {
+            transaction
+                .execute(
+                    "DELETE FROM hub_metadata WHERE key = ?1",
+                    params![physical_v3_handback_plan_key(vehicle_id)],
+                )
+                .map_err(StoreError::Query)?;
+        }
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(true)
+    }
+
+    /// Every kept-archive file the catalogue references (backup selection,
+    /// DEC-250). A record that does not read back is refused.
+    pub(crate) fn physical_v3_kept_files(&self) -> Result<Vec<PhysicalV3KeptFile>, StoreError> {
+        physical_v3_kept_files_in(&self.open_read_only_connection()?)
+    }
+
     /// The import seam planned at a handback from the kept source sessions
     /// and the coverage now (M03-T22), in one IMMEDIATE transaction. It
     /// commits the Hub's side of the plan only when the plan restates no
@@ -1010,8 +1086,11 @@ impl HubStore {
         verify_file_digests: bool,
         require_public_first: bool,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
-        let connection = self.open_read_only_connection()?;
-        let row = connection
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(StoreError::Begin)?;
+        let row = transaction
             .query_row(
                 "SELECT admission.snapshot_id, admission.installation_id,
                         admission.account_id, admission.selected_car_id,
@@ -1098,7 +1177,11 @@ impl HubStore {
         {
             return Err(StoreError::PhysicalV3AdmissionInvalid);
         }
-        let pack_rows = connection
+        #[cfg(test)]
+        if let Some(publish) = ROTATE_DURING_PHYSICAL_ADMISSION_READ.with(|hook| hook.take()) {
+            publish();
+        }
+        let pack_rows = transaction
             .prepare(
                 "SELECT ordinal, sha256, relative_path,
                         compressed_bytes, uncompressed_bytes
@@ -1118,6 +1201,9 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?;
+        // Packs are digest-named and immutable: release the snapshot before the
+        // stat and hash loop so it does not pin the WAL.
+        drop(transaction);
         if pack_rows.len() != manifest.chunks.len() {
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
@@ -1508,6 +1594,15 @@ fn insert_physical_v3_delta_transition(
     Ok(())
 }
 
+#[cfg(test)]
+type PhysicalAdmissionReadHook = Box<dyn FnOnce()>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static ROTATE_DURING_PHYSICAL_ADMISSION_READ:
+        std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
+}
+
 impl HubStore {
     pub(crate) fn physical_v3_delta_receipt_for_base_at(
         &self,
@@ -1615,6 +1710,105 @@ fn physical_v3_seam_coverage_key(vehicle_id: Uuid) -> String {
     format!("physical_v3_seam_coverage:{vehicle_id}")
 }
 
+/// The directory under the packs directory that holds the kept archives
+/// (the importer's `PHYSICAL_KEPT_DIRECTORY`).
+pub(crate) const PHYSICAL_V3_KEPT_DIRECTORY: &str = "physical-kept";
+
+/// One file a kept-archive record names (DEC-250): its name in the kept
+/// directory, its recorded size when the record has one (the archive; the
+/// source sessions record only a digest) and its SHA-256 as lowercase hex.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PhysicalV3KeptFile {
+    pub(crate) name: String,
+    pub(crate) bytes: Option<u64>,
+    pub(crate) sha256: String,
+}
+
+/// Every file the kept-archive records of `connection`'s catalogue name, in
+/// name order: per record with an archive, `<vehicle>.<generation>.kept` and
+/// `<vehicle>.<generation>.source.json`. Records without an archive (legacy
+/// raw bases) name nothing here; a new backup refuses them first
+/// (`require_no_legacy_kept_base_in`), a restored older one keeps its record. A record that does not read
+/// back, or whose digest is not canonical SHA-256 hex, is refused.
+pub(crate) fn physical_v3_kept_files_in(
+    connection: &Connection,
+) -> Result<Vec<PhysicalV3KeptFile>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let canonical = |digest: &str| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let mut files = Vec::new();
+    for (key, value) in rows {
+        let vehicle_id = key
+            .strip_prefix("physical_v3_kept:")
+            .and_then(|id| id.parse::<Uuid>().ok())
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let kept: PhysicalV3Kept =
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        let Some(archive) = kept.archive else {
+            continue;
+        };
+        if !canonical(&archive.digest) || !canonical(&kept.source) {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        files.push(PhysicalV3KeptFile {
+            name: format!("{vehicle_id}.{}.kept", archive.generation),
+            bytes: Some(archive.bytes),
+            sha256: archive.digest,
+        });
+        files.push(PhysicalV3KeptFile {
+            name: format!("{vehicle_id}.{}.source.json", archive.generation),
+            bytes: None,
+            sha256: kept.source,
+        });
+    }
+    files.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(files)
+}
+
+/// Refuses a new backup while any kept record of `connection`'s catalogue is
+/// a legacy raw base (no archive). That base is two files (the raw stage and
+/// its source sessions) whose recorded digest is the stage's logical one, so
+/// a backup cannot authenticate them as members; carrying a backup without
+/// them would silently lose the vehicle's replay base. Restoring an older
+/// backup that holds such a record is unaffected.
+pub(crate) fn require_no_legacy_kept_base_in(connection: &Connection) -> Result<(), StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    for (key, value) in rows {
+        let vehicle_id = key
+            .strip_prefix("physical_v3_kept:")
+            .and_then(|id| id.parse::<Uuid>().ok())
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let kept: PhysicalV3Kept =
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        if kept.archive.is_none() {
+            return Err(StoreError::BackupLegacyKeptBase(vehicle_id));
+        }
+    }
+    Ok(())
+}
+
 /// The `hub_metadata` key of the stage and source kept for the vehicle's
 /// handback (M03-T22).
 fn physical_v3_kept_key(vehicle_id: Uuid) -> String {
@@ -1641,12 +1835,31 @@ pub(crate) struct PhysicalV3HandbackPlan {
     pub(crate) prepared: bool,
 }
 
-/// What is kept for a vehicle's handback (M03-T22): the digests of the raw
-/// physical stage and of the import's source sessions.
+/// What is kept for a vehicle's handback (M03-T22): the logical digest of
+/// the physical stage and the digest of the import's source sessions. With
+/// `archive` the base is one compact kept archive and its generation's
+/// source file (DEC-250); without it, a record an earlier build wrote, the
+/// legacy raw stage and source file, readable until a verified conversion
+/// replaces the record.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhysicalV3Kept {
     pub(crate) stage: String,
     pub(crate) source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) archive: Option<PhysicalV3KeptArchive>,
+}
+
+/// The kept archive of a vehicle's replay base (DEC-250): its files are
+/// `<vehicle>.<generation>.kept` and `<vehicle>.<generation>.source.json`
+/// in the kept directory.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PhysicalV3KeptArchive {
+    pub(crate) generation: Uuid,
+    pub(crate) format: u32,
+    /// SHA-256 of the whole archive file.
+    pub(crate) digest: String,
+    pub(crate) bytes: u64,
+    pub(crate) decoded_bytes: u64,
 }
 
 /// The coverage digest each planned head was planned with; none recorded is

@@ -22,6 +22,83 @@ fn unsupported_schema_message(version: i32) -> String {
     }
 }
 
+/// How often this process opened a catalogue's SQLite connection (M08-T32):
+/// every open, and the opens made while no [`CatalogueHold`] was held for that
+/// catalogue. Such an open is the only user of the catalogue's shared-memory
+/// file, so SQLite truncates and rebuilds it as it opens and unmaps and closes
+/// it as it closes (guest run P6j); an open under a hold reuses the mapping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CatalogueOpenCounts {
+    pub opens: u64,
+    pub opens_without_hold: u64,
+}
+
+#[derive(Default)]
+struct CatalogueOpenEntry {
+    counts: CatalogueOpenCounts,
+    holds: usize,
+}
+
+/// Per catalogue path, process-wide: one service process has one catalogue,
+/// and tests in one process keep their roots apart.
+fn catalogue_open_registry() -> &'static std::sync::Mutex<HashMap<PathBuf, CatalogueOpenEntry>> {
+    static REGISTRY: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, CatalogueOpenEntry>>> =
+        std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn note_catalogue_open(database_path: &Path, uses_shared_memory: bool) {
+    let mut registry = catalogue_open_registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let entry = registry.entry(database_path.to_path_buf()).or_default();
+    entry.counts.opens += 1;
+    if uses_shared_memory && entry.holds == 0 {
+        entry.counts.opens_without_hold += 1;
+    }
+}
+
+/// The opens of the catalogue at `database_path` (a data folder's
+/// `hub.sqlite`) in this process so far (M08-T32).
+pub fn catalogue_open_counts_at(database_path: &Path) -> CatalogueOpenCounts {
+    catalogue_open_registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(database_path)
+        .map(|entry| entry.counts)
+        .unwrap_or_default()
+}
+
+/// One idle read-only connection kept open for the start and the life of
+/// Serve (M08-T32), so that every later open and close of the same catalogue
+/// in this process reuses its shared-memory mapping instead of truncating and
+/// rebuilding it. It holds no transaction: it blocks no writer and no
+/// checkpoint.
+pub struct CatalogueHold {
+    database_path: PathBuf,
+    _connection: Connection,
+}
+
+impl std::fmt::Debug for CatalogueHold {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CatalogueHold")
+            .field("database_path", &self.database_path)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for CatalogueHold {
+    fn drop(&mut self) {
+        let mut registry = catalogue_open_registry()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(entry) = registry.get_mut(&self.database_path) {
+            entry.holds = entry.holds.saturating_sub(1);
+        }
+    }
+}
+
 /// What path admission found before a catalogue open.
 enum CatalogueAdmission {
     Admitted,
@@ -63,6 +140,17 @@ fn admit_catalogue_paths(database_path: &Path) -> Result<CatalogueAdmission, Sto
 
 impl HubStore {
     pub fn initialize(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::initialize_with_phases(data_dir, &mut |_| {})
+    }
+
+    /// [`Self::initialize`], calling `phase` once the migrations (with the
+    /// identity tidy and the legacy binding recovery) are done, as
+    /// `"migrations"`, and once the recovery sweeps are done, as
+    /// `"recovery_sweeps"`: Serve logs each one's duration (M08-T32).
+    pub fn initialize_with_phases(
+        data_dir: impl AsRef<Path>,
+        phase: &mut dyn FnMut(&'static str),
+    ) -> Result<Self, StoreError> {
         let data_dir = data_dir.as_ref();
         let data_dir_was_absent = !data_dir.exists();
         crate::platform::private_directory::create_directory_all_durably(data_dir).map_err(StoreError::CreateDataDir)?;
@@ -135,12 +223,14 @@ impl HubStore {
         run_vehicle_identity_tidy(&mut connection, migration_clock_ms)?;
         ensure_installation_id(&connection)?;
         store.recover_legacy_v2_base_bindings(&mut connection)?;
+        phase("migrations");
         // Never discard a staged import while another process owns its
         // publication workflow. A busy gate makes startup retryable instead.
         let publication_gate = store.try_acquire_publication_gate()?;
         cleanup_stale_pack_staging(store.packs_dir()).map_err(StoreError::PackStartupRepair)?;
         store.recover_stale_import_projection_state_spools(&publication_gate, &connection)?;
         cleanup_abandoned_import_generations(&connection)?;
+        phase("recovery_sweeps");
         Ok(store)
     }
 
@@ -168,6 +258,7 @@ impl HubStore {
     pub fn open(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.writable_opens);
+        note_catalogue_open(&self.database_path, true);
         if let CatalogueAdmission::Absent(error) = admit_catalogue_paths(&self.database_path)? {
             return Err(StoreError::InspectSharedSqlite(error));
         }
@@ -498,10 +589,15 @@ impl HubStore {
         // A v79 store (credential format complete, before the import seam
         // rung) is what an updated Hub holds until its first writable open; it
         // lacks only the two empty seam tables, which no read-only route reads,
-        // so status and diagnosis lanes open it rather than refuse it.
+        // so status and diagnosis lanes open it rather than refuse it. A v80
+        // store (before the import state compaction rung, M08-T30) differs
+        // only in the state rows' entity text and index, which no reader uses.
+        // A store below the head also lacks only the empty drive repair tables
+        // (M03-T26), which only the repair APIs read.
         if version != SCHEMA_VERSION
             && version != MIN_STORE_VERSION
             && version != CREDENTIAL_FORMAT_SCHEMA_VERSION
+            && version != SEAM_SCHEMA_VERSION
             && !standalone_migration_candidate
         {
             return Err(StoreError::UnsupportedSchema(version));
@@ -512,6 +608,8 @@ impl HubStore {
     fn open_read_only_connection(&self) -> Result<Connection, StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.read_only_opens);
+        // An immutable open reads no shared memory.
+        note_catalogue_open(&self.database_path, self.immutable_snapshot.is_none());
         // An absent path falls through to SQLite's read-only open, which refuses
         // it without creating the catalogue or a coordination file.
         let _ = admit_catalogue_paths(&self.database_path)?;
@@ -559,6 +657,32 @@ impl HubStore {
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    /// This catalogue's opens in this process so far (M08-T32).
+    pub fn catalogue_open_counts(&self) -> CatalogueOpenCounts {
+        catalogue_open_counts_at(&self.database_path)
+    }
+
+    /// Keep one idle connection to this catalogue open until the hold is
+    /// dropped (M08-T32). Its first read maps the shared memory, which the
+    /// later opens of this process then reuse. Serve holds its writable
+    /// store's catalogue; an immutable snapshot reads no shared memory.
+    pub fn hold_catalogue(&self) -> Result<CatalogueHold, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let _: i64 = connection
+            .query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        catalogue_open_registry()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(self.database_path.clone())
+            .or_default()
+            .holds += 1;
+        Ok(CatalogueHold {
+            database_path: self.database_path.clone(),
+            _connection: connection,
+        })
     }
 
     /// Finish a short-lived writer command with a byte-stable catalogue that

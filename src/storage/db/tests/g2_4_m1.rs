@@ -71,6 +71,33 @@ fn rows(connection: &Connection) -> Rows {
         .collect()
 }
 
+/// The values the v81 rung (M08-T30) keeps from `rows` of an older store: the
+/// import state rows lose their entity text (the second column) and keep
+/// every other value.
+/// The floor rows as the head keeps them: the v79 import-state compaction drops
+/// one column, and the v82 rung appends the three collector retry columns to the
+/// account row with their documented defaults (no unreachable end, no failures,
+/// inventory available). Every other floor value must be unchanged.
+pub(crate) fn rows_after_import_state_compaction(rows: &Rows) -> Rows {
+    let mut kept = rows.clone();
+    if let Some(values) = kept.get_mut("collector_account_state") {
+        for value in values.iter_mut() {
+            value.extend([
+                "Null".to_owned(),
+                "Integer(0)".to_owned(),
+                "Integer(0)".to_owned(),
+            ]);
+        }
+    }
+    if let Some(values) = kept.get_mut("import_projection_state_rows") {
+        for value in values.iter_mut() {
+            value.remove(1);
+        }
+        values.sort();
+    }
+    kept
+}
+
 pub(super) fn schema_snapshot(connection: &Connection) -> (i32, Schema, Rows) {
     (
         schema_version(connection).unwrap(),
@@ -281,7 +308,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
         catalogue_floor_witnesses(&connection) > 0,
         "assertion failed: {test}: the floor witnesses are listed as imported rows"
     );
-    let before = rows(&connection);
+    let before = rows_after_import_state_compaction(&rows(&connection));
     migrate(&connection).labelled_ok(test, "the floor fixture reaches HEAD");
     assert!(
         schema_version(&connection).unwrap() == SCHEMA_VERSION,
@@ -312,12 +339,20 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
                 "credential_refresh_attempts",
                 "credential_refresh_fences",
                 "credential_sign_ins",
+                "drive_edit_protection",
+                "drive_elevation_coverage",
+                "drive_repair_batches",
+                "drive_repair_change_members",
+                "drive_repair_changes",
+                "drive_repair_index_heads",
+                "drive_repair_inputs",
+                "drive_repair_suppressions",
                 "import_seam_links",
             ]
             && added_tables.iter().all(|table| {
                 after[*table].len() == usize::from(*table == "credential_format_state")
             }),
-        "assertion failed: {test}: only the seven C10 tables, the two empty backup live-state tables (M06-T07, M06-T02) and the two empty v80 seam tables (M03-T11) are added, with one state row and no converted credentials"
+        "assertion failed: {test}: only the seven C10 tables, the two empty backup live-state tables (M06-T07, M06-T02), the two empty v80 seam tables (M03-T11) and the seven empty drive repair tables (M03-T26) are added, with one state row and no converted credentials"
     );
     let state: (
         i64,
@@ -463,7 +498,7 @@ fn m1_t4_import_readers_equal_stepwise_store() {
             && rows(&baseline) == rows(&stepwise),
         "assertion failed: {test}: both floors list their witnesses as imported rows alike"
     );
-    let retained = rows(&baseline);
+    let retained = rows_after_import_state_compaction(&rows(&baseline));
     migrate(&baseline).labelled_ok(test, "the seeded baseline floor reaches C10 head");
     migrate(&stepwise).labelled_ok(test, "the shipped stepwise floor reaches C10 head");
     assert!(

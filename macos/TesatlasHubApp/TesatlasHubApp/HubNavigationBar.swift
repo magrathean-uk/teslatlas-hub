@@ -11,6 +11,10 @@ struct HubNavigationActions {
     let connectTesla: () -> Void
     let accountMenu: () -> NSMenu
     let appearance: () -> Void
+    /// DEC-246: the address-lookup answer Settings shows, `nil` to hide the row, and
+    /// the switch that writes a new answer.
+    var addressLookupEnabled: () -> Bool? = { nil }
+    var setAddressLookup: (Bool) -> Void = { _ in }
 }
 
 private struct HubNavigationItem {
@@ -447,6 +451,7 @@ final class HubSettingsView: HubCompactPageView {
     private var databaseRow: HubPageRowView!
     private var serviceRow: HubPageRowView!
     private var importRow: HubPageRowView!
+    private var addressLookupRow: HubPageRowView!
 
     init(actions: HubNavigationActions) {
         self.actions = actions
@@ -464,8 +469,15 @@ final class HubSettingsView: HubCompactPageView {
                                    detail: HubL10n.text("hub.HubNavigationBar.464.1503", fallback: "Import your existing vehicle history."),
                                    target: self, action: #selector(importPressed))
         importRow.identifier = NSUserInterfaceItemIdentifier("hub.settings.import-history")
+        addressLookupRow = HubPageRowView(symbol: "mappin.and.ellipse",
+                                          title: HubL10n.text("hub.settings.addressLookup.title", fallback: "Address lookup"),
+                                          detail: HubL10n.format("hub.settings.addressLookup.detail",
+                                                                 fallback: "When on, positions are sent to %1$@.",
+                                                                 arguments: [HubController.addressLookupProviderName]),
+                                          target: self, action: #selector(addressLookupPressed(_:)))
+        addressLookupRow.identifier = NSUserInterfaceItemIdentifier("hub.settings.address-lookup")
         addSection(title: HubL10n.text("hub.HubNavigationBar.467.1505", fallback: "Connections & data"),
-                   view: hubGroupedCard([accountRow, databaseRow, importRow]))
+                   view: hubGroupedCard([accountRow, databaseRow, importRow, addressLookupRow]))
         serviceRow = HubPageRowView(symbol: "gearshape.2", title: HubL10n.text("hub.HubNavigationBar.469.1507", fallback: "Background service"),
                                     detail: "",
                                     target: self, action: #selector(servicePressed))
@@ -492,6 +504,15 @@ final class HubSettingsView: HubCompactPageView {
            let index = stack.arrangedSubviews.firstIndex(of: importRow), index > 0 {
             stack.arrangedSubviews[index - 1].isHidden = hideImport
         }
+        let lookup = actions.addressLookupEnabled()
+        addressLookupRow.isHidden = lookup == nil
+        if let stack = addressLookupRow.superview as? NSStackView,
+           let index = stack.arrangedSubviews.firstIndex(of: addressLookupRow), index > 0 {
+            stack.arrangedSubviews[index - 1].isHidden = lookup == nil
+        }
+        addressLookupRow.value = lookup == true
+            ? HubL10n.text("hub.settings.addressLookup.on", fallback: "On")
+            : HubL10n.text("hub.settings.addressLookup.off", fallback: "Off")
         serviceRow.value = snapshot.checkingStatus ? "Checking Hub" : snapshot.statusTitle
         serviceRow.tone = snapshot.betweenWindows != nil ? .neutral
             : snapshot.needsCollectionAttention ? .danger
@@ -504,6 +525,30 @@ final class HubSettingsView: HubCompactPageView {
         menu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: sender.bounds.maxY), in: sender)
     }
     @objc private func importPressed() { actions.importSource() }
+    @objc private func addressLookupPressed(_ sender: NSButton) {
+        addressLookupMenu().popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: sender.bounds.maxY), in: sender)
+    }
+    /// Off, or on with the provider named and what it is sent; the current answer is ticked.
+    func addressLookupMenu() -> NSMenu {
+        let enabled = actions.addressLookupEnabled() == true
+        let menu = NSMenu(title: HubL10n.text("hub.settings.addressLookup.title", fallback: "Address lookup"))
+        let off = NSMenuItem(title: HubL10n.text("hub.settings.addressLookup.turnOff",
+                                                 fallback: "Off: no positions leave this Mac"),
+                             action: #selector(addressLookupOffChosen), keyEquivalent: "")
+        off.state = enabled ? .off : .on
+        let on = NSMenuItem(title: HubL10n.format("hub.settings.addressLookup.turnOn",
+                                                  fallback: "On: send positions to %1$@",
+                                                  arguments: [HubController.addressLookupProviderName]),
+                            action: #selector(addressLookupOnChosen), keyEquivalent: "")
+        on.state = enabled ? .on : .off
+        for item in [off, on] {
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+    @objc private func addressLookupOffChosen() { actions.setAddressLookup(false) }
+    @objc private func addressLookupOnChosen() { actions.setAddressLookup(true) }
     @objc private func diagnosticsPressed() { actions.diagnostics() }
     @objc private func servicePressed() { actions.serviceDetails() }
     @objc private func appearancePressed() { actions.appearance() }

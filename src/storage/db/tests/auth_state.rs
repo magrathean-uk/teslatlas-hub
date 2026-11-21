@@ -578,6 +578,7 @@ fn readiness_tiers_and_wire_codes_are_fixed() {
             "collector_vehicle_paused",
             "collector_tesla_unreachable",
             "collector_gap_unnotified",
+            "collector_inventory_unavailable",
         ]
     );
 }

@@ -2465,3 +2465,75 @@ async fn home_assistant_discovery_invariants_hold_with_and_without_a_cursor_key(
         );
     }
 }
+
+#[tokio::test]
+async fn design_later_32_negotiated_drive_items_carry_elevation_coverage() {
+    let history = History::new();
+    let app = history.app();
+    let vehicle = vehicle_a();
+    let profile = [("x-teslatlas-http-profile", "hub-http-v1@1.4.0")];
+
+    // Old clients keep the exact 1.3.0 item, byte for byte.
+    let old = body_bytes(call(&app, &format!("/v1/vehicles/{vehicle}/drives/13")).await).await;
+    let other = body_bytes(
+        call_with(
+            &app,
+            &format!("/v1/vehicles/{vehicle}/drives/13"),
+            &[("x-teslatlas-http-profile", "hub-http-v1@1.3.0")],
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(old, other);
+    let old: serde_json::Value = serde_json::from_slice(&old).unwrap();
+    assert!(old.get("elevation_coverage").is_none());
+
+    // A 1.4.0 client gets the same item plus the additive member; no stored
+    // coverage is unknown.
+    let response = call_with(&app, &format!("/v1/vehicles/{vehicle}/drives/13"), &profile).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut negotiated = response_json(response).await;
+    assert_eq!(negotiated["elevation_coverage"], "unknown");
+    negotiated.as_object_mut().unwrap().remove("elevation_coverage");
+    assert_eq!(negotiated, old);
+
+    history
+        .store
+        .open()
+        .unwrap()
+        .execute(
+            "INSERT INTO drive_elevation_coverage(vehicle_id, drive_id, coverage)
+             VALUES (?1, 13, 'partial')",
+            rusqlite::params![vehicle.to_string()],
+        )
+        .unwrap();
+    let item = response_json(
+        call_with(&app, &format!("/v1/vehicles/{vehicle}/drives/13"), &profile).await,
+    )
+    .await;
+    assert_eq!(item["elevation_coverage"], "partial");
+    let page = response_json(
+        call_with(&app, &format!("/v1/vehicles/{vehicle}/drives"), &profile).await,
+    )
+    .await;
+    let listed = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == 13)
+        .expect("drive 13 is listed");
+    assert_eq!(listed, &item);
+    assert!(
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["elevation_coverage"].is_string())
+    );
+    // Another vehicle's drive with the same id is not affected.
+    let other_vehicle = response_json(
+        call_with(&app, &format!("/v1/vehicles/{}/drives/13", vehicle_b()), &profile).await,
+    )
+    .await;
+    assert_eq!(other_vehicle["elevation_coverage"], "unknown");
+}

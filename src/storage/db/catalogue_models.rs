@@ -320,3 +320,57 @@ fn load_json_rows<T: serde::de::DeserializeOwned>(
     }
     Ok(values)
 }
+
+/// What one background pack reconciliation found (issue #51). Counts only:
+/// no digest, path or row leaves the store through it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PackReconciliationReport {
+    /// False when the scan was cancelled or a candidate could not be
+    /// classified; its counts then cover only what it reached.
+    pub complete: bool,
+    /// Final content names (`sha256/<digest>.sqlite.zst`) found on disk.
+    pub final_names: u64,
+    /// Final names no catalogue row references, rechecked under the
+    /// publication gate. Reported only: nothing deletes, catalogues or
+    /// serves them.
+    pub unreferenced_finals: u64,
+    /// Unreferenced names left unclassified because a publication held the
+    /// gate (an installation may still be committing them).
+    pub unclassified_finals: u64,
+    /// Referenced objects hashed in full.
+    pub referenced_checked: u64,
+    pub missing_objects: u64,
+    pub not_regular_objects: u64,
+    pub size_mismatches: u64,
+    /// Same-size or other content that does not hash to its catalogued digest.
+    pub digest_mismatches: u64,
+}
+
+impl PackReconciliationReport {
+    /// The diagnostic codes of what was found, in a fixed order.
+    pub fn codes(&self) -> Vec<&'static str> {
+        [
+            (!self.complete, "pack_reconciliation_incomplete"),
+            (self.unreferenced_finals > 0, "pack_unreferenced_final"),
+            (self.unclassified_finals > 0, "pack_final_unclassified"),
+            (self.missing_objects > 0, "pack_object_missing"),
+            (self.not_regular_objects > 0, "pack_object_not_regular"),
+            (self.size_mismatches > 0, "pack_object_size_mismatch"),
+            (self.digest_mismatches > 0, "pack_object_digest_mismatch"),
+        ]
+        .into_iter()
+        .filter_map(|(found, code)| found.then_some(code))
+        .collect()
+    }
+}
+
+/// Where the background pack reconciliation of this service run is. A
+/// completion is today's evidence only: a later start scans again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackReconciliationStatus {
+    Pending,
+    Running,
+    Completed(PackReconciliationReport),
+    Incomplete(PackReconciliationReport),
+    Failed(String),
+}

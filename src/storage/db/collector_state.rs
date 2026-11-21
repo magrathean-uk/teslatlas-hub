@@ -30,6 +30,12 @@ pub(crate) struct CollectorAccountRow {
     pub since_ms: i64,
     pub rate_limited_until_ms: Option<i64>,
     pub next_probe_ms: Option<i64>,
+    /// The end of the transport back-off (P04-F07), kept across a restart.
+    pub unreachable_until_ms: Option<i64>,
+    /// Requests in a row that got no HTTP status; the step of that back-off.
+    pub consecutive_unreachable: u32,
+    /// Repeated list failures keep the inventory from loading (P04-F01).
+    pub inventory_unavailable: bool,
 }
 
 /// One row of `collector_vehicle_state` (C3 R4).
@@ -258,6 +264,25 @@ pub(crate) fn discovery_action(
     }
 }
 
+/// How long an unchanged discovery may go without advancing the car's durable
+/// current observation. A repeat inside this bound writes nothing (C3 R14,
+/// M04-T01); the first repeat after it is delivered, so successful discovery keeps
+/// the car's observation time current without a write per poll.
+pub(crate) const DISCOVERY_PRESENCE_REFRESH_MS: i64 = 15 * 60 * 1_000;
+
+/// Whether a discovery received at `received_at_ms`, which [`discovery_action`]
+/// would skip, is delivered instead to advance the car's durable observation
+/// time. `last_stored_obs_ms` is the newest receipt among the car's delivered
+/// current rows (C3 R40); with none, the repeat is delivered.
+pub(crate) fn discovery_presence_refresh_due(
+    last_stored_obs_ms: Option<i64>,
+    received_at_ms: i64,
+) -> bool {
+    last_stored_obs_ms.is_none_or(|stored| {
+        received_at_ms.saturating_sub(stored) >= DISCOVERY_PRESENCE_REFRESH_MS
+    })
+}
+
 fn collector_vehicle_uuid(value: &str) -> Result<Uuid, StoreError> {
     parse_stored_uuid("collector vehicle", value)
 }
@@ -320,7 +345,8 @@ impl HubStore {
         let account = connection
             .query_row(
                 "SELECT mode, config_fingerprint, state, reason_code, since_ms,
-                        rate_limited_until_ms, next_probe_ms
+                        rate_limited_until_ms, next_probe_ms, unreachable_until_ms,
+                        consecutive_unreachable, inventory_unavailable
                    FROM collector_account_state WHERE singleton_id = 1",
                 [],
                 |row| {
@@ -332,6 +358,9 @@ impl HubStore {
                         since_ms: row.get(4)?,
                         rate_limited_until_ms: row.get(5)?,
                         next_probe_ms: row.get(6)?,
+                        unreachable_until_ms: row.get(7)?,
+                        consecutive_unreachable: row.get(8)?,
+                        inventory_unavailable: row.get(9)?,
                     })
                 },
             )
@@ -556,8 +585,9 @@ impl HubStore {
                 .execute(
                     "INSERT INTO collector_account_state(
                         singleton_id, mode, config_fingerprint, state, reason_code,
-                        since_ms, rate_limited_until_ms, next_probe_ms, updated_at_ms)
-                     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                        since_ms, rate_limited_until_ms, next_probe_ms, updated_at_ms,
+                        unreachable_until_ms, consecutive_unreachable, inventory_unavailable)
+                     VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                      ON CONFLICT(singleton_id) DO UPDATE SET
                         mode = excluded.mode,
                         config_fingerprint = excluded.config_fingerprint,
@@ -566,7 +596,10 @@ impl HubStore {
                         since_ms = excluded.since_ms,
                         rate_limited_until_ms = excluded.rate_limited_until_ms,
                         next_probe_ms = excluded.next_probe_ms,
-                        updated_at_ms = excluded.updated_at_ms",
+                        updated_at_ms = excluded.updated_at_ms,
+                        unreachable_until_ms = excluded.unreachable_until_ms,
+                        consecutive_unreachable = excluded.consecutive_unreachable,
+                        inventory_unavailable = excluded.inventory_unavailable",
                     params![
                         account.mode,
                         account.config_fingerprint,
@@ -576,6 +609,9 @@ impl HubStore {
                         account.rate_limited_until_ms,
                         account.next_probe_ms,
                         write.now_ms,
+                        account.unreachable_until_ms,
+                        account.consecutive_unreachable,
+                        account.inventory_unavailable,
                     ],
                 )
                 .map_err(StoreError::Query)?;
@@ -890,7 +926,10 @@ impl HubStore {
                         "UPDATE collector_account_state
                             SET state = 'collecting', reason_code = 'config_changed',
                                 since_ms = ?1, rate_limited_until_ms = NULL,
-                                next_probe_ms = NULL, updated_at_ms = ?1
+                                next_probe_ms = NULL, updated_at_ms = ?1,
+                                unreachable_until_ms = NULL,
+                                consecutive_unreachable = 0,
+                                inventory_unavailable = 0
                           WHERE singleton_id = 1",
                         params![request.start_ms],
                     )
@@ -1274,6 +1313,26 @@ impl HubStore {
             )
             .map_err(StoreError::Query)?;
         Ok(snapshot)
+    }
+
+    /// `observed_at_ms` of the car's current row of `record_type`, if it has one.
+    /// Storage discards a reply older than this row, so the collector reads it to
+    /// keep such a reply from moving the car's phase (issue #114).
+    pub(crate) fn current_observed_at_ms(
+        &self,
+        vehicle_id: Uuid,
+        record_type: &str,
+    ) -> Result<Option<i64>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT observed_at_ms FROM current_observations
+                  WHERE vehicle_id = ?1 AND record_type = ?2",
+                params![vehicle_id.to_string(), record_type],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
     }
 
     /// [`Self::collector_lifecycle_snapshot_in_transaction`] on a read-only

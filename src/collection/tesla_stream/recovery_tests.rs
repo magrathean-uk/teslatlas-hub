@@ -787,6 +787,31 @@ impl LogCapture {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn queue_timeout_reports_why_the_undelivered_frame_was_dropped() {
+    let capture = LogCapture::start();
+    let peer = Peer::spawn(|connection| async move {
+        let mut socket = connection.ws().await;
+        socket.subscribe().await;
+        socket.send(&u(T0, V1)).await;
+        socket.drain().await;
+    })
+    .await;
+    let mut rig = Rig::for_peer(&peer, Creds::offline("tok-1"));
+    rig.capacity = 1;
+    let mut stream = rig.start();
+
+    assert!(matches!(
+        stream.finished(Duration::from_secs(15)).await,
+        Err(super::StreamSupervisorError::EventQueueFull)
+    ));
+    assert!(capture.text().lines().any(|line| {
+        line.contains("stream session summary")
+            && line.contains("end_cause=QueueFull")
+            && line.contains("accepted=0")
+    }));
+}
+
 /// Every cell of every row of `table`, as text.
 fn dump_table(store: &crate::db::HubStore, table: &str) -> String {
     let connection = store.open().expect("connection");
@@ -1920,7 +1945,7 @@ async fn collector_m04_t12_control_idle_and_shutdown_are_not_protocol_failures()
                 0,
                 json!({"msg_type":"data:error","tag":"9999","value":"private-payload"}).to_string(),
             ),
-            (0, u(T0, &",".repeat(10))),
+            (0, u(T0, &",".repeat(11))),
         ],
         0,
         End::Hold,
@@ -2282,6 +2307,10 @@ async fn collector_m04_t12_unknown_error_tokens_and_mixed_reasons_are_visible_at
     for reason in ["invalid_envelope", "column_count", "invalid_timestamp"] {
         assert!(summary.contains(&format!("\"{reason}\": 1")), "{text}");
     }
+    // The short row "T0,1,2" is reported by its element count only.
+    assert!(summary.contains("subscribed_elements=13"), "{text}");
+    assert!(summary.contains("column_count_elements={3: 1}"), "{text}");
+    assert!(summary.contains("extra_column_elements={}"), "{text}");
     assert!(!text.contains("private-test-token"));
     run.shut_down().await.expect("shutdown");
 }

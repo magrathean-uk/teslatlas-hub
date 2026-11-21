@@ -20,6 +20,46 @@ fn physical_stage(root: &std::path::Path, name: &str, updates: &[i32]) -> Source
     stage
 }
 
+#[tokio::test]
+async fn physical_control_read_keeps_one_head_during_rotation() {
+    let temporary = crate::private_tempdir().expect("private store root");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x40; 32]);
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        physical_stage(temporary.path(), "reader-first", &[10]),
+        1_000,
+    )
+    .await
+    .expect("first head");
+    let vehicle = binding.vehicle_id;
+    let writer = store.clone();
+    let stage = physical_stage(temporary.path(), "reader-next", &[10, 11]);
+    crate::db::ROTATE_DURING_PHYSICAL_ADMISSION_READ.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let gate = writer.try_acquire_publication_gate().expect("writer gate");
+            let publication = publish_sealed_physical_v3_stage_with_gate_at(
+                &writer, &key, binding, stage, &gate, 2_000,
+            )
+            .expect("rotate while the reader holds the old manifest");
+            assert_eq!(publication.admission.head_sequence, 2);
+        })));
+    });
+
+    let observed = store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle)
+        .expect("read one complete publication during the swap");
+    assert_eq!(observed, Some(first.admission));
+    let current = store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle)
+        .expect("read after the swap")
+        .expect("replacement head");
+    assert_eq!(current.head_sequence, 2);
+}
+
 async fn blocked_successor(
     store: &HubStore,
     key: &CursorKey,
@@ -718,6 +758,57 @@ async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehic
         unknown,
         "a removed grant withdraws the pack: now an unknown digest in full"
     );
+}
+
+#[tokio::test]
+async fn ambiguous_physical_rotation_preserves_catalogued_delta_pack() {
+    use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+    let temporary = crate::private_tempdir().expect("private store");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x52; 32]);
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("wall clock")
+            .as_millis(),
+    ).expect("bounded clock");
+    let first = publish_sealed_physical_v3_stage_at(
+        &store, &key, binding.clone(), physical_stage(temporary.path(), "first", &[10]), now_ms,
+    ).await.expect("first head");
+
+    // After the commit, the timestamp read back will differ from the
+    // expected one. The published head and changed-set rows are valid.
+    store.open().expect("catalogue").execute_batch(
+        "CREATE TRIGGER adjust_retention_time AFTER INSERT ON physical_v3_delta_transitions
+         BEGIN
+             UPDATE retained_physical_v3_admissions
+                SET retained_at_ms = retained_at_ms + 1
+              WHERE receipt_id = NEW.base_receipt_id;
+         END;",
+    ).expect("arrange ambiguous commit read-back");
+    let fault = inject(DurabilityFaultPoint::CatalogueAfterCommit);
+    let result = publish_sealed_physical_v3_stage_at(
+        &store, &key, binding.clone(), physical_stage(temporary.path(), "next", &[10, 11]), now_ms + 1,
+    ).await;
+    drop(fault);
+    assert!(matches!(
+        result,
+        Err(SourceDbPhysicalPublicationError::Store(StoreError::PhysicalV3AdmissionConflict))
+    ), "commit verification should report the discrepancy: {result:?}");
+
+    let current = store.pending_physical_v3_admission_for_vehicle(binding.vehicle_id)
+        .expect("read back the committed head").expect("current head");
+    let (_, _, receipt) = store.physical_v3_delta_receipt_for_base_at(
+        binding.vehicle_id, &first.admission.receipt_id, &current.receipt_id, now_ms + 2,
+    ).expect("read back the committed transition").expect("transition");
+    let receipt: serde_json::Value = serde_json::from_slice(&receipt).expect("changed-set receipt");
+    let digest = receipt["chunks"][0]["pack"]["sha256"].as_str().expect("pack digest")
+        .parse().expect("valid digest");
+    let pack = store.physical_v3_delta_pack_for_digest_at(digest, now_ms + 2, VehicleScope::Unrestricted)
+        .expect("look up the committed pack").expect("committed pack");
+    assert!(pack.path.is_file(), "cleanup must keep the file the catalogue retained");
 }
 
 #[tokio::test]

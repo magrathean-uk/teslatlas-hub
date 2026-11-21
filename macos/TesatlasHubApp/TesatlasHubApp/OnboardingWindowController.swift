@@ -271,6 +271,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var checks: [HubOnboardingCheck] = []
     private var verificationFinished = false
     private var handoverAcknowledged = false
+    /// DEC-246: the owner's address-lookup answer, off until they tick it. Read once
+    /// from the configuration so a second visit shows the answer already written.
+    private let addressLookupChoice = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private var addressLookupChoiceLoaded = false
     private var authWindow: TeslaAuthWindowController?
     private var logsWindow: LogsWindowController?
     private weak var logsReturnResponder: NSView?
@@ -351,7 +355,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         checkboxWithTitle: HubL10n.text("hub.OnboardingWindowController.200.1857", fallback: "Use a local PostgreSQL snapshot (history only)"), target: nil, action: nil
     )
     private let migrationVersionAcknowledgement = NSButton(
-        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."),
+        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import."),
         target: nil,
         action: nil
     )
@@ -706,7 +710,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationUseLocalHistory.identifier = NSUserInterfaceItemIdentifier("onboarding.local-history")
         migrationVersionAcknowledgement.title = ""
         migrationVersionAcknowledgement.setAccessibilityLabel(
-            HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+            HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
         )
         migrationVersionAcknowledgement.controlSize = .regular
         migrationVersionAcknowledgement.target = self
@@ -1282,7 +1286,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                             (HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), migrationCarID),
                             (HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow)]), note,
             wrappingCheckbox(migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import."))])
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import."))])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -1305,7 +1309,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         views.append(wrappingCheckbox(
             migrationVersionAcknowledgement,
-            title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+            title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
         ))
         migrationKeyViews = [migrationVersionAcknowledgement]
 
@@ -1468,7 +1472,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             migrationSuccessCard(host: migrationServer.stringValue),
             wrappingCheckbox(
                 migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.4.0 or later and will not be updated during the import.")
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.5.0 or later and will not be updated during the import.")
             )
         ])
         stack.orientation = .vertical
@@ -1727,6 +1731,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.alignment = .leading
         stack.spacing = 14
         if state.path == .migration {
+            if let summary = controller.lastImportSummary {
+                let label = NSTextField(wrappingLabelWithString: summary.text())
+                label.identifier = NSUserInterfaceItemIdentifier("importSummary")
+                label.font = HubTypography.body
+                label.maximumNumberOfLines = 0
+                stack.addArrangedSubview(label)
+                label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            }
             let tookOver = migrationUseLocalHistory.state != .on
                 && (controller.sourceTakeoverStatus.isTakenOver || controller.sourceTakeoverStatus == .unknown)
             if tookOver {
@@ -1767,8 +1779,56 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             stack.addArrangedSubview(acknowledgementRow)
             acknowledgementRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+        let lookup = addressLookupOffer()
+        stack.addArrangedSubview(lookup)
+        lookup.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return withError(stack)
     }
+
+    /// The disclosure the address-lookup offer shows: the provider by name, what it is
+    /// sent, and that nothing leaves the Mac while the box stays unticked.
+    static var addressLookupDisclosure: String {
+        HubL10n.format("hub.onboarding.addressLookup.disclosure",
+                       fallback: "Hub can show street addresses for your drives and charges. To find one, it sends the position (latitude and longitude) to %1$@, run by the OpenStreetMap Foundation. While this is off, no position leaves this Mac for address lookup. You can change this later in Settings.",
+                       arguments: [HubController.addressLookupProviderName])
+    }
+
+    static var addressLookupChoiceTitle: String {
+        HubL10n.format("hub.onboarding.addressLookup.choice",
+                       fallback: "Look up addresses with %1$@",
+                       arguments: [HubController.addressLookupProviderName])
+    }
+
+    /// DEC-246: the one onboarding step that offers address lookup. Off by default.
+    private func addressLookupOffer() -> NSView {
+        if !addressLookupChoiceLoaded {
+            addressLookupChoiceLoaded = true
+            addressLookupChoice.state = !controller.previewMode && controller.addressLookupEnabled ? .on : .off
+        }
+        let title = NSTextField(labelWithString: HubL10n.text("hub.onboarding.addressLookup.title",
+                                                              fallback: "Address lookup (optional)"))
+        title.font = HubTypography.emphasis
+        let disclosure = NSTextField(wrappingLabelWithString: Self.addressLookupDisclosure)
+        disclosure.identifier = NSUserInterfaceItemIdentifier("onboarding.finish.addressLookupDisclosure")
+        disclosure.font = HubTypography.body
+        disclosure.textColor = HubPalette.mutedForeground
+        disclosure.maximumNumberOfLines = 0
+        disclosure.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addressLookupChoice.identifier = NSUserInterfaceItemIdentifier("onboarding.finish.addressLookup")
+        addressLookupChoice.controlSize = .regular
+        addressLookupChoice.setAccessibilityLabel(Self.addressLookupChoiceTitle)
+        addressLookupChoice.isEnabled = !interactionBlocked
+        let choice = wrappingCheckbox(addressLookupChoice, title: Self.addressLookupChoiceTitle)
+        let stack = NSStackView(views: [title, disclosure, choice])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        disclosure.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        choice.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        return stack
+    }
+
+    var addressLookupChoiceForTests: NSButton { addressLookupChoice }
 
     private var takeoverFinishCopy: [(String, String)] {
         var copy = [("onboarding.takeover.holds", HubL10n.text("hub.sourceTakeover.keepStopped",
@@ -2472,8 +2532,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             setBusy(false)
             compatibility = HubSourceCheckResult(
                 compatible: false,
-                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "A schema check cannot establish the source application release. Confirm that the running server is at release 4.4.0 or later, then continue."),
-                reasonCode: "v4_4_version_unconfirmed",
+                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "A schema check cannot establish the source application release. Confirm that the running server is at release 4.5.0 or later, then continue."),
+                reasonCode: "v4_5_version_unconfirmed",
                 requiredVersion: HubSourceCheckResult.requiredSourceRelease
             )
             render()
@@ -2776,12 +2836,40 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
+    /// Writes the owner's address-lookup answer (DEC-246) and says whether it changed.
+    /// `nil` means it could not be written and the error is shown.
+    private func writeAddressLookupChoice() -> Bool? {
+        guard !controller.previewMode else { return false }
+        do {
+            return try controller.setAddressLookup(addressLookupChoice.state == .on)
+        } catch {
+            showInlineError(error.localizedDescription)
+            return nil
+        }
+    }
+
     private func finishOnboarding() {
         guard state.path == .migration else {
-            onComplete(.configured)
+            guard let changed = writeAddressLookupChoice() else { return }
+            // A running Hub reads the answer only when it starts again.
+            guard changed, controller.snapshot.health == .running else {
+                onComplete(.configured)
+                return
+            }
+            setBusy(true, operation: .starting)
+            controller.restartHub { [weak self] result in
+                guard let self else { return }
+                self.setBusy(false)
+                switch result {
+                case .success: self.onComplete(.configured)
+                case let .failure(error): self.showInlineError(error.localizedDescription)
+                }
+            }
             return
         }
         guard handoverAcknowledged else { return }
+        // The handover starts the Hub, which then reads the answer.
+        guard writeAddressLookupChoice() != nil else { return }
         setBusy(true, operation: .starting)
         controller.acknowledgeMigrationHandoverAndStart { [weak self] result in
             guard let self else { return }

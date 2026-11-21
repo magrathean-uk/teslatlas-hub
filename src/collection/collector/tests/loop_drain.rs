@@ -1686,7 +1686,9 @@ async fn two_stops_preserve_the_third_stream(seam: Arc<SupervisedCollectorTestSe
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
+            held_frame: None,
         });
         // Every run keeps delivering a frame every 50 ms for as long as its queue
         // exists. Only a frame the queue accepted is counted (with its source time);
@@ -1934,7 +1936,9 @@ fn hung_stream_runtime(
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
+            quiet: None,
             task: Some(task),
+            held_frame: None,
         },
         events,
     )
@@ -2110,6 +2114,54 @@ async fn b2_a_stream_drain_error_joins_selected_children_before_returning() {
         .find(|stream| stream.vehicle_id == core_id(3))
         .expect("the continuing runtime");
     assert!(third.task.as_ref().is_some_and(|task| !task.is_finished()));
+}
+
+#[tokio::test]
+async fn a_backlogged_stream_gives_ready_owner_work_a_turn_after_one_drain() {
+    let directory = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(directory.path()).expect("store");
+    let mut core = Core::owner();
+    first_read_parked(&mut core);
+    let ended = Arc::new(AtomicBool::new(false));
+    let (stream, events) = hung_stream_runtime(1, &ended);
+    let mut streams = [stream];
+    let sample_ms = current_epoch_millis().expect("clock") - 60_000;
+    events.try_send(drain_stream_frame(sample_ms, 0)).expect("buffered telemetry");
+    for _ in 1..K_STREAM_EVENT_CAPACITY {
+        events.try_send(StreamEvent::Healthy).expect("queue has room");
+    }
+    let mut budget = DrainBudget::new(Instant::now() - K_STREAM_DRAIN_CAP);
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    // Ensure the first batch takes longer than a timer tick, as a slow store can.
+    let committed = Arc::new(AtomicBool::new(false));
+    let observed = Arc::clone(&committed);
+    seam.set_stream_commit_hook(Arc::new(move || {
+        std::thread::sleep(Duration::from_millis(5));
+        observed.store(true, Ordering::SeqCst);
+    }));
+    let mut pending = StreamDrainResult::default();
+    let mut cache = HashMap::new();
+    let mut pump = StreamPump {
+        store: &store,
+        streams: &mut streams,
+        projection_car_ids: &mut cache,
+        pending: &mut pending,
+        budget: &mut budget,
+    };
+
+    SUPERVISED_COLLECTOR_TEST_SEAM
+        .scope(seam, pump.while_waiting(&mut core.scheduler, std::future::ready(())))
+        .await
+        .expect("owner work completes");
+
+    assert!(!budget.marks.is_empty(), "the overdue drain ran");
+    assert!(committed.load(Ordering::SeqCst), "the drain handled telemetry");
+    assert_eq!(
+        streams[0].events.len(),
+        K_STREAM_EVENT_CAPACITY - MAX_STREAM_EVENTS_PER_DRAIN,
+        "perform the overdue drain, then poll the ready work before taking another batch"
+    );
 }
 
 #[tokio::test(start_paused = true)]

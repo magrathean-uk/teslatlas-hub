@@ -126,6 +126,17 @@ final class BackupSettingsTests: XCTestCase {
 
     // MARK: Status
 
+    func testTheSettingsNameTheThreeSpaceNeedsAndTheScratchBudget() {
+        let view = makeView(FakeMaintenanceBackend())
+        let text = view.spaceLabel.stringValue
+        XCTAssertEqual(view.spaceLabel.identifier?.rawValue, "hub.backup.space")
+        for part in ["the catalogue", "scratch", "2.6 times the catalogue plus 277 MiB",
+                     "backup.scratch_directory", "every pack", "backup.scratch_budget_bytes",
+                     "stops before it copies anything"] {
+            XCTAssertTrue(text.contains(part), part)
+        }
+    }
+
     func testStatusReportShowsTheLastGoodGenerationAndTheNextRun() throws {
         let report = statusJSON(["enabled": true, "configured": true, "running": false, "paused": false,
                                  "lastSuccessMs": 1_700_000_000_000, "lastGeneration": "generation-7",

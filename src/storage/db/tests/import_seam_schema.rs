@@ -94,12 +94,18 @@ fn seam_catalogue_legacy(connection: &Connection, entity: &str, id: i64) {
 
 /// Record a row in the current import catalogue.
 fn seam_catalogue_current(connection: &Connection, entity: &str, ordinal: i64, id: i64) {
+    // The head catalogue keeps the v81 shape (M08-T30): the ordinal alone
+    // names the entity.
+    assert_eq!(
+        entity.parse::<SourceDbProjectionStateEntity>().unwrap().ordinal(),
+        u8::try_from(ordinal).unwrap()
+    );
     connection
         .execute(
-            "INSERT INTO import_projection_state_rows(vehicle_id, entity, entity_ordinal,
+            "INSERT INTO import_projection_state_rows(vehicle_id, entity_ordinal,
                  entity_id, car_id, projection_sha256)
-             VALUES (?1, ?2, ?3, ?4, 1, zeroblob(32))",
-            params![VEHICLE, entity, ordinal, id],
+             VALUES (?1, ?2, ?3, 1, zeroblob(32))",
+            params![VEHICLE, ordinal, id],
         )
         .unwrap();
 }
@@ -176,7 +182,7 @@ fn import_seam_hub_id_range_bounds() {
 #[test]
 fn import_seam_schema_v80_creates_both_tables() {
     let test = "import_seam_schema_v80_creates_both_tables";
-    assert_eq!(SCHEMA_VERSION, 80);
+    assert_eq!(SEAM_SCHEMA_VERSION, 80);
     let expected_links = vec![
         ("vehicle_id".to_owned(), "TEXT".to_owned(), true, 1),
         ("entity".to_owned(), "TEXT".to_owned(), true, 2),

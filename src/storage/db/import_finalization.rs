@@ -679,13 +679,17 @@ impl HubStore {
             return Err(StoreError::LineageCatalogConflict);
         }
         let query = if use_digest_state {
+            // The state rows name their entity by ordinal alone (schema
+            // v81); the inventory is a set, so its key order serves.
             concat!(
-                "SELECT entity, entity_id
+                "SELECT ",
+                crate::db::import_table_names::import_state_entity_name_sql!("entity_ordinal"),
+                ", entity_id
                FROM ",
                 crate::db::import_table_names::import_projection_state_rows_table!(),
                 "
               WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
-              ORDER BY entity, entity_id"
+              ORDER BY entity_ordinal, entity_id"
             )
         } else {
             concat!(
@@ -714,6 +718,11 @@ impl HubStore {
                 id,
                 car_id: selected_car_id,
             });
+        }
+        if use_digest_state {
+            // The digest state is read in its ordinal key order; the
+            // inventory keeps the order by entity name it had before v81.
+            inventory_rows.sort_by_key(|row| (source_db_inventory_entity_name(row.entity), row.id));
         }
         validate_source_db_import_inventory_rows(selected_car_id, &inventory_rows)?;
         Ok(SourceDbImportProjectionInventory {

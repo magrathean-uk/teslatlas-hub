@@ -49,6 +49,41 @@ impl PriorProjectionStateLookup for MemoryPrior {
 }
 
 #[test]
+fn tombstones_skip_removed_rows_that_the_seam_never_published() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut state = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+    state.seal().expect("empty current capture");
+
+    let mut prior = MemoryPrior::default();
+    let entity = SourceDbProjectionStateEntity::Position;
+    for (id, digest) in [
+        (1, seam_left_out_digest(entity, &Sha256Digest::from_bytes([7; 32]))),
+        (2, Sha256Digest::from_bytes([8; 32])),
+    ] {
+        prior.rows.insert(
+            (entity.ordinal(), id),
+            SourceDbProjectionStateDigestRow { entity, id, car_id: 1, digest },
+        );
+    }
+
+    let (tombstones, next) = state.tombstone_page(&mut prior, None, 10).expect("tombstones");
+    assert!(next.is_none());
+    assert_eq!(
+        tombstones.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![2],
+    );
+}
+
+#[test]
 fn write_batch_capacity_uses_a_small_fixed_margin_not_the_state_cap() {
     assert_eq!(
         write_batch_required_free_bytes(512 * 1024 * 1024).expect("bounded reserve"),
@@ -1072,6 +1107,39 @@ fn changed_page_payload_cap_preserves_order_and_cursor_without_loading_an_over_c
 }
 
 #[test]
+fn changed_page_defers_the_byte_check_for_its_lookahead_row() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut state = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+    let entity = SourceDbProjectionStateEntity::Position;
+    for (id, size) in [(1, 1), (2, 100)] {
+        state
+            .record_changed(entity, id, 1, &serde_json::json!({"payload": "x".repeat(size)}))
+            .expect("row fits the configured cap");
+    }
+    state.seal().expect("seal");
+
+    let first = state
+        .changed_page_with_payload_limit(None, 1, 64)
+        .expect("the first row fits the requested page cap");
+    assert_eq!(first.rows.len(), 1);
+    assert_eq!(first.rows[0].state.id, 1);
+    assert_eq!(first.next_after, Some(SourceDbProjectionStateCursor { entity, id: 1 }));
+    assert!(matches!(
+        state.changed_page_with_payload_limit(first.next_after, 1, 64),
+        Err(SourceDbProjectionStateError::ChangedPayloadRowLimitExceeded { .. })
+    ));
+}
+
+#[test]
 fn changed_page_rejects_an_individual_row_before_decoding_it() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let configured_row_cap = 16 * 1024_u64;
@@ -1229,4 +1297,71 @@ fn failed_batch_flush_rolls_back_pending_rows_and_poisons_the_capture() {
         ),
         Err(SourceDbProjectionStateError::WriteBatchFailed)
     ));
+}
+
+/// Source release 4.5.0 backfills elevation on ended drives and rewrites their
+/// ascent and descent, including drives the Hub imported long before. The
+/// next capture must classify such a closed drive as changed and keep the new
+/// values in its changed payload, so the update replaces the stale row.
+#[test]
+fn backfilled_ascent_and_descent_on_an_imported_closed_drive_is_a_change() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut seed = SourceDbProjectionState::create(
+        temporary.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("seed state");
+    let imported = drive(7, Some(10.0));
+    let imported_digest = seed.record_drive(&imported).expect("imported digest");
+    let mut prior = MemoryPrior::default();
+    prior.rows.insert(
+        (SourceDbProjectionStateEntity::Drive.ordinal(), 7),
+        SourceDbProjectionStateDigestRow {
+            entity: SourceDbProjectionStateEntity::Drive,
+            id: 7,
+            car_id: 1,
+            digest: imported_digest,
+        },
+    );
+
+    let mut backfilled = imported.clone();
+    backfilled.ascent = Some(120);
+    backfilled.descent = Some(95);
+    let next_dir = tempfile::tempdir().expect("next directory");
+    let mut next = SourceDbProjectionState::create(
+        next_dir.path(),
+        SourceDbProjectionStateLimits {
+            max_rows: 10,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("next state");
+    assert_eq!(
+        next.record_if_changed(
+            &mut prior,
+            SourceDbProjectionStateEntity::Drive,
+            backfilled.id,
+            backfilled.car_id,
+            &backfilled,
+        )
+        .expect("backfilled drive"),
+        SourceDbProjectionStateChange::NewOrChanged
+    );
+    next.seal().expect("seal");
+    assert_eq!(next.stats().changed_row_count, 1);
+    let changed = next.changed_page(None, 10).expect("changed page");
+    assert_eq!(changed.rows.len(), 1);
+    assert_eq!(changed.rows[0].state.id, 7);
+    assert_ne!(changed.rows[0].state.digest, imported_digest);
+    let payload: serde_json::Value =
+        serde_json::from_slice(&changed.rows[0].canonical_payload).expect("changed payload");
+    assert_eq!(payload["ascent"], 120);
+    assert_eq!(payload["descent"], 95);
 }

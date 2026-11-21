@@ -158,6 +158,7 @@ pub(super) struct HeldStaging {
     sha256: Option<OwnedFd>,
     packs: Option<OwnedFd>,
     noop: Option<OwnedFd>,
+    kept: Option<OwnedFd>,
     root: PathBuf,
     done: bool,
 }
@@ -200,6 +201,7 @@ impl HeldStaging {
                 sha256: None,
                 packs: None,
                 noop: None,
+                kept: None,
                 root,
                 done: false,
             };
@@ -256,12 +258,18 @@ impl HeldStaging {
             let packs = self.packs.as_ref().ok_or_else(|| invalid("staging is incomplete"))?;
             self.noop = Some(self.make_directory(packs, "noop")?);
         }
+        if relative.starts_with("packs/physical-kept/") && self.kept.is_none() {
+            let packs = self.packs.as_ref().ok_or_else(|| invalid("staging is incomplete"))?;
+            self.kept = Some(self.make_directory(packs, "physical-kept")?);
+        }
         let (directory, name) = if relative == "hub.sqlite" {
             (self.data.as_ref().map(|(fd, _)| fd), relative)
         } else if let Some(name) = relative.strip_prefix("packs/sha256/") {
             (self.sha256.as_ref(), name)
         } else if let Some(name) = relative.strip_prefix("packs/noop/") {
             (self.noop.as_ref(), name)
+        } else if let Some(name) = relative.strip_prefix("packs/physical-kept/") {
+            (self.kept.as_ref(), name)
         } else {
             return Err(invalid(format!("unsafe data-backup member path: {}", member.path)));
         };
@@ -317,6 +325,7 @@ impl HeldStaging {
         self.sha256 = None;
         self.packs = None;
         self.noop = None;
+        self.kept = None;
         remove_tree_at(&self.container, 0)?;
         if named_identity(&self.parent.fd, &self.name) == Some(self.container_identity) {
             unlinkat(&self.parent.fd, self.name.as_str(), AtFlags::REMOVEDIR)?;

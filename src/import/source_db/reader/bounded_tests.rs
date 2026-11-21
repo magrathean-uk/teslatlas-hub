@@ -137,6 +137,27 @@ fn assert_budget_error(
     }
 }
 
+/// A source that stops sending rows part way through a read ends it with the
+/// typed deadline error once the budget's reply deadline passes.
+#[tokio::test(start_paused = true)]
+async fn a_row_wait_ends_at_the_reply_deadline_of_the_budget() {
+    let polled = Arc::new(AtomicUsize::new(0));
+    let rows = counted([Ok::<_, SourceDbReaderError>(MockRow(10))], &polled)
+        .chain(stream::pending());
+    let budget = SourceReadBudget::new(3, 1000).with_reply_deadline(Duration::from_secs(60));
+    let read = timeout(
+        Duration::from_secs(61),
+        collect_bounded_rows(rows, "positions", budget, RecordingCancel::new(&polled)),
+    )
+    .await
+    .expect("the row wait is bounded by the reply deadline");
+    assert!(
+        matches!(read, Err(SourceDbReaderError::SourceReplyTimedOut)),
+        "{read:?}"
+    );
+    assert_eq!(polled.load(AtomicOrdering::SeqCst), 1);
+}
+
 #[tokio::test]
 async fn rows_over_the_count_stop_at_the_first_excess_row_without_retaining_it() {
     let budget = SourceReadBudget::new(3, 1000);
@@ -599,6 +620,7 @@ fn page_budget_derives_rows_and_row_cap_from_the_limits() {
     assert_eq!(
         defaults.page_budget(),
         SourceReadBudget::new(10_000, 64 * 1024 * 1024)
+            .with_reply_deadline(source_reply_deadline(defaults))
     );
     assert_eq!(defaults.page_budget().row_bytes, MAX_SOURCE_ROW_BYTES);
 
@@ -607,7 +629,10 @@ fn page_budget_derives_rows_and_row_cap_from_the_limits() {
         maximum_stage_bytes: 256 * 1024,
         ..defaults
     };
-    assert_eq!(small.page_budget(), SourceReadBudget::new(1, 1024 * 1024));
+    assert_eq!(
+        small.page_budget(),
+        SourceReadBudget::new(1, 1024 * 1024).with_reply_deadline(source_reply_deadline(small))
+    );
     // The per-row cap is the page budget when that is below 16 MiB.
     assert_eq!(small.page_budget().row_bytes, 1024 * 1024);
 

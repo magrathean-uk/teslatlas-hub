@@ -88,6 +88,10 @@ const K_RETRY_AFTER_MAX: Duration = Duration::from_secs(3_600);
 /// list requests a day.
 const K_BILLING_PROBE: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// Lists in a row that failed before the account row says the inventory is
+/// unavailable (P04-F01); one list that is accepted clears it.
+const K_INVENTORY_FAILURES: u32 = 3;
+
 /// The longest a persisted pause probe deadline loads as (C3 R2, R51,
 /// `K_PAUSE_PROBE`): an hour is at most 24 requests a day, and only while the
 /// car is listed online.
@@ -616,6 +620,11 @@ struct StreamView {
     /// C4 R56 e): stream receipts cannot be written. It is in memory only, and
     /// clears when a later run emits `Healthy`.
     audit_failed: bool,
+    /// The stream ended for a protocol fault or a confirmed refusal, not a plain
+    /// network loss: it cannot watch a Suspended car, so the car is read on the
+    /// Online cadence as if no stream existed (FIX-SUSPEND-FALLBACK). Clears when
+    /// the stream is healthy again or is no longer wanted.
+    unusable: bool,
 }
 
 /// The per-car settings the scheduler uses, clamped (C3 R61).
@@ -1061,6 +1070,13 @@ struct AccountRecord {
     state_since_ms: i64,
     /// While set and in the future no request is sent (R43, R45, R47).
     wait: Option<(Instant, WaitReason)>,
+    /// The provider's own deadline (a 429's Retry-After), kept when a longer
+    /// authentication or store wait replaces `wait`, so it holds again once that
+    /// wait ends and is stored independently (P04-F06).
+    provider_until: Option<Instant>,
+    /// The end of the transport back-off, kept the same way and stored so a restart
+    /// keeps the step and the deadline (P04-F07).
+    transport_until: Option<Instant>,
     consecutive_429: u32,
     consecutive_unreachable: u32,
     /// Authentication outcomes in a row that were not a stop (C3 R47); the count
@@ -1100,6 +1116,9 @@ impl AccountRecord {
             since_ms: self.state_since_ms,
             rate_limited_until: None,
             next_probe: self.next_billing_probe,
+            unreachable_until: None,
+            consecutive_unreachable: 0,
+            inventory_unavailable: false,
         }
     }
 
@@ -1109,6 +1128,8 @@ impl AccountRecord {
             state_reason: "collecting",
             state_since_ms: wall_ms,
             wait: None,
+            provider_until: None,
+            transport_until: None,
             consecutive_429: 0,
             consecutive_unreachable: 0,
             auth_failures: 0,
@@ -1864,10 +1885,12 @@ impl VehicleScheduler {
                 vehicle
             });
             if vehicle.placeholder {
-                // The first list that names a configured car: its stored state
-                // comes back in full, and it is a listed car from now on.
+                // The settings load already restored any hold. Keep the current
+                // hold, which an owner action may have changed before this list.
                 vehicle.placeholder = false;
-                if let Some(restored) = &restored {
+                if let Some(restored) = &restored
+                    && !matches!(restored.row.hold.as_str(), "removed" | "paused" | "service")
+                {
                     Self::apply_restored(vehicle, restored, now, wall_ms);
                 }
             }
@@ -2221,6 +2244,7 @@ impl VehicleScheduler {
         vehicle.stream.last_frame = Some(now);
         vehicle.stream.task_failures = 0;
         let audit_cleared = std::mem::take(&mut vehicle.stream.audit_failed);
+        vehicle.stream.unusable = false;
         if !vehicle.stream.outage_reported {
             if audit_cleared {
                 vehicle.reason = "stream_recovered";

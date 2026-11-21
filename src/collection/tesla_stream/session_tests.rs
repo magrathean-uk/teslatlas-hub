@@ -803,6 +803,50 @@ async fn sc74_shutdown_while_admitting_waits_for_no_lock() {
     assert!(manager.try_lock().is_ok());
 }
 
+#[tokio::test(start_paused = true)]
+async fn p05_f05_a_quiet_stop_while_admitting_sends_no_subscribe_after_the_token_read() {
+    // #86 (REV-CX-FIX-COLLECT F2). The session waits for the manager lock on an open
+    // socket and gets the quiet stop. The lock is then released, the queued admission
+    // reads the token, and still nothing reaches the peer: no subscribe, no Ping, no
+    // Close, until the ordinary stop ends the session before its subscription.
+    let gate = Arc::new(Notify::new());
+    let peer_gate = Arc::clone(&gate);
+    let peer = Peer::spawn(move |conn| {
+        let gate = Arc::clone(&peer_gate);
+        async move {
+            gate.notified().await;
+            let mut ws = conn.ws().await;
+            ws.drain().await;
+        }
+    })
+    .await;
+    let creds = Creds::offline("tok-1");
+    let manager = Arc::clone(&creds.manager);
+    let (rig, _dir) = Rig::for_peer(&peer, creds).with_store();
+    let store = rig.store.clone().expect("store");
+    let mut run = rig.start();
+    peer.log.wait_for("accept", 1).await;
+    let holder = Arc::clone(&manager).lock_owned().await;
+    gate.notify_one();
+    peer.log.wait_for("upgrade:", 1).await;
+    sleep(Duration::from_secs(2)).await;
+    run.signal_quiet_stop();
+    sleep(Duration::from_secs(1)).await;
+    drop(holder);
+    peer.log.wait_for("hook:TokenRead", 1).await;
+    sleep(Duration::from_secs(60)).await;
+    let labels = peer.log.labels();
+    assert_eq!(peer.log.count("frame:"), 0, "{labels:?}");
+    assert_eq!(peer.log.count("ping"), 0, "{labels:?}");
+    assert_eq!(peer.log.count("close:"), 0, "{labels:?}");
+    assert_eq!(peer.log.count("accept"), 1, "{labels:?}");
+    run.shut_down().await.expect("shutdown");
+    assert_eq!(peer.log.count("frame:"), 0, "{:?}", peer.log.labels());
+    let sessions = session_rows(&store);
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].outcome, "cancelled_before_subscription");
+}
+
 /// A due refresh whose issuer answers after `delay`: the pair it rotates to.
 async fn rotating_creds(delay: Duration) -> (Issuer, Creds) {
     let issuer = Issuer::spawn(delay, "rot-access", "rot-refresh").await;

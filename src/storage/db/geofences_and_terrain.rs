@@ -1114,35 +1114,7 @@ impl HubStore {
         // Retention metadata stays retryable if any validation or filesystem
         // cleanup above fails; make its deletion the final fallible operation.
         let transaction = connection.transaction().map_err(StoreError::Query)?;
-        transaction
-            .execute(
-                "DELETE FROM sync_retired_lineages WHERE expires_at_ms <= ?1",
-                params![retired_cleanup_cutoff],
-            )
-            .map_err(StoreError::LineageCatalog)?;
-        transaction
-            .execute(
-                "DELETE FROM prepared_map_months AS p
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM pending_physical_v3_admissions AS h
-                     WHERE h.vehicle_id = p.vehicle_id
-                       AND h.receipt_id = p.input_receipt_id
-                       AND h.serve_state = 'public_first'
-                 ) AND NOT EXISTS (
-                     SELECT 1 FROM retained_physical_v3_admissions AS r
-                     WHERE r.vehicle_id = p.vehicle_id
-                       AND r.receipt_id = p.input_receipt_id
-                       AND r.expires_at_ms > ?1
-                 )",
-                params![retired_cleanup_cutoff],
-            )
-            .map_err(StoreError::LineageCatalog)?;
-        transaction
-            .execute(
-                "DELETE FROM retained_physical_v3_admissions WHERE expires_at_ms <= ?1",
-                params![retired_cleanup_cutoff],
-            )
-            .map_err(StoreError::LineageCatalog)?;
+        delete_expired_pack_retention_rows(&transaction, retired_cleanup_cutoff)?;
         // An ended grace window (`valid_until_ms <= now`, the bound a grace
         // retry and a grace authentication refuse at) has no use for the
         // successor sealed in it. The row and its digest stay.

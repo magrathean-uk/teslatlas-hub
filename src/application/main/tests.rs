@@ -431,14 +431,14 @@ fn source_check_failures_are_redacted_and_actionable() {
 
     assert_eq!(
         source_check_failure_details(&older).1,
-        "older_than_v4_4_compatible_schema"
+        "older_than_v4_5_compatible_schema"
     );
     assert_eq!(source_check_failure_details(&older).2, Some(1));
     assert!(source_check_failure_details(&older).3.contains("update"));
-    assert!(source_check_failure_details(&older).3.contains("4.4.0"));
+    assert!(source_check_failure_details(&older).3.contains("4.5.0"));
     assert_eq!(
         source_check_failure_details(&newer).1,
-        "newer_than_v4_4_compatible_schema"
+        "newer_than_v4_5_compatible_schema"
     );
     assert!(
         source_check_failure_details(&newer)
@@ -496,12 +496,12 @@ fn source_check_reports_an_exceeded_read_budget_plainly() {
 fn source_check_requires_honest_version_confirmation() {
     let unconfirmed = source_db_version_confirmation(false);
     assert_eq!(unconfirmed.0, "confirmation_required");
-    assert_eq!(unconfirmed.1, "v4_4_version_unconfirmed");
+    assert_eq!(unconfirmed.1, "v4_5_version_unconfirmed");
     assert!(unconfirmed.2.contains("cannot establish"));
 
     let confirmed = source_db_version_confirmation(true);
     assert_eq!(confirmed.0, "compatible");
-    assert_eq!(confirmed.1, "v4_4_compatible_schema");
+    assert_eq!(confirmed.1, "v4_5_compatible_schema");
     assert!(!confirmed.1.contains("exact"));
 }
 
@@ -2011,6 +2011,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         all_vehicles: false,
     }));
     assert!(command_requires_user_hub_admission(&Command::Repair));
+    assert!(command_requires_user_hub_admission(&Command::StorageCensus { reclaim: false }));
     assert!(command_requires_user_hub_admission(&Command::Backup {
         destination: PathBuf::from("backup"),
     }));
@@ -2979,3 +2980,7 @@ fn v2_credential_pair_fixture(owner: bool) -> (tempfile::TempDir, HubStore) {
 
 #[path = "service_cli_tests.rs"]
 mod service_cli_tests;
+
+#[cfg(target_os = "macos")]
+#[path = "serving_check_tls_tests.rs"]
+mod serving_check_tls;

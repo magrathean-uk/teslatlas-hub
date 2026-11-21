@@ -780,7 +780,7 @@ private final class Events {
 private final class TakeoverRunner: HubCommandRunning {
     struct Call { let arguments: [String]; let stdin: String? }
     static let report = #"{"status":"taken_over","origin":"source_token","firstRefresh":"next_window","sourceSessionsSeen":0,"sourceNeverMutated":true}"#
-    static let compatible = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+    static let compatible = #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
 
     private let lock = NSLock()
     private var recorded: [Call] = []
@@ -974,7 +974,7 @@ private final class Fixture {
         let passwordFile = owner.directory.appendingPathComponent("postgres-password")
         try Data("fictional-db-password-91c2".utf8).write(to: passwordFile)
         return SourceServerImportSession(source: "postgresql://reader@127.0.0.1:55439/sourcedb",
-                                         carID: "1", passwordFile: passwordFile, sourceVersion: "4.4.0",
+                                         carID: "1", passwordFile: passwordFile, sourceVersion: "4.5.0",
                                          tunnel: Process(), temporaryDirectory: owner.directory,
                                          directoryOwner: owner)
     }
@@ -1206,7 +1206,7 @@ if len(a)==4 and a[:2]==['inspect','-f'] and a[3] in c:
  if t=='{{range .Config.Env}}{{index (split . "=") 0}}{{println}}{{end}}':out('\n'.join(v['env']))
  if t=='{{.State.Running}}':out(v['running'])
  if t.startswith('{{range .Config.Env}}{{if eq '):out('\n'.join(k+'='+val for k,val in v['env'].items() if k in ['DATABASE_USER','DATABASE_PASS','DATABASE_NAME']))
- if t=='{{index .Config.Labels "org.opencontainers.image.version"}}':out('4.4.0')
+ if t=='{{index .Config.Labels "org.opencontainers.image.version"}}':out('4.5.0')
  if t=='{{range $name, $value := .NetworkSettings.Networks}}{{println $name}}{{end}}':out('fake-network')
  if t=='{{with index .NetworkSettings.Networks "fake-network"}}{{.IPAddress}}{{end}}':out('172.20.0.9')
 reject()

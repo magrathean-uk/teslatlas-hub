@@ -1284,6 +1284,13 @@ fn ensure_private_stage_path(path: &Path) -> Result<PrivateStagePath, SourceDbSt
     })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The parents synced after a private directory was newly created (tests).
+    pub(crate) static PARENT_SYNCS: std::cell::RefCell<Vec<PathBuf>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 fn ensure_private_directory(path: &Path) -> Result<PrivateDirectory, SourceDbStageError> {
     private_directory(path, true)
 }
@@ -1332,6 +1339,14 @@ fn private_directory(path: &Path, create: bool) -> Result<PrivateDirectory, Sour
                 source,
             }
         })?;
+        // The new entry must reach disk before anything that is committed
+        // elsewhere (a catalogue record) relies on the directory.
+        fsync(&parent).map_err(|source| SourceDbStageError::SyncStageDirectory {
+            path: parent_path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(test)]
+        PARENT_SYNCS.with(|syncs| syncs.borrow_mut().push(parent_path.to_path_buf()));
     }
     finish_private_directory(directory, &absolute)
 }
@@ -1812,6 +1827,10 @@ pub enum SourceDbStageError {
     InvalidPageCursor,
     #[error("page limit must be between 1 and {MAX_PAGE_SIZE}")]
     InvalidPageSize,
+    #[error("kept archive refused: {0}")]
+    KeptArchiveInvalid(&'static str),
+    #[error("kept archive decodes past its {maximum}-byte bound")]
+    KeptArchiveDecodedSizeExceeded { maximum: u64 },
 }
 
 // Editing a sealed physical stage before publication (M03-T21).
@@ -1824,6 +1843,16 @@ pub(crate) use sealed_edit::StageChildTable;
 mod sealed_copy;
 #[cfg(test)]
 pub(crate) use sealed_copy::AFTER_SEALED_COPY;
+
+// The compact kept replay base: one compressed, versioned archive of a
+// sealed physical stage (DEC-250).
+#[path = "stage/kept_archive.rs"]
+mod kept_archive;
+#[cfg(test)]
+pub(crate) use kept_archive::{KEPT_ARCHIVE_CRASH_AT, KEPT_ARCHIVE_FORMAT};
+pub(crate) use kept_archive::{
+    KeptArchiveExpected, KeptArchiveIdentity,
+};
 
 #[cfg(test)]
 #[path = "stage/tests.rs"]
@@ -1894,6 +1923,8 @@ mod n1_src_import_source_db_stage_rs_display_tests {
                 SourceDbStageError::IntegrityCheckFailed(..) => (),
                 SourceDbStageError::InvalidPageCursor => (),
                 SourceDbStageError::InvalidPageSize => (),
+                SourceDbStageError::KeptArchiveInvalid(..) => (),
+                SourceDbStageError::KeptArchiveDecodedSizeExceeded { .. } => (),
             }
             assert_name_free(&error);
         }
@@ -2011,5 +2042,9 @@ mod n1_src_import_source_db_stage_rs_display_tests {
         check_source_db_stage_error(SourceDbStageError::IntegrityCheckFailed(example()));
         check_source_db_stage_error(SourceDbStageError::InvalidPageCursor);
         check_source_db_stage_error(SourceDbStageError::InvalidPageSize);
+        check_source_db_stage_error(SourceDbStageError::KeptArchiveInvalid(example()));
+        check_source_db_stage_error(SourceDbStageError::KeptArchiveDecodedSizeExceeded {
+            maximum: example(),
+        });
     }
 }

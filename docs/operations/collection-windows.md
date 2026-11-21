@@ -211,6 +211,11 @@ every open until `window trust` is run again.
    an Open window the service refuses with `window_closed`. Collection starts
    once Hub holds its own login. Confirm the latest observation advances.
 
+   Fleet polling with your own application uses the same window: its
+   registration, sign-in and car discovery each need the window Open and are
+   refused with `window_closed` otherwise. Polling then runs inside the window
+   only and stops at its deadline. See the [Fleet guide](../guides/fleet-setup.md).
+
    The exchange uses Tesla's standard public owner client, the same values the
    app's sign-in window sends: client `ownerapi`, redirect
    `tesla://auth/callback`, scope `openid email offline_access`, and the global

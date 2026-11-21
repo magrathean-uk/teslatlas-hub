@@ -447,8 +447,7 @@ impl SourceDbProjectionState {
         let page_limit = usize::try_from(limit).expect("u32 fits usize");
         let mut selected = Vec::with_capacity(page_limit);
         let mut selected_payload_bytes = 0_u64;
-        let mut stopped_at_payload_cap = false;
-        for row in metadata {
+        for row in metadata.into_iter().take(page_limit) {
             if row.payload_bytes > maximum_payload_bytes {
                 return Err(
                     SourceDbProjectionStateError::ChangedPayloadRowLimitExceeded {
@@ -465,7 +464,6 @@ impl SourceDbProjectionState {
                     },
                 )?;
             if next_payload_bytes > maximum_payload_bytes {
-                stopped_at_payload_cap = true;
                 break;
             }
             selected_payload_bytes = next_payload_bytes;
@@ -476,17 +474,7 @@ impl SourceDbProjectionState {
         // a byte boundary also leaves the first excluded row for the next
         // cursor.  In either case return the last retained cursor so no row is
         // skipped or duplicated by the caller's next request.
-        let has_more = stopped_at_payload_cap
-            || selected.len() > page_limit
-            || metadata_count > selected.len();
-        selected.truncate(page_limit);
-        selected_payload_bytes = selected.iter().try_fold(0_u64, |total, row| {
-            total.checked_add(row.payload_bytes).ok_or(
-                SourceDbProjectionStateError::ChangedPagePayloadLimitExceeded {
-                    maximum: maximum_payload_bytes,
-                },
-            )
-        })?;
+        let has_more = metadata_count > selected.len();
         let rows = self.changed_page_payload_rows(&selected, maximum_payload_bytes)?;
         debug_assert_eq!(
             selected_payload_bytes,
@@ -680,7 +668,9 @@ impl SourceDbProjectionState {
             if !row.entity.tombstone_allowed() {
                 continue;
             }
-            if missing.contains(&(row.entity, row.id)) {
+            if missing.contains(&(row.entity, row.id))
+                && !is_seam_left_out_digest(row.entity, &row.digest)
+            {
                 tombstones.push(ProjectionTombstone {
                     entity: projection_delta_entity(row.entity),
                     id: row.id,

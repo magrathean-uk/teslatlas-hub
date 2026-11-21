@@ -1325,6 +1325,23 @@ fn witnesses_match_published_source(
     &candidate == stored
 }
 
+/// Whether a stored signed no-op already publishes the candidate's logical
+/// content under the same binding, pack, sequence and cursor. Only the
+/// exported-snapshot token may differ (see
+/// [`witnesses_match_published_source`]).
+fn noop_matches_published_source(stored: &SignedNoOpState, candidate: &SignedNoOpState) -> bool {
+    let witnesses_match = stored
+        .source_witness
+        .as_ref()
+        .zip(candidate.source_witness.as_ref())
+        .is_some_and(|(stored, candidate)| witnesses_match_published_source(stored, candidate));
+    let mut stored_outer = stored.clone();
+    stored_outer.source_witness = None;
+    let mut candidate_outer = candidate.clone();
+    candidate_outer.source_witness = None;
+    witnesses_match && stored_outer == candidate_outer
+}
+
 fn write_verified_production_pack(
     store: &HubStore,
     publication_gate: &crate::db::PublicationGate,
@@ -1732,7 +1749,7 @@ fn publish_production_updates_schema_22_admitting(
             "existing production schema-2.2 manifest is not a single full-snapshot pack",
         ));
     }
-    if let Some(current) = current_schema_22.as_ref() {
+    let stored_pair = if let Some(current) = current_schema_22.as_ref() {
         let stored_noop_bytes = store
             .schema_22_noop_for_snapshot(binding.vehicle_id, current.snapshot_id)?
             .ok_or_else(|| reject("existing production schema-2.2 no-op is missing"))?;
@@ -1756,74 +1773,47 @@ fn publish_production_updates_schema_22_admitting(
                 "production schema-2.2 successor changed the stored selected-car witness",
             ));
         }
-    }
+        Some((stored_noop, stored_noop_bytes))
+    } else {
+        None
+    };
 
-    if let Some(current) = current_schema_22
+    // "Unchanged" is decided from logical content and the full source binding,
+    // as the physical publication decides it, never by rebuilding the pack and
+    // comparing bytes: a new SQLite or compression library encodes the same
+    // rows differently and would otherwise publish a replacement pack. The
+    // stored no-op's witness was signed only after its pack was reopened and
+    // proven equal to its source, so the candidate's Hub facts are the
+    // source's own; every content, schema, identity, pack digest, sequence and
+    // cursor fact must then match the stored pair exactly.
+    if let (Some(current), Some((stored_noop, stored_noop_bytes))) =
+        (current_schema_22.as_ref(), stored_pair.as_ref())
         && let [pack] = current.chunks.as_slice()
     {
-        let current_request = ProjectionPackRequestV2_2 {
-            pack_id: pack.pack_id,
-            snapshot_id: current.snapshot_id,
-            ordinal: pack.ordinal,
-            binding: binding.clone(),
-            sequence: pack.sequence,
-            snapshot: &snapshot,
-        };
-        let (built, hub) = write_verified_production_pack(
-            store,
-            publication_gate,
-            &current_request,
-            &source,
-            &source_proof,
-            source_set,
-        )?;
-        let candidate_manifest =
-            sign_updates_schema_22_manifest(&current_request, &built, cursor_key)?;
         let candidate_noop = sign_production_updates_schema_22_noop(
             binding,
             current.snapshot_id,
             current.head_sequence,
-            &built.metadata.sha256.to_string(),
+            &pack.sha256.to_string(),
             cursor_key,
             &source_capture,
             &source_proof,
             source_capture_sha256.clone(),
             &source,
-            &hub,
+            &source,
         )?;
-        let stored_noop =
-            store.schema_22_noop_for_snapshot(binding.vehicle_id, current.snapshot_id)?;
-        if candidate_manifest == current
-            && built.metadata.sha256 == pack.sha256
-            && let Some(stored_noop_bytes) = stored_noop.as_deref()
-        {
-            let stored_noop: SignedNoOpState = serde_json::from_slice(stored_noop_bytes)
-                .map_err(|error| reject(error.to_string()))?;
-            let canonical_stored_noop =
-                serde_json::to_vec(&stored_noop).map_err(|error| reject(error.to_string()))?;
-            validate_schema_22_pair(&current, &stored_noop)?;
-            if canonical_stored_noop == stored_noop_bytes
-                && stored_noop
-                    .source_witness
-                    .as_ref()
-                    .zip(candidate_noop.source_witness.as_ref())
-                    .is_some_and(|(stored, candidate)| {
-                        witnesses_match_published_source(stored, candidate)
-                    })
-            {
-                return production_publication_report(
-                    &source_capture,
-                    source_capture_sha256,
-                    &source,
-                    &hub,
-                    &current,
-                    &stored_noop,
-                    stored_noop_bytes,
-                    true,
-                );
-            }
+        if noop_matches_published_source(stored_noop, &candidate_noop) {
+            return production_publication_report(
+                &source_capture,
+                source_capture_sha256,
+                &source,
+                &source,
+                current,
+                stored_noop,
+                stored_noop_bytes,
+                true,
+            );
         }
-        discard_unpublished_production_pack(store, publication_gate, &built);
     }
 
     let sequence =
@@ -2206,17 +2196,28 @@ pub fn schema_22_signed_artifacts(
     vehicle_id: Uuid,
     cursor_key: &CursorKey,
 ) -> Result<(Vec<u8>, Vec<u8>), UpdatesDeliveryError> {
+    // Hold the shared artefact pin from manifest selection until the selected
+    // sidecar's bytes are owned, so cleanup for a later successor cannot
+    // unlink the exact sidecar this read selected.
+    let pin = store.pin_schema_22_artifacts_for_read()?;
     let manifest = store
         .manifest_for_vehicle(vehicle_id)?
         .ok_or_else(|| reject("schema 2.2 manifest is not catalogued"))?;
     if manifest.schema != HUB_PROJECTION_SCHEMA_V3 {
         return Err(reject("catalogued manifest is not schema 2.2"));
     }
+    #[cfg(test)]
+    run_schema_22_read_after_selection_hook(&manifest)?;
     let manifest_bytes =
         serde_json::to_vec(&manifest).map_err(|error| reject(error.to_string()))?;
-    let noop_bytes = store
-        .schema_22_noop_for_snapshot(vehicle_id, manifest.snapshot_id)?
-        .ok_or_else(|| reject("schema 2.2 no-op is not catalogued"))?;
+    let noop_bytes = match pin.as_ref() {
+        Some(pin) => {
+            store.schema_22_noop_for_snapshot_pinned(pin, vehicle_id, manifest.snapshot_id)?
+        }
+        None => None,
+    }
+    .ok_or_else(|| reject("schema 2.2 no-op is not catalogued"))?;
+    drop(pin);
     let noop: SignedNoOpState =
         serde_json::from_slice(&noop_bytes).map_err(|error| reject(error.to_string()))?;
     if serde_json::to_vec(&noop).map_err(|error| reject(error.to_string()))? != noop_bytes {
@@ -2225,6 +2226,33 @@ pub fn schema_22_signed_artifacts(
     validate_schema_22_pair(&manifest, &noop)?;
     validate_schema_22_cursor_key(&manifest, cursor_key)?;
     Ok((manifest_bytes, noop_bytes))
+}
+
+#[cfg(test)]
+type Schema22ReadHook = Box<dyn FnMut(&SyncManifest) -> Result<(), UpdatesDeliveryError>>;
+
+#[cfg(test)]
+thread_local! {
+    static SCHEMA_22_READ_AFTER_SELECTION: std::cell::RefCell<Option<Schema22ReadHook>> =
+        std::cell::RefCell::new(None);
+}
+
+/// Test seam: run `hook` on this thread after a schema-2.2 read selects its
+/// manifest and before it opens the sidecar. An error stands for a cancelled
+/// read.
+#[cfg(test)]
+fn set_schema_22_read_after_selection_hook(hook: Option<Schema22ReadHook>) {
+    SCHEMA_22_READ_AFTER_SELECTION.with(|slot| *slot.borrow_mut() = hook);
+}
+
+#[cfg(test)]
+fn run_schema_22_read_after_selection_hook(
+    manifest: &SyncManifest,
+) -> Result<(), UpdatesDeliveryError> {
+    SCHEMA_22_READ_AFTER_SELECTION.with(|slot| match slot.borrow_mut().as_mut() {
+        Some(hook) => hook(manifest),
+        None => Ok(()),
+    })
 }
 
 fn validate_schema_22_cursor_key(

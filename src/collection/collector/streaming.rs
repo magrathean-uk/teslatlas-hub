@@ -136,7 +136,37 @@ struct VehicleStreamRuntime {
     sensitive_access_failure: Arc<AtomicBool>,
     events: mpsc::Receiver<StreamEvent>,
     _shutdown: Option<oneshot::Sender<()>>,
+    /// The quiet stop (#86), sent before the shutdown waits for the credential unit.
+    quiet: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<Result<(), crate::tesla_stream::StreamSupervisorError>>>,
+    /// A frame already received on `events` whose intake the closed collection window
+    /// refused (issue #85). It stays ahead of the queue until a later drain or the
+    /// orderly stop stores it, so a window close never drops a dequeued frame.
+    held_frame: Option<(Box<crate::tesla_stream::StreamUpdate>, Instant)>,
+}
+
+impl VehicleStreamRuntime {
+    /// The next event: a held frame first, then the queue.
+    fn next_event(&mut self) -> Option<StreamEvent> {
+        if let Some((update, queued_at)) = self.held_frame.take() {
+            return Some(StreamEvent::Telemetry { update, queued_at });
+        }
+        self.events.try_recv().ok()
+    }
+
+    /// Keep a dequeued frame whose intake the window refused (issue #85). Any other
+    /// failure settles the frame: a lost admission writes nothing more, and a store
+    /// fault is the run's error.
+    fn hold_refused_frame(
+        &mut self,
+        error: &CollectorError,
+        update: Box<crate::tesla_stream::StreamUpdate>,
+        queued_at: Instant,
+    ) {
+        if matches!(error, CollectorError::CollectionWindowClosed(_)) {
+            self.held_frame = Some((update, queued_at));
+        }
+    }
 }
 
 impl Drop for VehicleStreamRuntime {
@@ -215,7 +245,9 @@ fn ensure_vehicle_stream(
                 sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                 events: receiver,
                 _shutdown: Some(shutdown),
+                quiet: None,
                 task: Some(task),
+                held_frame: None,
             });
             return true;
         }
@@ -265,8 +297,9 @@ fn ensure_vehicle_stream(
     }
     let sensitive_access_failure = Arc::new(AtomicBool::new(false));
     let worker_sensitive_access_failure = Arc::clone(&sensitive_access_failure);
+    let (quiet, quiet_stop) = oneshot::channel();
     let task = tokio::spawn(async move {
-        let run = supervisor.run(stop);
+        let run = supervisor.run_with_quiet_stop(stop, Some(quiet_stop));
         tokio::pin!(run);
         let result = if let Some(refresh) = refresh_failure {
             tokio::select! {
@@ -294,20 +327,37 @@ fn ensure_vehicle_stream(
         sensitive_access_failure,
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: Some(quiet),
         task: Some(task),
+        held_frame: None,
     });
     true
 }
 
+/// Sends every stream run the quiet stop (#86): a subscribed session stops reading
+/// and sending at once, and no new attempt starts. Nothing goes on the wire, so it
+/// may come before the credential unit's outcome is known; the ordinary stop
+/// follows once it is.
+fn quiet_all_streams(streams: &mut [VehicleStreamRuntime]) {
+    for stream in streams.iter_mut() {
+        if stream._shutdown.is_some() {
+            #[cfg(test)]
+            supervised_test_log(LoopEvent::QuietStopSent {
+                vehicle: stream.vehicle_id.get(),
+            });
+            if let Some(quiet) = stream.quiet.take() {
+                let _ = quiet.send(());
+            }
+        }
+    }
+}
+
 /// Stop one car's stream (shutdown signal, at most 5 s for the run to end, then an
-/// abort) and remove its runtime. It returns only once the task has ended, so no
-/// second run for the car starts before its previous run has. The events still
-/// queued when the task ended are returned, never dropped: the caller stores the
-/// frames among them (C3 R36, lossless storage).
-async fn disconnect_vehicle_stream(
-    streams: &mut Vec<VehicleStreamRuntime>,
-    vehicle_id: VehicleId,
-) -> Vec<StreamEvent> {
+/// abort). It returns only once the task has ended, so no second run for the car
+/// starts before its previous run has. The events still queued when the task ended
+/// stay in its runtime, never dropped: the caller stores the frames among them and
+/// removes the runtime (C3 R36, lossless storage).
+async fn disconnect_vehicle_stream(streams: &mut [VehicleStreamRuntime], vehicle_id: VehicleId) {
     for stream in streams
         .iter_mut()
         .filter(|stream| stream.vehicle_id == vehicle_id)
@@ -322,22 +372,20 @@ async fn disconnect_vehicle_stream(
     }
     let deadline = Instant::now() + STREAM_SHUTDOWN_TIMEOUT;
     join_or_abort_selected_at(streams, &[vehicle_id], deadline).await;
-    // The task has ended, so its bounded queue is stable: take what it holds.
-    let mut queued = Vec::new();
-    for stream in streams
-        .iter_mut()
-        .filter(|stream| stream.vehicle_id == vehicle_id)
-    {
-        while let Ok(event) = stream.events.try_recv() {
-            queued.push(event);
-        }
-    }
-    streams.retain(|stream| stream.vehicle_id != vehicle_id);
-    queued
+}
+
+/// Remove the runtimes of the stopped `selected` cars, except one that holds a frame
+/// the closed window refused (issue #85): it stays, with the rest of its queue, for
+/// the shutdown stop to store.
+fn remove_stopped_streams(streams: &mut Vec<VehicleStreamRuntime>, selected: &[VehicleId]) {
+    streams.retain(|stream| {
+        !selected.contains(&stream.vehicle_id) || stream.held_frame.is_some()
+    });
 }
 
 /// Store the frames among events a stopped stream left queued (C3 R36: frames
-/// already queued when a stream is stopped are stored too). The control events
+/// already queued when a stream is stopped are stored too). A frame the closed window
+/// refuses is held, and the frames behind it stay queued (issue #85). The control events
 /// among them (healthy, outage, offline, rejection) describe a run that is over
 /// and change nothing.
 ///
@@ -349,25 +397,27 @@ async fn disconnect_vehicle_stream(
 fn store_queued_stream_frames(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
-    vehicle_id: VehicleId,
-    queued: Vec<StreamEvent>,
+    stream: &mut VehicleStreamRuntime,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
     write_fence: Option<&RunWriteGuard>,
 ) -> Result<(), CollectorError> {
-    for event in queued {
+    while let Some(event) = stream.next_event() {
         if let StreamEvent::Telemetry { update, queued_at } = event {
             if frame_writes_fenced(write_fence) {
                 return Err(CollectorError::SensitiveAccessUnavailable);
             }
-            process_stream_telemetry_inner(
+            if let Err(error) = process_stream_telemetry_inner(
                 store,
                 scheduler,
-                vehicle_id,
+                stream.vehicle_id,
                 &update,
                 queued_at,
                 projection_car_ids,
                 false,
-            )?;
+            ) {
+                stream.hold_refused_frame(&error, update, queued_at);
+                return Err(error);
+            }
         }
     }
     Ok(())
@@ -381,8 +431,19 @@ async fn stop_vehicle_stream(
     vehicle_id: VehicleId,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
 ) -> Result<(), CollectorError> {
-    let queued = disconnect_vehicle_stream(streams, vehicle_id).await;
-    store_queued_stream_frames(store, scheduler, vehicle_id, queued, projection_car_ids, None)
+    disconnect_vehicle_stream(streams, vehicle_id).await;
+    let mut result = Ok(());
+    for stream in streams
+        .iter_mut()
+        .filter(|stream| stream.vehicle_id == vehicle_id)
+    {
+        let stored = store_queued_stream_frames(store, scheduler, stream, projection_car_ids, None);
+        if result.is_ok() {
+            result = stored;
+        }
+    }
+    remove_stopped_streams(streams, &[vehicle_id]);
+    result
 }
 
 /// Poll the tasks of the `selected` cars' runs where they are, and be ready once none
@@ -520,9 +581,9 @@ async fn stop_vehicle_streams(
             tokio::pin!(joined);
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(drain_at) => Step::Drain,
-                () = &mut joined => Step::Joined,
                 () = tokio::time::sleep_until(deadline), if !overdue_handled => Step::Overdue,
+                () = &mut joined => Step::Joined,
+                () = tokio::time::sleep_until(drain_at) => Step::Drain,
             }
         };
         match step {
@@ -577,18 +638,14 @@ async fn stop_vehicle_streams(
         return Err(CollectorError::SensitiveAccessUnavailable);
     }
     let mut result = Ok(());
-    for id in &selected {
-        let mut queued = Vec::new();
-        for stream in streams.iter_mut().filter(|stream| stream.vehicle_id == *id) {
-            while let Ok(event) = stream.events.try_recv() {
-                queued.push(event);
-            }
-        }
+    for stream in streams
+        .iter_mut()
+        .filter(|stream| selected.contains(&stream.vehicle_id))
+    {
         let stored = store_queued_stream_frames(
             store,
             scheduler,
-            *id,
-            queued,
+            stream,
             projection_car_ids,
             budget.write_fence.as_ref(),
         );
@@ -596,7 +653,7 @@ async fn stop_vehicle_streams(
             result = stored;
         }
     }
-    streams.retain(|stream| !selected.contains(&stream.vehicle_id));
+    remove_stopped_streams(streams, &selected);
     result
 }
 
@@ -623,8 +680,9 @@ async fn stop_all_streams_and_store(
         budget,
     )
     .await;
-    // A runtime that held no task is gone with the rest.
-    streams.clear();
+    // A runtime that held no task is gone with the rest; one holding a frame the
+    // closed window refused stays for the shutdown stop (issue #85).
+    streams.retain(|stream| stream.held_frame.is_some());
     result
 }
 
@@ -740,7 +798,7 @@ struct StreamPump<'a> {
 /// stream stop or the ordinary sleep. Every path records the instant just before it
 /// drains, and the next drain is due at that instant plus the cap, so one wait
 /// starting late in the interval cannot push the next drain a whole cap further out.
-/// An expired deadline is serviced at once, before any ready future is handled.
+/// An expired deadline is serviced at once when a wait begins.
 ///
 /// It reads the async runtime's monotonic timer, which paused test time moves, and
 /// not the scheduler's clock: a narrow exception, because only the runtime's timer
@@ -885,13 +943,11 @@ impl StreamPump<'_> {
         Ok(())
     }
 
-    /// Waits for `work` and drains the queues at the shared deadline meanwhile, so
-    /// the interval between two drains is at most `K_STREAM_DRAIN_CAP` however long
-    /// the work lasts and however early in the interval it began. An expired
-    /// deadline is serviced before `work`, even when `work` is ready. `work` must not
-    /// use the scheduler. A store fault of a drain ends the wait with that error and
-    /// drops `work`; the credential unit finishes what it started in its own tasks
-    /// (C5 R15a).
+    /// Waits for `work` while draining the queues at their shared deadline.
+    /// An expired deadline takes priority when the wait begins. If a drain leaves a
+    /// backlog, poll `work` before the next batch.
+    /// `work` must not use the scheduler. A store fault ends the wait and drops
+    /// `work`. The credential unit finishes its own tasks (C5 R15a).
     async fn while_waiting<T>(
         &mut self,
         scheduler: &mut VehicleScheduler,
@@ -905,15 +961,18 @@ impl StreamPump<'_> {
         // reaches its work before its drain has not serviced the deadline first.
         #[cfg(test)]
         let mut work = PendingLogged::new(work);
+        let mut drained_backlog = false;
         loop {
             let drain_at = self.deadline();
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(drain_at) => {}
+                () = tokio::time::sleep_until(drain_at), if !drained_backlog => {}
                 output = &mut work => return Ok(output),
+                () = tokio::time::sleep_until(drain_at), if drained_backlog => {}
             }
             self.drain(scheduler).await?;
-            if self.backlog() {
+            drained_backlog = self.backlog();
+            if drained_backlog {
                 tokio::task::yield_now().await;
             }
         }
@@ -1110,7 +1169,7 @@ fn schedule_stream_state_check(scheduler: &mut VehicleScheduler, id: VehicleId, 
 fn process_stream_event(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
-    stream: &VehicleStreamRuntime,
+    stream: &mut VehicleStreamRuntime,
     event: StreamEvent,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
     authentication_rejected: &mut bool,
@@ -1130,14 +1189,17 @@ fn process_stream_event(
             *authenticated = true;
             let recovery = scheduler.stream_healthy(vehicle_id, now);
             report_stream_recovery(scheduler, vehicle_id, recovery, now);
-            process_stream_telemetry_with_cache(
+            if let Err(error) = process_stream_telemetry_with_cache(
                 store,
                 scheduler,
                 vehicle_id,
                 &update,
                 queued_at,
                 projection_car_ids,
-            )?;
+            ) {
+                stream.hold_refused_frame(&error, update, queued_at);
+                return Err(error);
+            }
         }
         StreamEvent::VehicleOffline => {
             // The session has ended even when a targeted state check still
@@ -1149,10 +1211,12 @@ fn process_stream_event(
             note_stream_unhealthy(scheduler, vehicle_id, "transport_unavailable", now);
         }
         StreamEvent::ProtocolViolation => {
+            scheduler.stream_unusable(vehicle_id);
             note_stream_unhealthy(scheduler, vehicle_id, "protocol_violation", now);
         }
         StreamEvent::AuthRejected => {
             *authentication_rejected = true;
+            scheduler.stream_unusable(vehicle_id);
             note_stream_unhealthy(scheduler, vehicle_id, "authentication_rejected", now);
             #[cfg(test)]
             supervised_test_log(LoopEvent::RejectionProcessed);
@@ -1222,7 +1286,7 @@ async fn drain_stream_events_while_stopping(
     for stream in streams.iter_mut() {
         let winding_down = stopping.contains(&stream.vehicle_id);
         for _ in 0..MAX_STREAM_EVENTS_PER_DRAIN {
-            let Ok(event) = stream.events.try_recv() else {
+            let Some(event) = stream.next_event() else {
                 break;
             };
             // Each frame is its own transaction: the run's loss fence is looked at
@@ -1231,8 +1295,8 @@ async fn drain_stream_events_while_stopping(
                 return Err(CollectorError::SensitiveAccessUnavailable);
             }
             if winding_down {
-                if let StreamEvent::Telemetry { update, queued_at } = event {
-                    process_stream_telemetry_inner(
+                if let StreamEvent::Telemetry { update, queued_at } = event
+                    && let Err(error) = process_stream_telemetry_inner(
                         store,
                         scheduler,
                         stream.vehicle_id,
@@ -1240,7 +1304,10 @@ async fn drain_stream_events_while_stopping(
                         queued_at,
                         projection_car_ids,
                         false,
-                    )?;
+                    )
+                {
+                    stream.hold_refused_frame(&error, update, queued_at);
+                    return Err(error);
                 }
                 continue;
             }
@@ -1258,7 +1325,7 @@ async fn drain_stream_events_while_stopping(
             // Once the producer has finished, its bounded queue is stable.
             // Drain every final event before consuming the JoinHandle so the
             // last telemetry and authentication transition reach the caller.
-            while let Ok(event) = stream.events.try_recv() {
+            while let Some(event) = stream.next_event() {
                 // The same per-frame look at the loss fence as above (R-P2F5-3).
                 if matches!(event, StreamEvent::Telemetry { .. }) && frame_writes_fenced(write_fence) {
                     return Err(CollectorError::SensitiveAccessUnavailable);

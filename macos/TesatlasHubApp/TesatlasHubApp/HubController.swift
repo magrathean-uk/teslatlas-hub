@@ -203,6 +203,75 @@ struct HubSetupInvocation: Equatable {
 }
 
 
+/// The import's final report as the command line prints it (M08-T41, DEC-246): the
+/// source time range checked and, per phone route, the counts packed, kept and
+/// withheld. Counts and dates only; never a place, name or address.
+struct HubImportSummary: Equatable {
+    struct Route: Equatable {
+        let packed: UInt64
+        let kept: UInt64
+        let withheld: UInt64
+    }
+
+    let checkedFrom: Date?
+    let checkedTo: Date?
+    let legacy: Route
+    let physical: Route
+
+    /// The summary in the last `"imported"` report line of the command's output.
+    static func parse(output: String) -> HubImportSummary? {
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  root["status"] as? String == "imported",
+                  let summary = root["importSummary"] as? [String: Any],
+                  let routes = summary["routes"] as? [String: Any],
+                  let legacy = route(routes["legacy"]),
+                  let physical = route(routes["physical"]) else { continue }
+            return HubImportSummary(checkedFrom: date(summary["checkedFromMs"]),
+                                    checkedTo: date(summary["checkedToMs"]),
+                                    legacy: legacy, physical: physical)
+        }
+        return nil
+    }
+
+    private static func date(_ value: Any?) -> Date? {
+        (value as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+    }
+
+    private static func route(_ value: Any?) -> Route? {
+        guard let counts = value as? [String: Any],
+              let packed = (counts["packed"] as? NSNumber)?.uint64Value,
+              let kept = (counts["kept"] as? NSNumber)?.uint64Value,
+              let withheld = (counts["withheld"] as? NSNumber)?.uint64Value else { return nil }
+        return Route(packed: packed, kept: kept, withheld: withheld)
+    }
+
+    /// The report as plain lines for the last import step.
+    func text(locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        let range: String
+        if let checkedFrom, let checkedTo {
+            range = HubL10n.format("hub.importSummary.range", fallback: "Source checked from %1$@ to %2$@.",
+                                   arguments: [formatter.string(from: checkedFrom), formatter.string(from: checkedTo)])
+        } else {
+            range = HubL10n.text("hub.importSummary.noRange", fallback: "The source held no drives or charges.")
+        }
+        func line(_ key: String, _ name: String, _ route: Route) -> String {
+            HubL10n.format(key, fallback: "%1$@: %2$@ packed, %3$@ kept, %4$@ withheld.",
+                           arguments: [name, String(route.packed), String(route.kept), String(route.withheld)])
+        }
+        return [range,
+                line("hub.importSummary.legacy", HubL10n.text("hub.importSummary.legacyName", fallback: "Legacy phone route"), legacy),
+                line("hub.importSummary.physical", HubL10n.text("hub.importSummary.physicalName", fallback: "Phone route 1.4"), physical)]
+            .joined(separator: "\n")
+    }
+}
+
 struct HubMigrationProgress: Equatable {
     let completedRows: UInt64
     let totalRows: UInt64
@@ -3356,6 +3425,9 @@ final class LaunchctlServiceController: HubServiceControlling {
 }
 
 final class HubController {
+    /// The final report of the last completed import, for the surface that ends it.
+    private(set) var lastImportSummary: HubImportSummary?
+
     /// The one lifecycle owner of the application (R-E1F6-1): every surface asks it, and
     /// it alone decides which operation may run. The application's one controller is
     /// authoritative; surfaces that share an operation share this controller.
@@ -4018,7 +4090,7 @@ final class HubController {
             throw HubActionError.commandFailed(
                 historyOnly
                     ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed source database schema before checking compatibility.")
-                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.4.0 or later before checking compatibility.")
+                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.5.0 or later before checking compatibility.")
             )
         }
         try Self.validateMigrationSource(source)
@@ -4081,7 +4153,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.4.0 or later before importing.")
+                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.5.0 or later before importing.")
             )))
             return
         }
@@ -4317,6 +4389,7 @@ final class HubController {
                     )))
                     return
                 }
+                self.lastImportSummary = HubImportSummary.parse(output: output)
                 HubAppLog.shared.record("import.completed", category: "history_import",
                                         fields: ["capture_mode": "after_windows"])
                 completion(.success(()))
@@ -5267,6 +5340,7 @@ final class HubController {
                                                       previousProvider: previousProvider,
                                                       historyOnly: historyOnly)
                         )
+                        lastImportSummary = HubImportSummary.parse(output: output)
                         HubAppLog.shared.record("import.completed", category: "history_import",
                                                 fields: durationFields.merging(
                                                     ["handover": "awaiting_verification"]
@@ -5366,7 +5440,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.")
+                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.5.0 or later before importing from a direct PostgreSQL source.")
             )))
             return
         }
@@ -7692,6 +7766,104 @@ final class HubController {
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: temporary.path)
         do { try manager.moveItem(at: temporary, to: configPath) }
         catch { try? manager.removeItem(at: temporary); throw error }
+    }
+
+    /// The provider the onboarding and Settings name when they offer address lookup
+    /// (DEC-246): the OpenStreetMap Foundation's public Nominatim service. Hub has no
+    /// default provider; this endpoint is written only when the owner turns lookup on.
+    static let addressLookupProviderName = "OpenStreetMap Nominatim"
+    static let addressLookupEndpoint = "https://nominatim.openstreetmap.org/"
+
+    /// Whether the configuration on disk has address lookup on. A missing file or
+    /// table, or a value other than `true`, reads as off, as the Hub reads it.
+    var addressLookupEnabled: Bool {
+        guard let content = try? readConfigIfPresent() else { return false }
+        return Self.addressLookupEnabled(in: content)
+    }
+
+    /// Writes the owner's address-lookup answer to the configuration (DEC-246) and
+    /// says whether the file changed. The Hub reads it when it next starts; the
+    /// caller restarts a running Hub when the answer changed.
+    @discardableResult
+    func setAddressLookup(_ enabled: Bool) throws -> Bool {
+        guard !previewMode else { throw HubActionError.preview }
+        if try readConfigIfPresent() == nil { try ensureConfig() }
+        guard let original = try readConfigIfPresent() else { return false }
+        let updated = Self.settingAddressLookup(enabled, in: original)
+        guard updated != original else { return false }
+        try Data(updated.utf8).write(to: configPath, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: configPath.path)
+        HubAppLog.shared.record("address_lookup.changed", category: "config",
+                                fields: ["enabled": enabled ? "true" : "false"])
+        return true
+    }
+
+    static func addressLookupEnabled(in content: String) -> Bool {
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        guard let table = lines.firstIndex(where: { uncommented($0) == "[geocoder]" }) else {
+            return false
+        }
+        let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+        for line in lines[(table + 1)..<end] {
+            let value = uncommented(line)
+            guard let equals = value.firstIndex(of: "="),
+                  value[..<equals].trimmingCharacters(in: .whitespaces) == "enabled" else {
+                continue
+            }
+            return value[value.index(after: equals)...].trimmingCharacters(in: .whitespaces) == "true"
+        }
+        return false
+    }
+
+    /// Sets `enabled` in the `[geocoder]` table, adding the table when it is missing.
+    /// Turning lookup on also writes the named provider's endpoint when the table has
+    /// none, so the Hub never falls back to a provider the owner did not see; an
+    /// endpoint the owner set by hand is kept. Turning it off leaves the endpoint.
+    static func settingAddressLookup(_ enabled: Bool, in content: String) -> String {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        func key(_ line: String) -> String? {
+            let value = uncommented(line)
+            guard let equals = value.firstIndex(of: "=") else { return nil }
+            return value[..<equals].trimmingCharacters(in: .whitespaces)
+        }
+        let enabledLine = "enabled = \(enabled ? "true" : "false")"
+        let endpointLine = "endpoint = \(tomlBasicString(addressLookupEndpoint))"
+        if let table = lines.firstIndex(where: { uncommented($0) == "[geocoder]" }) {
+            let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+            let hasEndpoint = lines[(table + 1)..<end].contains { key($0) == "endpoint" }
+            if let setting = lines[(table + 1)..<end].firstIndex(where: { key($0) == "enabled" }) {
+                let indentation = String(lines[setting].prefix { $0 == " " || $0 == "\t" })
+                lines[setting] = indentation + enabledLine
+                if enabled && !hasEndpoint { lines.insert(endpointLine, at: setting + 1) }
+            } else {
+                if enabled && !hasEndpoint { lines.insert(endpointLine, at: table + 1) }
+                lines.insert(enabledLine, at: table + 1)
+            }
+        } else {
+            if !lines.isEmpty && lines.last != "" { lines.append("") }
+            lines.append("[geocoder]")
+            lines.append(enabledLine)
+            if enabled { lines.append(endpointLine) }
+        }
+        if content.hasSuffix("\n") && lines.last != "" { lines.append("") }
+        return lines.joined(separator: "\n")
     }
 
     private func restoreConfig(_ content: String?) throws {

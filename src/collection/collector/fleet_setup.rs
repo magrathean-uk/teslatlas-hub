@@ -625,8 +625,10 @@ fn ensure_fleet_inventory_contains_configured(
     Ok(())
 }
 
-/// Execute one explicitly confirmed legacy vehicle action. This path never
-/// refreshes or retries credentials and is not reachable from the collector.
+/// Execute one explicitly confirmed legacy vehicle action (DEC-246: the command
+/// line's `control <action> --confirm`, Legacy route only, inside an Open
+/// collection window). This path never retries the action and is not reachable
+/// from the collector.
 #[cfg(test)]
 async fn execute_resident_legacy_vehicle_action(
     store: &HubStore,
@@ -665,9 +667,12 @@ async fn execute_resident_legacy_vehicle_action_guarded(
     action: LegacyVehicleAction,
     guard: Option<&RunWriteGuard>,
 ) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
-    // No vehicle command is ever sent (M09-T19 ruling 1): refused before
-    // anything below runs.
-    refuse_vehicle_command(action)?;
+    // DEC-248: only Wake, Flash Lights and Honk Horn are ever sent. Any other
+    // action is refused here, at the execution boundary, before credentials,
+    // the window, a receipt or a send.
+    if !action.is_permitted() {
+        return Err(ResidentActionExecutionError::NotPermitted);
+    }
     // C3 R48, R49 (B2 clarification 3): a standing refusal for the configured
     // mode, or an unreadable account row, rejects a new action before any
     // authentication waits or is prepared. The socket serves only through here;
@@ -688,8 +693,17 @@ async fn execute_resident_legacy_vehicle_action_guarded(
         .ok_or(ResidentActionExecutionError::VehicleMissing)?;
     let vehicle_id =
         VehicleId::try_from_i64(tesla_eid).ok_or(ResidentActionExecutionError::VehicleMissing)?;
-    check_resident_receipt_write(guard, "resident-begin")
-        .map_err(|_| ResidentActionExecutionError::Authentication)?;
+    // DEC-246: an action goes only inside an Open collection window. The run's
+    // hold on the window and the gate itself are both asked before the receipt
+    // starts, so an action outside a window writes and sends nothing; the send
+    // asks the gate once more.
+    check_resident_receipt_write(guard, "resident-begin").map_err(|error| match error {
+        CollectorError::CollectionWindowClosed(_) => ResidentActionExecutionError::WindowClosed,
+        _ => ResidentActionExecutionError::Authentication,
+    })?;
+    if !client.vehicle_action_window_open() {
+        return Err(ResidentActionExecutionError::WindowClosed);
+    }
     let receipt_id = store.begin_outbound_request(&OutboundRequestStart {
         correlation_id: Uuid::new_v4(),
         vehicle_tesla_id: Some(tesla_eid),
@@ -726,6 +740,14 @@ async fn execute_resident_legacy_vehicle_action_guarded(
     store
         .complete_outbound_request(receipt_id, &completion)
         .map_err(ResidentActionExecutionError::CompletionUnknown)?;
+    // A send whose answer was lost or unreadable may have reached the car: it is
+    // reported as possibly sent, never as a rejection. Its receipt records the
+    // transport, timeout or protocol failure, not an HTTP answer.
+    if result.as_ref().err().is_some_and(legacy_action_answer_lost) {
+        return Err(ResidentActionExecutionError::OutcomeUnknown {
+            audit_receipt_id: receipt_id.0,
+        });
+    }
     Ok(LegacyVehicleActionReport {
         provider: CollectorProvider::Legacy,
         hub_vehicle_id,
@@ -760,9 +782,10 @@ async fn execute_resident_fleet_vehicle_action_guarded(
     counter: &RequestLedger,
     guard: Option<&RunWriteGuard>,
 ) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
-    // No vehicle command is ever sent (M09-T19 ruling 1): refused before
-    // the car is looked up, a token refreshed or a receipt started.
-    refuse_vehicle_command(action)?;
+    // The Fleet route sends no vehicle command (M09-T19 ruling 1, kept by
+    // DEC-246): refused before the car is looked up, a token refreshed or a
+    // receipt started.
+    refuse_fleet_vehicle_command(action)?;
     let (tesla_eid, vin) = store
         .configured_tesla_vehicle_identity(hub_vehicle_id)?
         .ok_or(ResidentActionExecutionError::VehicleMissing)?;
@@ -886,6 +909,10 @@ fn fleet_command(
 enum ResidentActionExecutionError {
     #[error("{}", VEHICLE_COMMANDS_NOT_OFFERED)]
     CommandsNotOffered,
+    #[error("{}", VEHICLE_ACTION_NOT_PERMITTED)]
+    NotPermitted,
+    #[error("{}", VEHICLE_ACTION_WINDOW_CLOSED)]
+    WindowClosed,
     #[error("vehicle command target is not configured")]
     VehicleMissing,
     #[error("vehicle command audit could not start")]
@@ -902,16 +929,53 @@ enum ResidentActionExecutionError {
     CompletionUnknown(StoreError),
     #[error("vehicle command outcome is ambiguous because the run may no longer write")]
     CompletionRefused,
+    #[error("vehicle command may have been sent: its answer was lost (audit receipt {audit_receipt_id})")]
+    OutcomeUnknown { audit_receipt_id: i64 },
 }
 
-/// The product rule (M09-T19 ruling 1): the Hub sends no vehicle command,
-/// for a Fleet Hub and a Legacy Hub alike. Every vehicle action is refused
-/// here, at the place the running service would execute it, before any
-/// credential is used, any audit receipt starts or anything is sent; the
-/// command line refuses with the same text before it connects.
-pub const VEHICLE_COMMANDS_NOT_OFFERED: &str = "vehicle commands are not offered: the Hub only reads vehicle data and never sends a command to a car";
+/// The product rule for the Fleet route (M09-T19 ruling 1, kept by DEC-246):
+/// a Fleet Hub polls and sends no vehicle command. Every vehicle action is
+/// refused here, at the place the running Fleet service would execute it,
+/// before any credential is used, any audit receipt starts or anything is
+/// sent; the command line refuses a Fleet Hub with the same text before it
+/// connects. The Legacy route sends an explicitly confirmed action from the
+/// command line inside an Open collection window (DEC-246).
+pub const VEHICLE_COMMANDS_NOT_OFFERED: &str = "vehicle commands are not offered on the Fleet route: a Fleet Hub only reads vehicle data and never sends a command to a car";
 
-fn refuse_vehicle_command(_action: LegacyVehicleAction) -> Result<(), ResidentActionExecutionError> {
+/// The refusal of a Legacy action outside an Open collection window (DEC-246):
+/// no running Hub holds a window, or the window it held has closed.
+pub const VEHICLE_ACTION_WINDOW_CLOSED: &str = "no collection window is open: a vehicle action is sent only while the running Hub collects inside an open window";
+
+/// The refusal of an action the running service does not know (DEC-246): the
+/// request named an action outside the Legacy action set.
+pub const VEHICLE_ACTION_UNKNOWN: &str = "the vehicle action is not known to the running Hub";
+
+/// The refusal of an action outside the permitted set (DEC-248): only Wake,
+/// Flash Lights and Honk Horn are sent to a car.
+pub const VEHICLE_ACTION_NOT_PERMITTED: &str = "only wake, flash-lights and honk-horn are sent to a car; this action is refused and nothing was sent";
+
+/// Whether an action's request failed after it may have reached the car: no
+/// answer, one that could not be read, or an HTTP status that does not prove
+/// the car refused (5xx, 408, 429 and any other non-4xx status, such as a
+/// gateway or upstream failure). Only an explicit provider rejection (another
+/// 4xx status or `result: false`) is a rejection instead.
+fn legacy_action_answer_lost(error: &OwnerApiAuthError) -> bool {
+    matches!(
+        error,
+        OwnerApiAuthError::Owner(
+            OwnerApiError::RequestTimeout
+                | OwnerApiError::Transport
+                | OwnerApiError::ResponseRead
+                | OwnerApiError::ResponseTooLarge
+                | OwnerApiError::InvalidResponseEnvelope
+                | OwnerApiError::InvalidCommandResponse
+                | OwnerApiError::SensitiveDataInResponse
+                | OwnerApiError::RateLimited { .. }
+        ) | OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(408 | 429 | 500..=u16::MAX | 0..=399))
+    )
+}
+
+fn refuse_fleet_vehicle_command(_action: LegacyVehicleAction) -> Result<(), ResidentActionExecutionError> {
     Err(ResidentActionExecutionError::CommandsNotOffered)
 }
 
@@ -1036,6 +1100,9 @@ struct ResidentVehicleActionRequest {
 #[serde(rename_all = "snake_case")]
 enum ResidentVehicleActionFailure {
     CommandsNotOffered,
+    NotPermitted,
+    WindowClosed,
+    UnknownAction,
     InvalidRequest,
     VehicleMissing,
     AuthenticationRejected,
@@ -1048,16 +1115,53 @@ enum ResidentVehicleActionFailure {
 #[serde(tag = "status", rename_all = "snake_case")]
 enum ResidentVehicleActionResponse {
     Ok { report: LegacyVehicleActionReport },
-    Error { code: ResidentVehicleActionFailure },
+    Error {
+        code: ResidentVehicleActionFailure,
+        /// The audit receipt of a send whose outcome is unknown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        audit_receipt_id: Option<i64>,
+    },
+}
+
+impl ResidentVehicleActionResponse {
+    fn refusal(code: ResidentVehicleActionFailure) -> Self {
+        Self::Error {
+            code,
+            audit_receipt_id: None,
+        }
+    }
+
+    fn from_execution(
+        result: Result<LegacyVehicleActionReport, ResidentActionExecutionError>,
+    ) -> Self {
+        match result {
+            Ok(report) => Self::Ok { report },
+            Err(error) => Self::Error {
+                code: classify_resident_action_error(&error),
+                audit_receipt_id: match error {
+                    ResidentActionExecutionError::OutcomeUnknown { audit_receipt_id } => {
+                        Some(audit_receipt_id)
+                    }
+                    _ => None,
+                },
+            },
+        }
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum ResidentVehicleActionError {
     #[error("{}", VEHICLE_COMMANDS_NOT_OFFERED)]
     CommandsNotOffered,
+    #[error("{}", VEHICLE_ACTION_NOT_PERMITTED)]
+    NotPermitted,
+    #[error("{}", VEHICLE_ACTION_WINDOW_CLOSED)]
+    WindowClosed,
+    #[error("{}", VEHICLE_ACTION_UNKNOWN)]
+    UnknownAction,
     #[error("resident Hub vehicle-control service is unavailable")]
     Unavailable,
-    #[error("resident Hub vehicle-control request timed out")]
+    #[error("resident Hub vehicle-control request timed out; the action may have been sent, do not repeat it")]
     Timeout,
     #[error("resident Hub vehicle-control protocol failed")]
     Protocol,
@@ -1069,8 +1173,29 @@ pub enum ResidentVehicleActionError {
     ProviderRejected,
     #[error("vehicle command audit is unavailable")]
     AuditUnavailable,
-    #[error("vehicle command outcome is ambiguous; do not repeat it")]
-    OutcomeAmbiguous,
+    #[error("{}", outcome_ambiguous_text(*audit_receipt_id))]
+    OutcomeAmbiguous { audit_receipt_id: Option<i64> },
+}
+
+/// The line of a send whose outcome is not known, naming its audit receipt
+/// when the service reported one.
+fn outcome_ambiguous_text(audit_receipt_id: Option<i64>) -> String {
+    match audit_receipt_id {
+        Some(id) => format!(
+            "vehicle command outcome is unknown: it may have been sent (audit receipt {id}); do not repeat it"
+        ),
+        None => "vehicle command outcome is unknown: it may have been sent; do not repeat it".to_owned(),
+    }
+}
+
+/// Whether a running service's vehicle-control socket is present in
+/// `data_dir`: a Legacy run binds it only while it holds an Open collection
+/// window and removes it when the run ends (DEC-246). A socket left by a run
+/// that ended abruptly is present but refuses the connection, which the
+/// request reports as unavailable.
+pub fn resident_vehicle_control_present(data_dir: &Path) -> bool {
+    std::fs::symlink_metadata(data_dir.join(RESIDENT_CONTROL_SOCKET_NAME))
+        .is_ok_and(|metadata| metadata.file_type().is_socket())
 }
 
 pub async fn request_resident_vehicle_action(
@@ -1117,8 +1242,14 @@ pub async fn request_resident_vehicle_action(
 
     match response {
         ResidentVehicleActionResponse::Ok { report } => Ok(report),
-        ResidentVehicleActionResponse::Error { code } => Err(match code {
+        ResidentVehicleActionResponse::Error {
+            code,
+            audit_receipt_id,
+        } => Err(match code {
             ResidentVehicleActionFailure::CommandsNotOffered => ResidentVehicleActionError::CommandsNotOffered,
+            ResidentVehicleActionFailure::NotPermitted => ResidentVehicleActionError::NotPermitted,
+            ResidentVehicleActionFailure::WindowClosed => ResidentVehicleActionError::WindowClosed,
+            ResidentVehicleActionFailure::UnknownAction => ResidentVehicleActionError::UnknownAction,
             ResidentVehicleActionFailure::InvalidRequest => ResidentVehicleActionError::Protocol,
             ResidentVehicleActionFailure::VehicleMissing => {
                 ResidentVehicleActionError::VehicleMissing
@@ -1133,7 +1264,7 @@ pub async fn request_resident_vehicle_action(
                 ResidentVehicleActionError::AuditUnavailable
             }
             ResidentVehicleActionFailure::OutcomeAmbiguous => {
-                ResidentVehicleActionError::OutcomeAmbiguous
+                ResidentVehicleActionError::OutcomeAmbiguous { audit_receipt_id }
             }
         }),
     }
@@ -1216,8 +1347,13 @@ impl ResidentControlSocket {
             )
             .await
             {
-                Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
-                    match execute_resident_legacy_vehicle_action_guarded(
+                // DEC-248: an action outside the permitted set is refused at
+                // the socket as well as by the executor.
+                Ok(Ok(request)) if !request.action.is_permitted() => {
+                    ResidentVehicleActionResponse::refusal(ResidentVehicleActionFailure::NotPermitted)
+                }
+                Ok(Ok(request)) => ResidentVehicleActionResponse::from_execution(
+                    execute_resident_legacy_vehicle_action_guarded(
                         &store,
                         &client,
                         &manager,
@@ -1227,17 +1363,12 @@ impl ResidentControlSocket {
                         request.action,
                         guard.as_ref(),
                     )
-                    .await
-                    {
-                        Ok(report) => ResidentVehicleActionResponse::Ok { report },
-                        Err(error) => ResidentVehicleActionResponse::Error {
-                            code: classify_resident_action_error(&error),
-                        },
-                    }
+                    .await,
+                ),
+                Ok(Err(ResidentRequestRefusal::UnknownAction)) => {
+                    ResidentVehicleActionResponse::refusal(ResidentVehicleActionFailure::UnknownAction)
                 }
-                _ => ResidentVehicleActionResponse::Error {
-                    code: ResidentVehicleActionFailure::InvalidRequest,
-                },
+                _ => ResidentVehicleActionResponse::refusal(ResidentVehicleActionFailure::InvalidRequest),
             };
             let response =
                 serde_json::to_vec(&response).map_err(|_| CollectorError::ResidentControlSocket)?;
@@ -1286,8 +1417,8 @@ impl ResidentControlSocket {
             )
             .await
             {
-                Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
-                    match execute_resident_fleet_vehicle_action_guarded(
+                Ok(Ok(request)) => ResidentVehicleActionResponse::from_execution(
+                    execute_resident_fleet_vehicle_action_guarded(
                         &store,
                         &api,
                         &auth_api,
@@ -1298,17 +1429,9 @@ impl ResidentControlSocket {
                         &counter,
                         guard.as_ref(),
                     )
-                    .await
-                    {
-                        Ok(report) => ResidentVehicleActionResponse::Ok { report },
-                        Err(error) => ResidentVehicleActionResponse::Error {
-                            code: classify_resident_action_error(&error),
-                        },
-                    }
-                }
-                _ => ResidentVehicleActionResponse::Error {
-                    code: ResidentVehicleActionFailure::InvalidRequest,
-                },
+                    .await,
+                ),
+                _ => ResidentVehicleActionResponse::refusal(ResidentVehicleActionFailure::InvalidRequest),
             };
             let response =
                 serde_json::to_vec(&response).map_err(|_| CollectorError::ResidentControlSocket)?;
@@ -1336,19 +1459,56 @@ impl Drop for ResidentControlSocket {
     }
 }
 
+/// Why a control request was not read as an action.
+#[derive(Debug, PartialEq, Eq)]
+enum ResidentRequestRefusal {
+    /// A well-formed request of this protocol whose action the service does
+    /// not know (DEC-246: refused with its own line, never sent).
+    UnknownAction,
+    /// Anything else: unreadable, oversized, malformed or another protocol.
+    Invalid,
+}
+
+/// The shape of a request whose action is not checked, used only to tell an
+/// unknown action apart from a malformed request.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResidentVehicleActionEnvelope {
+    protocol: u8,
+    #[serde(rename = "hub_vehicle_id")]
+    _hub_vehicle_id: Uuid,
+    #[serde(rename = "action")]
+    _action: Value,
+}
+
+fn parse_resident_vehicle_action_request(
+    request: &[u8],
+) -> Result<ResidentVehicleActionRequest, ResidentRequestRefusal> {
+    match serde_json::from_slice::<ResidentVehicleActionRequest>(request) {
+        Ok(request) if request.protocol == RESIDENT_CONTROL_PROTOCOL => Ok(request),
+        Ok(_) => Err(ResidentRequestRefusal::Invalid),
+        Err(_) => match serde_json::from_slice::<ResidentVehicleActionEnvelope>(request) {
+            Ok(envelope) if envelope.protocol == RESIDENT_CONTROL_PROTOCOL => {
+                Err(ResidentRequestRefusal::UnknownAction)
+            }
+            _ => Err(ResidentRequestRefusal::Invalid),
+        },
+    }
+}
+
 async fn read_resident_vehicle_action_request(
     socket: &mut UnixStream,
-) -> Result<ResidentVehicleActionRequest, ()> {
+) -> Result<ResidentVehicleActionRequest, ResidentRequestRefusal> {
     let mut request = Vec::new();
     socket
         .take(RESIDENT_CONTROL_REQUEST_BYTES + 1)
         .read_to_end(&mut request)
         .await
-        .map_err(|_| ())?;
+        .map_err(|_| ResidentRequestRefusal::Invalid)?;
     if request.len() as u64 > RESIDENT_CONTROL_REQUEST_BYTES {
-        return Err(());
+        return Err(ResidentRequestRefusal::Invalid);
     }
-    serde_json::from_slice(&request).map_err(|_| ())
+    parse_resident_vehicle_action_request(&request)
 }
 
 fn classify_resident_action_error(
@@ -1358,6 +1518,8 @@ fn classify_resident_action_error(
         ResidentActionExecutionError::CommandsNotOffered => {
             ResidentVehicleActionFailure::CommandsNotOffered
         }
+        ResidentActionExecutionError::NotPermitted => ResidentVehicleActionFailure::NotPermitted,
+        ResidentActionExecutionError::WindowClosed => ResidentVehicleActionFailure::WindowClosed,
         ResidentActionExecutionError::VehicleMissing => {
             ResidentVehicleActionFailure::VehicleMissing
         }
@@ -1366,7 +1528,8 @@ fn classify_resident_action_error(
             ResidentVehicleActionFailure::AuthenticationRejected
         }
         ResidentActionExecutionError::CompletionUnknown(_)
-        | ResidentActionExecutionError::CompletionRefused => {
+        | ResidentActionExecutionError::CompletionRefused
+        | ResidentActionExecutionError::OutcomeUnknown { .. } => {
             ResidentVehicleActionFailure::OutcomeAmbiguous
         }
         ResidentActionExecutionError::Provider(OwnerApiAuthError::Auth(

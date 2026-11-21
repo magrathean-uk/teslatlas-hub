@@ -1252,7 +1252,7 @@ fn c9_r40_tidy_preserves_copied_drive_totals() {
                     concat!(
                         "INSERT INTO ",
                         crate::db::import_table_names::import_projection_state_rows_table!(),
-                        " VALUES (?1,'drive',1,9,1,zeroblob(32))"
+                        " VALUES (?1,1,9,1,zeroblob(32))"
                     ),
                     [v.to_string()],
                 )
@@ -1378,4 +1378,77 @@ fn c9_r58_multi_vehicle_rearm_precedes_all_actions() {
     assert_eq!(provenance(&store, first, 1).unwrap()["status"], "failed");
     assert_eq!(elevation(&store, last, 1), None);
     assert!(provenance(&store, last, 1).is_none());
+}
+
+/// #76: a promotion stores the drive reach the seam admitted. Source drive 10
+/// was admitted; source drive 20, higher and wholly inside the Hub's covered
+/// window, lost to the Hub's own drive. The staged session keeps the raw
+/// all-source maximum (20), but the stored drive watermark must not reach the
+/// discarded drive, and a later promotion keeps it raise-only.
+#[test]
+fn promotion_stores_the_admitted_drive_reach_not_a_discarded_source_drive() {
+    let (_dir, store, v, source) = fixture();
+    let vehicle = v.to_string();
+    {
+        let connection = store.open().unwrap();
+        connection
+            .execute(
+                "INSERT INTO vehicle_identity_aliases(
+                    alias_kind, alias_value, source_id, source_vehicle_key, vehicle_id)
+                 VALUES ('source_key', 'reach-import', ?1, 'reach-import', ?2)",
+                params![source.to_string(), vehicle],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                 VALUES (?1, 10, 1, ?2)",
+                params![
+                    vehicle,
+                    json!({"id": 10, "car_id": 1, "start_date_ms": T0, "end_date_ms": T0 + 60_000})
+                        .to_string()
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO import_seam_links(vehicle_id, entity, loser_id, winner_id, decided_seq)
+                 VALUES (?1, 'drive', 20, ?2, 1)",
+                params![vehicle, crate::db::hub_ids::HUB_ID_BASE + 1],
+            )
+            .unwrap();
+    }
+    let stored_drive_watermark = || -> (Option<i64>, Option<i64>) {
+        store
+            .open()
+            .unwrap()
+            .query_row(
+                "SELECT max_source_row_id, max_timestamp_ms FROM lifecycle_source_watermarks
+                  WHERE source_id = ?1 AND vehicle_id = ?2 AND domain = 'drives'",
+                params![source.to_string(), vehicle],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    };
+    let promote = |session: &crate::source_db_projection::SourceDbOpenSession, at: i64| {
+        let mut connection = store.open().unwrap();
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        promote_imported_open_session_in_transaction(&tx, source, v, 1, session, at, None)
+            .unwrap();
+        tx.commit().unwrap();
+    };
+    let mut session = t69_s((None, None));
+    session.watermarks.drives.max_id = Some(20);
+    session.watermarks.drives.max_timestamp_ms = Some(T1);
+    promote(&session, T2);
+    assert_eq!(session.watermarks.drives.max_id, Some(20), "the session keeps the raw maximum");
+    assert_eq!(stored_drive_watermark(), (Some(10), Some(T0 + 60_000)));
+
+    // Monotonic: a later promotion whose admitted reach is lower keeps it.
+    session.watermarks.drives.max_id = Some(5);
+    session.watermarks.drives.max_timestamp_ms = Some(T0);
+    promote(&session, T3);
+    assert_eq!(stored_drive_watermark(), (Some(10), Some(T0 + 60_000)));
 }

@@ -8,12 +8,14 @@
 //! the tree one entry at a time and never hold a member list.
 
 use super::*;
+use super::kept_archive::{copy_kept_directory, expected_kept_files};
 
 /// How many members the staged payload holds, counted one entry at a time.
 pub(super) fn count_payload_members(payload: &Path) -> Result<u64, DataRecoveryError> {
     let noops = current_schema_22_noop_pairs(payload)?.len() as u64;
+    let kept = expected_kept_files(payload)?.len() as u64;
     let packs = payload.join("packs").join("sha256");
-    let mut count = 1_u64 + noops;
+    let mut count = 1_u64 + noops + kept;
     for entry in
         fs::read_dir(&packs).map_err(|source| io_error("reading backup pack directory", &packs, source))?
     {
@@ -49,7 +51,7 @@ pub(super) fn publish_streamed_directory(
         payload_bytes: Some(inventory.bytes),
     };
     validate_manifest(&manifest)?;
-    sync_payload_tree(payload, inventory.noops > 0)?;
+    sync_payload_tree(payload, inventory.noops > 0, inventory.kept > 0)?;
     let manifest_bytes = canonical_json(&manifest)?;
     write_private_file(&staging.path.join(STREAMED_DIRECTORY_MANIFEST_NAME), &manifest_bytes)?;
     let marker = CompletionMarker {
@@ -87,6 +89,7 @@ pub(super) struct PayloadInventory {
     pub(super) catalogue: BackupMember,
     pub(super) packs: u64,
     pub(super) noops: u64,
+    pub(super) kept: u64,
     pub(super) bytes: u64,
 }
 
@@ -94,6 +97,7 @@ impl PayloadInventory {
     fn count(&self) -> Result<u64, DataRecoveryError> {
         self.packs
             .checked_add(self.noops)
+            .and_then(|count| count.checked_add(self.kept))
             .and_then(|count| count.checked_add(1))
             .ok_or(DataRecoveryError::CapacityOverflow)
     }
@@ -114,10 +118,13 @@ pub(super) fn stream_payload_inventory(payload: &Path) -> Result<PayloadInventor
         let metadata = require_regular_file(&noop_directory.join(name), "backup schema 2.2 no-op")?;
         bytes = checked_capacity_add(bytes, metadata.len())?;
     }
+    let expected_kept = expected_kept_files(payload)?;
+    bytes = checked_capacity_add(bytes, validate_kept_directory(payload, &expected_kept)?)?;
     Ok(PayloadInventory {
         catalogue,
         packs,
         noops: expected_noops.len() as u64,
+        kept: expected_kept.len() as u64,
         bytes,
     })
 }
@@ -159,7 +166,11 @@ pub(super) fn walk_pack_directory(directory: &Path) -> Result<(u64, u64), DataRe
 }
 
 /// Sync every file of a payload and then its directories, walking the tree.
-pub(super) fn sync_payload_tree(payload: &Path, has_noops: bool) -> Result<(), DataRecoveryError> {
+pub(super) fn sync_payload_tree(
+    payload: &Path,
+    has_noops: bool,
+    has_kept: bool,
+) -> Result<(), DataRecoveryError> {
     sync_file(&payload.join("hub.sqlite"))?;
     let mut directories = vec![payload.join("packs").join("sha256")];
     if has_noops {
@@ -174,6 +185,7 @@ pub(super) fn sync_payload_tree(payload: &Path, has_noops: bool) -> Result<(), D
         }
         sync_directory(directory)?;
     }
+    sync_kept_directory(payload, has_kept)?;
     sync_directory(&payload.join("packs"))?;
     sync_directory(payload)
 }
@@ -234,12 +246,14 @@ pub(super) fn copy_streamed_directory(
         let member = inventory_file(&from, format!("{SCHEMA_22_NOOP_DIRECTORY}/{name}"))?;
         copy_verified_member(&from, &staging.join("packs").join("noop").join(name), &member)?;
     }
+    let kept = copy_kept_directory(&data, staging)?;
     let streamed = StreamedMembers {
         catalogue,
         packs: pack_count,
         noops: expected_noops.len() as u64,
+        kept,
     };
-    if Some(streamed.packs + streamed.noops + 1) != manifest.member_count {
+    if Some(streamed.packs + streamed.noops + streamed.kept + 1) != manifest.member_count {
         return Err(invalid(
             "the backup's members do not match the count its manifest declares",
         ));
@@ -259,13 +273,16 @@ pub(super) fn validate_streamed_directory_payload(
         return Err(invalid("a streamed directory manifest names its catalogue member"));
     };
     let expected_noops = current_schema_22_noop_pairs(data)?;
+    let expected_kept = expected_kept_files(data)?;
     let packs = data.join("packs");
-    if expected_noops.is_empty() {
-        require_directory_entries(&packs, ["sha256"], "data-backup packs directory")?;
-    } else {
-        require_directory_entries(&packs, ["noop", "sha256"], "data-backup packs directory")?;
-    }
+    require_packs_entries(
+        data,
+        !expected_noops.is_empty(),
+        !expected_kept.is_empty(),
+        "data-backup packs directory",
+    )?;
     validate_schema_22_noop_directory(data, &expected_noops)?;
+    let kept_bytes = validate_kept_directory(data, &expected_kept)?;
     let path = data.join("hub.sqlite");
     let metadata = require_regular_file(&path, "data-backup member")?;
     if permission_mode(&metadata) != catalogue.mode
@@ -278,12 +295,13 @@ pub(super) fn validate_streamed_directory_payload(
     }
     let (pack_count, pack_bytes) = walk_pack_directory(&packs.join("sha256"))?;
     let mut bytes = checked_capacity_add(catalogue.size, pack_bytes)?;
+    bytes = checked_capacity_add(bytes, kept_bytes)?;
     for name in expected_noops.keys() {
         let metadata = require_regular_file(&packs.join("noop").join(name), "data-backup member")?;
         bytes = checked_capacity_add(bytes, metadata.len())?;
     }
     let count = pack_count
-        .checked_add(expected_noops.len() as u64 + 1)
+        .checked_add(expected_noops.len() as u64 + expected_kept.len() as u64 + 1)
         .ok_or(DataRecoveryError::CapacityOverflow)?;
     if Some(count) != manifest.member_count || Some(bytes) != manifest.payload_bytes {
         return Err(invalid(

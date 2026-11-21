@@ -95,6 +95,12 @@ pub struct OpenSessionState {
     /// Its original sample is retained unchanged until corroboration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_gap_charge: Option<PendingGapCharge>,
+    /// One charge sample whose counter fell by more than a dip during a
+    /// continuous Active charge (issue #13), held until the very next
+    /// sample-anchoring observation decides whether it belongs to the open
+    /// charge or starts its successor. The raw observation is stored as usual.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_counter_reset: Option<PendingCounterReset>,
     /// Newest comparable installed version text seen on a full source (R31).
     #[serde(default)]
     pub last_car_version: Option<String>,
@@ -122,6 +128,10 @@ pub struct OpenSessionState {
     pub last_climate_fact_ms: Option<i64>,
     #[serde(default)]
     pub last_odometer_fact_ms: Option<i64>,
+    /// Vehicle-group time of the newest merged `car_metadata`. Older blobs
+    /// fall back to `last_vehicle_timestamp_ms`.
+    #[serde(default)]
+    pub last_car_metadata_fact_ms: Option<i64>,
     /// `service_mode` was set by a `service_refused` Hub event and not by a
     /// vehicle statement, so any later full-source answer can clear it (R25).
     #[serde(default)]
@@ -168,6 +178,15 @@ pub struct PendingGapCharge {
     odometer_km: Option<f64>,
     odometer_coarse: bool,
     unplugged: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingCounterReset {
+    pub(crate) charge_id: i64,
+    pub(crate) sample: ProjectionChargeSample,
+    pub(crate) coordinates: Option<(f64, f64)>,
+    pub(crate) odometer_km: Option<f64>,
+    pub(crate) odometer_coarse: Option<bool>,
 }
 
 /// Bounded reference to normalized imported open-session rows. Child rows stay
@@ -448,6 +467,7 @@ fn open_drive_from_source(row: &SourceDbDrive, positions: &[SourceDbPosition]) -
         last_rated_range_km: None,
         last_odometer: None,
         first_odometer: None,
+        odometer_history: None,
         power_max: row.power_max,
         power_min: row.power_min,
         inside_temp_sum: 0.0,
@@ -537,6 +557,8 @@ fn open_charge_from_source(
         ratio_added_kwh: 0.0,
         fully_powered: false,
         pre_sample_kwh: None,
+        pending_counter_reset_kwh: None,
+        counter_reading_unresolved: false,
         phase_count: None,
         last_odometer_km: None,
         last_odometer_coarse: None,
@@ -712,6 +734,29 @@ fn walk_inherited_is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Bounded evidence for the owner's next-reading rule on one class of
+/// odometer reading. A fall is judged only against the previous reading of
+/// the same class (`odometer_coarse` equal), so the known precision
+/// difference between a full poll and a coarse stream frame is not a fall.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OdometerClassHistory {
+    pub(crate) previous: Option<f64>,
+    pub(crate) maximum_before_previous: Option<f64>,
+    pub(crate) pending_fall: Option<f64>,
+}
+
+/// Odometer evidence of an open drive, one history per reading class. An
+/// unresolved or persistent same-class fall makes distance unknown; it is
+/// never silently clamped away.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OdometerHistory {
+    pub(crate) fine: OdometerClassHistory,
+    pub(crate) coarse: OdometerClassHistory,
+    pub(crate) invalid: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenDrive {
     pub id: i64,
@@ -742,6 +787,8 @@ pub struct OpenDrive {
     pub last_odometer: Option<f64>,
     #[serde(default)]
     pub first_odometer: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub odometer_history: Option<OdometerHistory>,
     #[serde(default)]
     pub power_max: Option<f64>,
     #[serde(default)]
@@ -891,6 +938,15 @@ pub struct OpenCharge {
     /// had no usable counter.
     #[serde(default)]
     pub pre_sample_kwh: Option<f64>,
+    /// A counter reading that fell by more than a dip and waits for the very
+    /// next usable counter to contradict or corroborate it (issue #13). `None`
+    /// in old blobs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_counter_reset_kwh: Option<f64>,
+    /// A provisional counter reset was never resolved by a usable counter, so
+    /// the counter-dependent totals are unknown (issue #13).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub counter_reading_unresolved: bool,
     /// The latest phase count a sample itself fixed (C2 R36).
     #[serde(default)]
     pub phase_count: Option<i64>,

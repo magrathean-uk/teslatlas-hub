@@ -1378,13 +1378,7 @@ final class HubControllerTests: XCTestCase {
         DispatchQueue.main.async {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Aurora" })
-            for title in ["Climate", "Access", "More"] {
-                let button = self.buttons(in: windowController.window?.contentView)
-                    .first { $0.title == title }
-                XCTAssertNotNil(button, "missing \(title)")
-                XCTAssertFalse(button?.isHidden ?? true, "hidden \(title)")
-                XCTAssertTrue(button?.isEnabled ?? false, "preview disabled \(title)")
-            }
+            self.assertNoVehicleActionOffered(in: windowController, "preview Fleet dashboard")
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Fleet API" })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
@@ -1694,14 +1688,7 @@ final class HubControllerTests: XCTestCase {
         let settled = expectation(description: "legacy dashboard settled")
 
         DispatchQueue.main.async {
-            for title in ["Climate", "Access", "More"] {
-                let button = self.buttons(in: windowController.window?.contentView)
-                    .first { $0.title == title }
-                XCTAssertNotNil(button, "missing \(title)")
-                XCTAssertFalse(button?.isEnabled ?? true, "enabled \(title)")
-            }
-            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue == "Vehicle commands require Tesla Fleet API." })
+            self.assertNoVehicleActionOffered(in: windowController, "legacy dashboard")
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Owner sign-in" })
             settled.fulfill()
@@ -2030,7 +2017,7 @@ final class HubControllerTests: XCTestCase {
     func testImportSheetExplainsManualSourceHandover() {
         XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("without stopping"))
         XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("yourself"))
-        for fragment in ["back up the source application", "update it to release 4.4.0 or later", "start it once",
+        for fragment in ["back up the source application", "update it to release 4.5.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
             XCTAssertTrue(ImportSheetController.sourceVersionRequirement.contains(fragment))
         }
@@ -2042,7 +2029,7 @@ final class HubControllerTests: XCTestCase {
         let visibleGuidance = labels(in: sheet.window?.contentView)
             .map(\.stringValue)
             .joined(separator: " ")
-        for fragment in ["back up the source application", "update it to release 4.4.0 or later", "start it once",
+        for fragment in ["back up the source application", "update it to release 4.5.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
             XCTAssertTrue(visibleGuidance.contains(fragment))
         }
@@ -2062,7 +2049,7 @@ final class HubControllerTests: XCTestCase {
                 return XCTFail("missing acknowledgement was accepted")
             }
             XCTAssertEqual(error.localizedDescription,
-                           "Confirm the source application's release is 4.4.0 or later before checking compatibility.")
+                           "Confirm the source application's release is 4.5.0 or later before checking compatibility.")
             rejected.fulfill()
         }
 
@@ -2084,7 +2071,7 @@ final class HubControllerTests: XCTestCase {
                 return XCTFail("missing acknowledgement was accepted")
             }
             XCTAssertEqual(error.localizedDescription,
-                           "Confirm the source application's release is 4.4.0 or later before importing from a direct PostgreSQL source.")
+                           "Confirm the source application's release is 4.5.0 or later before importing from a direct PostgreSQL source.")
             rejected.fulfill()
         }
 
@@ -2096,7 +2083,7 @@ final class HubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let runner = RecordingCommandRunner(result: .success(
-            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.4.0","guidance":"Check the source application first."}"#
+            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.5.0","guidance":"Check the source application first."}"#
         ))
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
@@ -2163,6 +2150,54 @@ final class HubControllerTests: XCTestCase {
         })
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertFalse(events.values.contains("service:start"))
+    }
+
+    private static let importReportLine =
+        #"{"status":"imported","captureMode":"online-snapshot","importSummary":{"checkedFromMs":1614772800000,"checkedToMs":1763380800000,"routes":{"legacy":{"packed":12,"kept":1,"withheld":2},"physical":{"packed":10,"kept":1,"withheld":4}}}}"#
+
+    func testImportSummaryParsesTheReportAndNamesRangeAndCountsOnly() throws {
+        let summary = try XCTUnwrap(HubImportSummary.parse(output: "progress line\n" + Self.importReportLine + "\n"))
+        XCTAssertEqual(summary.legacy, HubImportSummary.Route(packed: 12, kept: 1, withheld: 2))
+        XCTAssertEqual(summary.physical, HubImportSummary.Route(packed: 10, kept: 1, withheld: 4))
+        let text = summary.text(locale: Locale(identifier: "en_GB"), timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertEqual(text, """
+            Source checked from 3 Mar 2021 to 17 Nov 2025.
+            Legacy phone route: 12 packed, 1 kept, 2 withheld.
+            Phone route 1.4: 10 packed, 1 kept, 4 withheld.
+            """)
+        XCTAssertNil(HubImportSummary.parse(output: #"{"status":"imported","captureMode":"online-snapshot"}"#))
+        XCTAssertNil(HubImportSummary.parse(output: "not json"))
+    }
+
+    func testImportSummaryWithoutARangeSaysTheSourceWasEmpty() throws {
+        let line = #"{"status":"imported","importSummary":{"checkedFromMs":null,"checkedToMs":null,"routes":{"legacy":{"packed":0,"kept":0,"withheld":0},"physical":{"packed":0,"kept":0,"withheld":0}}}}"#
+        let summary = try XCTUnwrap(HubImportSummary.parse(output: line))
+        XCTAssertNil(summary.checkedFrom)
+        XCTAssertTrue(summary.text().hasPrefix("The source held no drives or charges."))
+    }
+
+    func testCompletedImportKeepsItsSummaryForTheLastStep() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success(Self.importReportLine))
+        let service = ScriptedService(events: events)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = HubController(commandRunner: runner,
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        XCTAssertNil(controller.lastImportSummary)
+        let finished = expectation(description: "migration finished")
+        controller.importSource(source: "postgresql://reader@127.0.0.1/sourcedb",
+                                   carID: "1",
+                                   passwordFile: "/tmp/password",
+                                   acceptSchemaEvidence: true) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(controller.lastImportSummary?.legacy.packed, 12)
+        XCTAssertEqual(controller.lastImportSummary?.physical.withheld, 4)
     }
 
     func testInstalledMigrationKeepsFleetProviderAndTokensConfig() throws {
@@ -4300,7 +4335,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(text.contains("collection windows is kept"))
         XCTAssertTrue(text.contains("nothing is replaced"))
         XCTAssertTrue(text.contains("Hub stops while it imports and starts again afterwards"))
-        XCTAssertTrue(text.contains("update it to release 4.4.0 or later"))
+        XCTAssertTrue(text.contains("update it to release 4.5.0 or later"))
     }
 
     func testHistoryOnlyImportConfigTurnsEveryCollectorPathOffAndKeepsTheRest() throws {
@@ -4898,6 +4933,27 @@ final class HubControllerTests: XCTestCase {
         return try String(contentsOf: config, encoding: .utf8)
     }
 
+    /// DEC-246: no vehicle action (button, menu item or card control) is reachable in the
+    /// windows or the menus. The service calls stay in the code, unused by the views.
+    private func assertNoVehicleActionOffered(in windowController: MainWindowController,
+                                              _ context: String,
+                                              file: StaticString = #filePath, line: UInt = #line) {
+        let actionTitles = Set(HubVehicleControl.allCases.map(\.title)
+            + ["Climate", "Access", "More", "Other commands", "Vehicle controls", "Wake", "Honk",
+               "Flash Lights", "Honk Horn", "Lock", "Unlock", "Start Climate", "Stop Climate"])
+        windowController.selectMainSection(.vehicles)
+        for view in [windowController.window?.contentView, windowController.vehiclesView,
+                     windowController.dashboardView] {
+            XCTAssertEqual(buttons(in: view).filter { actionTitles.contains($0.title) }.map(\.title), [],
+                           "\(context): an action button is offered", file: file, line: line)
+            XCTAssertEqual(labels(in: view).filter { actionTitles.contains($0.stringValue) }.map(\.stringValue), [],
+                           "\(context): an action heading is shown", file: file, line: line)
+        }
+        let menus = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }
+        XCTAssertFalse(menus.contains { actionTitles.contains($0.title) },
+                       "\(context): a menu offers an action", file: file, line: line)
+    }
+
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         var result = (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
@@ -5153,7 +5209,7 @@ private final class MutatingFailureRunner: HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         if arguments.contains("source-check") {
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -5218,7 +5274,7 @@ private final class ScriptedRunner: HubCommandRunning {
         if arguments.contains("source-check") {
             events.append("check")
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -5404,8 +5460,8 @@ private final class ScriptedService: HubServiceControlling {
 extension HubControllerTests {
     /// Every `service` action a site issues, in order, plus the sites' own commands.
     private final class SiteRunner: HubCommandRunning {
-        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
-        static let compatibility = #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+        static let compatibility = #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
         static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
         private(set) var commands: [String] = []
         var historyPreflightFails = false
@@ -6568,7 +6624,7 @@ private final class AfterWindowsRunner: HubCommandRunning {
         if arguments.contains("source-check") {
             events.append("check")
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_4_compatible_schema","requiredVersion":"4.4.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+                #"{"status":"compatible","reasonCode":"v4_5_compatible_schema","requiredVersion":"4.5.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
             ))
             return
         }

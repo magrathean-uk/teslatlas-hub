@@ -105,6 +105,17 @@ pub struct BackupConfig {
     /// enforce ownership keeps every generation whatever this says.
     #[serde(default = "default_backup_keep")]
     pub keep: u32,
+    /// The most scratch an encrypted backup may use, in bytes (M06-T21): a
+    /// run whose scratch need is above it is refused before anything is
+    /// attached or copied. Absent sets no budget.
+    #[serde(default)]
+    pub scratch_budget_bytes: Option<u64>,
+    /// The approved folder for the encrypted backup's scratch volume
+    /// (M06-T21): an existing private folder of the Hub's user, outside the
+    /// Hub data directory and the destination. Absent is the user's
+    /// temporary folder.
+    #[serde(default)]
+    pub scratch_directory: Option<PathBuf>,
 }
 
 /// Where the service reads the unattended backup password (M06-T13).
@@ -143,6 +154,8 @@ impl Default for BackupConfig {
             password_file: None,
             interval_hours: default_backup_interval_hours(),
             keep: default_backup_keep(),
+            scratch_budget_bytes: None,
+            scratch_directory: None,
         }
     }
 }
@@ -196,6 +209,23 @@ impl BackupConfig {
             && !password_file.is_absolute()
         {
             return Err(ConfigError::Invalid("backup.password_file must be absolute"));
+        }
+        if self.scratch_budget_bytes == Some(0) {
+            return Err(ConfigError::Invalid(
+                "backup.scratch_budget_bytes must be greater than zero",
+            ));
+        }
+        if let Some(scratch) = &self.scratch_directory {
+            if !scratch.is_absolute() {
+                return Err(ConfigError::Invalid(
+                    "backup.scratch_directory must be absolute",
+                ));
+            }
+            if scratch.starts_with(data_dir) {
+                return Err(ConfigError::Invalid(
+                    "backup.scratch_directory must lie outside the Hub data directory",
+                ));
+            }
         }
         match self.password_source {
             Some(BackupPasswordSource::Keychain) if !macos => {
@@ -1305,22 +1335,18 @@ impl Default for GeocoderConfig {
     }
 }
 
-/// C7 K-DEFAULT-ENDPOINT: the endpoint of a geocoder that has none configured (C7 R56).
-const DEFAULT_GEOCODER_ENDPOINT: &str = "https://nominatim.openstreetmap.org/";
-
-/// C7 R57: address lookup is on unless the configuration turns it off.
+/// DEC-246: address lookup is off in every build, source builds included, until
+/// the owner turns it on (the Mac app's onboarding offers it).
 const fn default_geocoder_enabled() -> bool {
-    true
+    false
 }
 
 impl GeocoderConfig {
     pub(crate) fn endpoint_url(&self, test_mode: bool) -> Result<Url, ConfigError> {
-        // C7 R56: no endpoint means the public default, except in test mode, where
-        // a missing endpoint stays refused so that no test geocoder can reach it.
-        let raw = match self.endpoint.as_deref() {
-            Some(raw) => raw,
-            None if test_mode => return Err(ConfigError::InvalidGeocoderEndpoint),
-            None => DEFAULT_GEOCODER_ENDPOINT,
+        // DEC-246: there is no public default provider. Address lookup needs the
+        // endpoint the owner chose; without one it is refused, in every mode.
+        let Some(raw) = self.endpoint.as_deref() else {
+            return Err(ConfigError::InvalidGeocoderEndpoint);
         };
         let mut endpoint = Url::parse(raw).map_err(|_| ConfigError::InvalidGeocoderEndpoint)?;
         if endpoint.host_str().is_none()

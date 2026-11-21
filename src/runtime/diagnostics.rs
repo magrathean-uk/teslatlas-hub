@@ -193,6 +193,10 @@ pub struct TlsDiagnostics {
     pub certificate_present: bool,
     pub private_key_present: bool,
     pub identity_valid: bool,
+    /// The configured certificate is an older CA-style self-signed LAN
+    /// certificate (basicConstraints CA:TRUE). It still serves; the doctor names
+    /// it with a renewal hint and never renews it, since renewal needs re-pairing.
+    pub ca_style_certificate: bool,
     pub public_url_host: Option<String>,
 }
 
@@ -290,6 +294,7 @@ impl HubDoctorReport {
             certificate_present = self.tls.certificate_present,
             private_key_present = self.tls.private_key_present,
             identity_valid = self.tls.identity_valid,
+            ca_style_certificate = self.tls.ca_style_certificate,
             import_source_never_mutated = self.safety.import_source_never_mutated,
             import_does_not_delete_fleet_tokens = self.safety.import_does_not_delete_fleet_tokens,
             "Hub doctor connection and safety"
@@ -553,10 +558,15 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         detail: if !tls.configured {
             "TLS not configured (loopback HTTP allowed)".to_owned()
         } else {
-            format!(
+            let mut detail = format!(
                 "certificate={} privateKey={} identityValid={}",
                 tls.certificate_present, tls.private_key_present, tls.identity_valid
-            )
+            );
+            if tls.ca_style_certificate {
+                detail.push_str(" caStyleCertificate=true: ");
+                detail.push_str(CA_STYLE_CERTIFICATE_HINT);
+            }
+            detail
         },
     };
     let collector_check = DoctorCheck {
@@ -763,6 +773,9 @@ pub fn log_runtime_inventory(store: &HubStore, config: &HubConfig) {
     );
 }
 
+/// The doctor's plain renewal hint for an older CA-style LAN certificate.
+const CA_STYLE_CERTIFICATE_HINT: &str = "an older version of the Hub made this LAN certificate in a style current versions no longer make. It still works and nothing needs doing now. The Hub does not renew it on its own, because a new certificate means pairing the phone again. To renew it when convenient, remove the [tls] section from the configuration, run lan-tls, then pair the phone again.";
+
 fn tls_diagnostics(config: &HubConfig) -> TlsDiagnostics {
     let Some(tls) = config.tls.as_ref() else {
         return TlsDiagnostics {
@@ -770,6 +783,7 @@ fn tls_diagnostics(config: &HubConfig) -> TlsDiagnostics {
             certificate_present: false,
             private_key_present: false,
             identity_valid: false,
+            ca_style_certificate: false,
             public_url_host: None,
         };
     };
@@ -778,6 +792,12 @@ fn tls_diagnostics(config: &HubConfig) -> TlsDiagnostics {
         certificate_present: regular_file(tls.certificate_path.as_path()),
         private_key_present: regular_file(tls.private_key_path.as_path()),
         identity_valid: crate::server::validate_tls_identity(tls).is_ok(),
+        ca_style_certificate: crate::server::read_tls_identity_file(
+            &tls.certificate_path,
+            crate::server::MAX_TLS_CERTIFICATE_CHAIN_BYTES,
+            false,
+        )
+        .is_ok_and(|pem| crate::crypto::listener_certificate_is_ca(&pem)),
         public_url_host: url::Url::parse(&tls.public_url)
             .ok()
             .and_then(|url| url.host_str().map(ToOwned::to_owned)),
@@ -1220,6 +1240,53 @@ mod tests {
         vault.begin_refresh(crate::auth::credential_envelope::CredentialSlot::OwnerApi, generation).expect("unresolved attempt");
         let report = inspect_hub(&store, &config).expect("report");
         assert!(!report.credentials.legacy.valid_for_collection);
+    }
+
+    #[test]
+    fn doctor_names_an_older_ca_style_lan_certificate_with_a_renewal_hint() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let write_identity = |is_ca: rcgen::IsCa| -> HubConfig {
+            let key = rcgen::KeyPair::generate().expect("key");
+            let mut params =
+                rcgen::CertificateParams::new(vec!["hub.example.test".to_owned()]).expect("params");
+            params.is_ca = is_ca;
+            let certificate = temporary.path().join("certificate.pem");
+            let private_key = temporary.path().join("private-key.pem");
+            fs::write(&certificate, params.self_signed(&key).expect("cert").pem()).expect("certificate");
+            fs::write(&private_key, key.serialize_pem()).expect("private key");
+            fs::set_permissions(&certificate, fs::Permissions::from_mode(0o600)).expect("mode");
+            fs::set_permissions(&private_key, fs::Permissions::from_mode(0o600)).expect("mode");
+            let config_path = temporary.path().join("config.toml");
+            fs::write(
+                &config_path,
+                format!(
+                    "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[tls]\ncertificate_path = {:?}\nprivate_key_path = {:?}\npublic_url = 'https://hub.example.test/'\n",
+                    temporary.path(), certificate, private_key
+                ),
+            )
+            .expect("write config");
+            fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).expect("mode");
+            HubConfig::load(&config_path).expect("config")
+        };
+        let tls_check = |report: &HubDoctorReport| {
+            report.checks.iter().find(|check| check.name == "tlsIdentity").cloned().expect("tls check")
+        };
+
+        let config = write_identity(rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained));
+        let report = inspect_hub(&store, &config).expect("doctor report");
+        assert!(report.tls.identity_valid);
+        assert!(report.tls.ca_style_certificate);
+        let check = tls_check(&report);
+        assert!(check.passed, "an older certificate still serves: {}", check.detail);
+        assert!(check.detail.contains("caStyleCertificate=true"), "{}", check.detail);
+        assert!(check.detail.contains("pair the phone again"), "{}", check.detail);
+
+        let config = write_identity(rcgen::IsCa::ExplicitNoCa);
+        let report = inspect_hub(&store, &config).expect("doctor report");
+        assert!(report.tls.identity_valid);
+        assert!(!report.tls.ca_style_certificate);
+        assert!(!tls_check(&report).detail.contains("caStyleCertificate"));
     }
 
     #[test]

@@ -1107,3 +1107,179 @@ fn ct59_the_classifiers_answer_the_same_on_the_allow_listed_snapshot() {
         );
     }
 }
+
+#[test]
+fn a_fresh_online_list_recovers_an_install_that_went_stale() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.t0);
+    assert_eq!(core.scheduler.due_vehicles(core.t0), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Updating, false, core.t0);
+
+    let stale_at = core.at(K_UPDATE_STALE.as_secs());
+    assert!(core.scheduler.due_vehicles(stale_at).is_empty());
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Offline);
+
+    let checked_at = stale_at + Duration::from_secs(30);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], checked_at);
+    assert_eq!(core.scheduler.due_vehicles(checked_at), vec![id]);
+}
+
+// ---- FIX-SUSPEND-FALLBACK: a Suspended car whose stream is unusable -------------
+
+/// Car 1 parked and idle to Suspended at t0+15 min (until t0+45 min), its stream
+/// healthy when the suspension began.
+fn suspended_with_stream(core: &mut Core) {
+    let id = core_id(1);
+    first_read_parked(core);
+    core.scheduler.stream_healthy(id, core.t0);
+    for minute in 1..=14 {
+        let t = minutes(core, minute);
+        clock_to(core, t);
+        core.scheduler.due_vehicles(t);
+        core.scheduler
+            .vehicle_succeeded(id, PollPhase::Online, true, t);
+        core.scheduler.stream_healthy(id, t);
+    }
+    let t15 = minutes(core, 15);
+    clock_to(core, t15);
+    core.scheduler.due_vehicles(t15);
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Suspended);
+    assert_eq!(core.scheduler.vehicles[&id].reason, "suspended_idle");
+}
+
+#[test]
+fn a_suspended_car_whose_stream_has_a_protocol_outage_is_polled_again() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    suspended_with_stream(&mut core);
+    // At t0+20 min every stream attempt fails for a protocol fault.
+    let t20 = minutes(&core, 20);
+    clock_to(&core, t20);
+    core.scheduler.stream_unusable(id);
+    core.scheduler.stream_unhealthy(id, t20);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], t20);
+    // The suspension ends at the next tick, long before t0+45 min, and the car is
+    // read within one Online interval.
+    assert_eq!(core.scheduler.due_vehicles(t20), vec![id]);
+    {
+        let record = &core.scheduler.vehicles[&id];
+        assert_eq!(record.phase, PollPhase::Online);
+        assert_eq!(record.reason, "stream_unusable_polling");
+        assert_eq!(record.suspended_until, None);
+    }
+    // Parked: it stays Online on the Online cadence (60 s), and the idle timer
+    // does not suspend it again while the stream stays unusable.
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Online, true, t20);
+    assert_eq!(
+        core.scheduler.vehicles[&id].next_read_due,
+        Some(core.at(20 * 60 + 60))
+    );
+    for minute in 21..=40 {
+        let t = minutes(&core, minute);
+        clock_to(&core, t);
+        assert_eq!(core.scheduler.due_vehicles(t), vec![id], "t0+{minute} min");
+        assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Online);
+        core.scheduler
+            .vehicle_succeeded(id, PollPhase::Online, true, t);
+    }
+    // A drive that starts is seen at the next read.
+    let t41 = minutes(&core, 41);
+    clock_to(&core, t41);
+    assert_eq!(core.scheduler.due_vehicles(t41), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Driving, false, t41);
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Driving);
+    // Once the stream is healthy again, the idle car is suspended as before.
+    let mut parked = Core::owner();
+    suspended_with_stream(&mut parked);
+    let t20 = minutes(&parked, 20);
+    clock_to(&parked, t20);
+    parked.scheduler.stream_unusable(id);
+    parked.scheduler.stream_unhealthy(id, t20);
+    assert_eq!(parked.scheduler.due_vehicles(t20), vec![id]);
+    parked
+        .scheduler
+        .vehicle_succeeded(id, PollPhase::Online, true, t20);
+    // The idle window restarted at that read (t0+20 min, ending t0+35 min); the
+    // stream is healthy again from t0+21 min.
+    for minute in 21..=34 {
+        let t = minutes(&parked, minute);
+        clock_to(&parked, t);
+        parked.scheduler.stream_healthy(id, t);
+        assert_eq!(
+            parked.scheduler.due_vehicles(t),
+            vec![id],
+            "t0+{minute} min"
+        );
+        parked
+            .scheduler
+            .vehicle_succeeded(id, PollPhase::Online, true, t);
+    }
+    let t35 = minutes(&parked, 35);
+    clock_to(&parked, t35);
+    parked.scheduler.due_vehicles(t35);
+    assert_eq!(parked.scheduler.vehicles[&id].phase, PollPhase::Suspended);
+    assert_eq!(parked.scheduler.vehicles[&id].reason, "suspended_idle");
+}
+
+#[test]
+fn a_suspended_car_with_a_healthy_or_merely_disconnected_stream_stays_suspended() {
+    for network_loss in [false, true] {
+        let mut core = Core::owner();
+        let id = core_id(1);
+        suspended_with_stream(&mut core);
+        let t20 = minutes(&core, 20);
+        clock_to(&core, t20);
+        if network_loss {
+            // A plain network loss is an outage, not an unusable stream.
+            core.scheduler.stream_unhealthy(id, t20);
+        } else {
+            core.scheduler.stream_healthy(id, t20);
+        }
+        core.scheduler
+            .accept_discovery(vec![core_vehicle(1, "online")], t20);
+        for t in [t20, minutes(&core, 30), minutes(&core, 44)] {
+            clock_to(&core, t);
+            assert!(
+                core.scheduler.due_vehicles(t).is_empty(),
+                "loss {network_loss}"
+            );
+            let record = &core.scheduler.vehicles[&id];
+            assert_eq!(record.phase, PollPhase::Suspended);
+            assert_ne!(record.reason, "stream_unusable_polling");
+            assert_eq!(record.suspended_until, Some(minutes(&core, 45)));
+        }
+    }
+}
+
+#[test]
+fn an_asleep_car_with_an_unusable_stream_is_not_woken() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    suspended_with_stream(&mut core);
+    // The car falls asleep during its suspension.
+    let t20 = minutes(&core, 20);
+    clock_to(&core, t20);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "asleep")], t20);
+    assert_eq!(core.scheduler.vehicles[&id].phase, PollPhase::Asleep);
+    core.scheduler.stream_unusable(id);
+    core.scheduler.stream_unhealthy(id, t20);
+    for minute in [20, 21, 30, 60] {
+        let t = minutes(&core, minute);
+        clock_to(&core, t);
+        core.scheduler
+            .accept_discovery(vec![core_vehicle(1, "asleep")], t);
+        assert!(core.scheduler.due_vehicles(t).is_empty(), "t0+{minute} min");
+        let record = &core.scheduler.vehicles[&id];
+        assert_eq!(record.phase, PollPhase::Asleep);
+        assert_eq!(record.next_read_due, None);
+        assert!(!record.wake_read_pending);
+    }
+}

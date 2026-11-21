@@ -2,7 +2,7 @@
 
 //! C7 part C test for the enrichment caller (spec section 7.5, C7 T72): the
 //! pre-claim gate leaves a refused or paced job pending, untouched. A store
-//! with one pending job, the default geocoder (the public host), a stored
+//! with one pending job, a geocoder turned on for the public host, a stored
 //! refusal record, a limiter of the test's own and an injected `now_ms`;
 //! nothing is sent.
 
@@ -37,7 +37,7 @@ fn store_with_pending_job() -> (tempfile::TempDir, HubStore) {
     (temp, store)
 }
 
-fn config_with_default_geocoder(directory: &std::path::Path) -> HubConfig {
+fn config_with_public_geocoder(directory: &std::path::Path) -> HubConfig {
     HubConfig {
         data_dir: directory.to_path_buf(),
         bind: "127.0.0.1:8080".parse().expect("bind"),
@@ -46,7 +46,11 @@ fn config_with_default_geocoder(directory: &std::path::Path) -> HubConfig {
         pairing: Default::default(),
         backup: Default::default(),
         collector: crate::config::CollectorConfig::default(),
-        geocoder: crate::config::GeocoderConfig::default(),
+        geocoder: crate::config::GeocoderConfig {
+            enabled: true,
+            endpoint: Some("https://nominatim.openstreetmap.org/".to_owned()),
+            ..crate::config::GeocoderConfig::default()
+        },
         import_source: crate::config::ImportSourceConfig::default(),
         terrain: TerrainConfig::default(),
     }
@@ -68,7 +72,7 @@ fn job_state(store: &HubStore) -> (String, i64, Option<String>) {
 #[tokio::test]
 async fn c7_t72_jobs_pending() {
     let (temp, store) = store_with_pending_job();
-    let config = config_with_default_geocoder(temp.path());
+    let config = config_with_public_geocoder(temp.path());
     assert!(config.geocoder.enabled);
     let limiter = crate::geocoder::isolate_global_limiter_for_test();
     let cursor_key = CursorKey::from_bytes([7; 32]);

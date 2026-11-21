@@ -90,14 +90,49 @@ serving. Old command/configuration names are refused with replacement guidance.
 ## Vehicle control
 
 `control` manages collection settings, paired devices, geofences, GPX export,
-and explicit vehicle actions. Vehicle actions require `--confirm`; multiple
-vehicles also require `--vehicle-id UUID`.
+and explicit vehicle actions.
+
+### Vehicle actions
+
+Three actions are sent: `wake`, `flash-lights` and `honk-horn`. Only the
+command line sends them; the Mac app shows none. Each needs `--confirm`, and
+with more than one car, `--vehicle-id UUID`. The other actions the command line
+parses (`climate-start`, `climate-stop`, `charge-start`, `charge-stop`,
+`set-charge-limit --percent N`, `lock` and `unlock`) are always refused, by the
+command line and again by the running service, and never sent.
 
 ```sh
 sudo -u tesatlas -- /usr/bin/tesatlas-hub \
   --config /etc/tesatlas-hub/config.toml control \
   --vehicle-id 11111111-1111-4111-8111-111111111111 wake --confirm
 ```
+
+An action is sent only by a Legacy Hub whose running service is collecting
+inside an open collection window. The command hands it to that service, which
+checks the window again, records it in the outbound audit as an explicit vehicle
+command (a wake as a direct wake command) and sends it once through the Owner
+route; it is never repeated. On success the command prints the service's report
+as one JSON line; a wake's `state` is one of `online`, `asleep`, `offline` or
+`waking`, or absent. A refusal prints nothing on standard output, exits 1 and
+writes one of these lines to standard error, and nothing is sent:
+
+| Line | When |
+| --- | --- |
+| `vehicle_commands_not_offered: ...` | The Hub is configured for Fleet. Fleet is polling only, with or without `--confirm`. |
+| `vehicle_action_not_permitted: ...` | The action is not `wake`, `flash-lights` or `honk-horn`, with or without `--confirm`. |
+| `vehicle_action_unconfirmed: ...` | `--confirm` is missing. |
+| `collection_window_closed: ...` | No running Hub is collecting inside an open window, or its window has closed. |
+| `vehicle_action_unknown: ...` | The running Hub does not know the action. |
+
+An action name the command line does not know is a usage error (exit 2). When
+Tesla explicitly rejects the command (a 4xx answer other than 408 or 429, or a
+refusal in the answer), the line says the provider rejected it. When the action
+was sent but its answer was lost, timed out, could not be read, or came back as a
+server or gateway failure (5xx, 408, 429), the command exits 1
+with `vehicle command outcome is unknown: it may have been sent (audit receipt
+N); do not repeat it`: the car may have acted, and the audit receipt records the
+failure rather than a rejection. Check the car
+before repeating anything.
 
 Do not run real vehicle commands during testing. Charging, climate, lock, wake,
 light, and horn actions affect physical property and third-party services.

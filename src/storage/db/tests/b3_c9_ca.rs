@@ -921,7 +921,7 @@ fn c9_r40_fill_preserves_imported_closed_totals() {
                         "INSERT INTO ",
                         crate::db::import_table_names::import_projection_state_rows_table!(),
                         "
-                 VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                 VALUES (?1, 1, 9, 1, zeroblob(32))"
                     ),
                     [vehicle.to_string()],
                 )
@@ -1239,14 +1239,16 @@ fn c9_st57_unchanged_pair() {
         Some(3),
     );
     assert_eq!(result.filled, 1);
-    assert_eq!(result.drives_changed, 0);
+    // Issue #32: the totals are unchanged, but the drive's elevation coverage
+    // moves from partial to full, which publishes the drive.
+    assert_eq!(result.drives_changed, 1);
     assert_eq!(pair(&store, vehicle, 1), (Some(3), Some(0)));
     assert_eq!(
         mutations(&store, vehicle)[before..]
             .iter()
             .map(|(e, id, _)| (e.as_str(), *id))
             .collect::<Vec<_>>(),
-        [("position", 3)]
+        [("position", 3), ("drive", 1)]
     );
     assert_eq!(b3_c8_sb::export_revision(&store, vehicle), 2);
 }
@@ -1769,4 +1771,159 @@ fn c9_r39_interleaved_drives_recompute_once_after_positions() {
         (Some(0), Some(4))
     );
     assert_eq!(b3_c8_sb::export_revision(&store, vehicle), 1);
+}
+
+fn design_later_32_elevations(store: &HubStore, vehicle: Uuid, elevations: &[Option<i64>]) {
+    let connection = store.open().unwrap();
+    for (index, elevation) in elevations.iter().enumerate() {
+        connection
+            .execute(
+                "UPDATE materialised_positions
+                 SET position_json = json_set(position_json, '$.elevation', ?3)
+                 WHERE vehicle_id = ?1 AND position_id = ?2",
+                params![vehicle.to_string(), index as i64 + 1, elevation],
+            )
+            .unwrap();
+    }
+}
+
+fn design_later_32_recompute(store: &HubStore, vehicle: Uuid) -> bool {
+    let mut connection = store.open().unwrap();
+    let transaction = connection.transaction().unwrap();
+    let changed = recompute_terrain_drive_with_change(&transaction, vehicle, 1).unwrap();
+    transaction.commit().unwrap();
+    changed
+}
+
+fn design_later_32_coverage(store: &HubStore, vehicle: Uuid) -> crate::lifecycle::ElevationCoverage {
+    store.drive_elevation_coverage(vehicle, &[1]).unwrap()[0]
+}
+
+#[test]
+fn design_later_32_coverage_is_published_with_totals_and_on_coverage_only_changes() {
+    use crate::lifecycle::ElevationCoverage;
+    let (_dir, store, vehicle) = fixture();
+    let positions: Vec<_> = (1..=4).map(|id| position(id, 1)).collect();
+    seed(&store, vehicle, &positions);
+    // Never recomputed: unknown.
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Unknown);
+    let start = mutations(&store, vehicle).len();
+
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Partial);
+    let totals = |store: &HubStore| -> (Option<i64>, Option<i64>) {
+        store
+            .open()
+            .unwrap()
+            .query_row(
+                "SELECT ascent, descent FROM materialised_drives WHERE drive_id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    };
+    let partial_totals = totals(&store);
+    assert_eq!(partial_totals, (Some(20), Some(0)));
+    assert_eq!(mutations(&store, vehicle).len(), start + 1);
+
+    // Filling the gap without changing the totals still publishes the drive.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(101), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(totals(&store), partial_totals);
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Complete);
+    let log = mutations(&store, vehicle);
+    assert_eq!(log.len(), start + 2);
+    assert_eq!((log[start + 1].0.as_str(), log[start + 1].1), ("drive", 1));
+    // The drive row and its sync payload keep their shape: coverage is side
+    // metadata only.
+    assert!(log[start + 1].2.get("elevation_coverage").is_none());
+    let drive_json: String = store
+        .open()
+        .unwrap()
+        .query_row("SELECT drive_json FROM materialised_drives WHERE drive_id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(!drive_json.contains("coverage"));
+
+    // Nothing changed: nothing is published.
+    assert!(!design_later_32_recompute(&store, vehicle));
+    assert_eq!(mutations(&store, vehicle).len(), start + 2);
+
+    // An invalid elevation is partial again; too few usable readings are
+    // unknown and leave no stored coverage.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(20_000), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Partial);
+    design_later_32_elevations(&store, vehicle, &[None, None, None, Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    assert_eq!(design_later_32_coverage(&store, vehicle), ElevationCoverage::Unknown);
+
+    // Coverage is read from a fresh connection and follows the drive's deletion.
+    design_later_32_elevations(&store, vehicle, &[Some(100), Some(101), Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    let reopened = store;
+    assert_eq!(design_later_32_coverage(&reopened, vehicle), ElevationCoverage::Complete);
+    reopened
+        .open()
+        .unwrap()
+        .execute("DELETE FROM materialised_drives WHERE drive_id = 1", [])
+        .unwrap();
+    assert_eq!(design_later_32_coverage(&reopened, vehicle), ElevationCoverage::Unknown);
+}
+
+/// REV-CX-R5 ISS-A1332: a terrain recompute that commits between the drive
+/// read and the coverage read must not label the old totals with the new
+/// coverage. Both public reads return one snapshot.
+#[test]
+fn design_later_32_drive_totals_and_coverage_come_from_one_snapshot() {
+    use crate::lifecycle::ElevationCoverage;
+    let (_dir, store, vehicle) = fixture();
+    let positions: Vec<_> = (1..=4).map(|id| position(id, 1)).collect();
+    seed(&store, vehicle, &positions);
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    let fill_gap = |store: &HubStore| {
+        let store = store.clone();
+        move || {
+            design_later_32_elevations(
+                &store,
+                vehicle,
+                &[Some(100), Some(200), Some(110), Some(120)],
+            );
+            assert!(design_later_32_recompute(&store, vehicle));
+        }
+    };
+
+    crate::db::before_drive_coverage_read(fill_gap(&store));
+    let page = store
+        .materialised_drives_page_with_elevation_coverage(vehicle, 0, i64::MAX, None, 10)
+        .unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(
+        (page[0].0.ascent, page[0].0.descent, page[0].1),
+        (Some(20), Some(0), ElevationCoverage::Partial)
+    );
+    // The next read sees the committed recompute, totals and coverage together.
+    let (drive, coverage) = store
+        .materialised_closed_drive_with_elevation_coverage(vehicle, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (drive.ascent, drive.descent, coverage),
+        (Some(110), Some(90), ElevationCoverage::Complete)
+    );
+
+    design_later_32_elevations(&store, vehicle, &[Some(100), None, Some(110), Some(120)]);
+    assert!(design_later_32_recompute(&store, vehicle));
+    crate::db::before_drive_coverage_read(fill_gap(&store));
+    let (drive, coverage) = store
+        .materialised_closed_drive_with_elevation_coverage(vehicle, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (drive.ascent, drive.descent, coverage),
+        (Some(20), Some(0), ElevationCoverage::Partial)
+    );
 }

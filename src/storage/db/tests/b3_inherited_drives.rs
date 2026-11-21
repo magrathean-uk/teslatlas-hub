@@ -334,8 +334,11 @@ fn c1_st111_recompute_and_replay() {
     let (_, ascent, descent) = stored_drive(&same.store, &same.vehicle, 1);
     assert_eq!((ascent, descent), (Some(43), Some(7)));
     let mutations = drive_mutations(&same.store, &same.vehicle, 1);
-    assert_eq!(mutations.len(), 1, "an unchanged pair adds no mutation");
+    // Issue #32: the drive's elevation coverage became known, so the unchanged
+    // totals are published once more with it.
+    assert_eq!(mutations.len(), 2, "an unchanged pair adds only the coverage publication");
     assert_eq!(totals_of(&mutations[0].1), (Some(43), Some(7)));
+    assert_eq!(totals_of(&mutations[1].1), (Some(43), Some(7)));
 }
 
 #[test]
@@ -642,8 +645,10 @@ fn c1_st111_reencoded_and_seeded_stored() {
     let (_, ascent, descent) = stored_drive(&store, &vehicle, 70);
     assert_eq!((ascent, descent), (Some(10), Some(0)));
     let mutations = drive_mutations(&store, &vehicle, 70);
-    assert_eq!(mutations.len(), 1, "equal totals add no mutation");
+    // Issue #32: equal totals add only the coverage publication.
+    assert_eq!(mutations.len(), 2, "equal totals add only the coverage publication");
     assert_eq!(totals_of(&mutations[0].1), (Some(10), Some(0)));
+    assert_eq!(totals_of(&mutations[1].1), (Some(10), Some(0)));
 }
 
 #[test]

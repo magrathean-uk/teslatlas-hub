@@ -470,6 +470,26 @@ fn import_seam_plan_hub_wins_inside_coverage() {
 }
 
 #[test]
+fn short_source_drive_does_not_split_overlapping_drives() {
+    let coverage = coverage(&[WINDOW]);
+    let hub_drive = hub_id(1);
+    let hub = store(HubRows {
+        drives: vec![session(hub_drive, 1_210, 1_490)],
+        ..HubRows::default()
+    });
+    let source = SourceRows {
+        drives: vec![session(10, 1_220, 1_250), session(11, 1_260, 1_490)],
+        ..SourceRows::default()
+    };
+
+    let planned = plan(&coverage, &hub, &source);
+    assert_eq!(planned.drives.hub_kept, vec![hub_drive]);
+    assert_eq!(planned.drives.imported, vec![10]);
+    assert_eq!(planned.drives.skipped, vec![link(11, hub_drive)]);
+    assert_replays("short drive between overlapping drives", &coverage, &hub, &source);
+}
+
+#[test]
 fn import_seam_plan_neither_covers_longer_wins_children_move() {
     // The source saw the start, the Hub saw more of the drive: the Hub's row
     // is longer and wins; the source's positions outside the window stay and
@@ -971,4 +991,30 @@ fn import_seam_plan_scenarios_hold_every_row_once_and_replay() {
         (scenario.check)(&first);
         assert_replays(scenario.name, &coverage, &hub, &source);
     }
+}
+
+/// Review finding #39: a restart gap from the 5 s watermark tombstones a Hub
+/// position collected after the last tick; one from the first whole second
+/// after the Hub's newest row keeps it.
+#[test]
+fn m08_t39_restart_gap_after_the_newest_hub_row_keeps_it() {
+    let row = ChildRow {
+        id: hub_id(1),
+        at_ms: ms(1_103) + 400,
+        parent: None,
+    };
+    let hub = store(HubRows {
+        positions: vec![row],
+        ..HubRows::default()
+    });
+    let source = SourceRows::default();
+    // The window ran 1_000 to 2_000; the service stopped after 1_103.4 and
+    // started again at 1_700; the last persisted tick was 1_100.
+    let from_watermark = coverage(&[(1_000, 1_100), (1_700, 2_000)]);
+    assert_eq!(plan(&from_watermark, &hub, &source).positions.hub_removed, vec![hub_id(1)]);
+    let from_newest_row = coverage(&[(1_000, 1_104), (1_700, 2_000)]);
+    let kept = plan(&from_newest_row, &hub, &source);
+    assert!(kept.positions.hub_removed.is_empty());
+    assert_eq!(kept.positions.hub_kept_count, 1);
+    assert_replays("restart gap after the newest row", &from_newest_row, &hub, &source);
 }

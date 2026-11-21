@@ -774,7 +774,9 @@ async fn ct71_no_second_run_starts_while_the_previous_run_has_not_ended() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
+        held_frame: None,
     }];
     let auth_value = crate::legacy_auth::LegacyAuth::for_test(
         url::Url::parse("https://auth.tesla.com/oauth2/v3/token").unwrap(),
@@ -853,19 +855,21 @@ async fn ct71_a_stop_waits_for_the_timeout_then_aborts_and_returns_only_after_th
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
+        held_frame: None,
     }];
     tokio::task::yield_now().await;
     assert!(!ended.load(Ordering::SeqCst));
     let started = tokio::time::Instant::now();
-    let queued = disconnect_vehicle_stream(&mut streams, id).await;
-    assert!(queued.is_empty());
+    disconnect_vehicle_stream(&mut streams, id).await;
+    assert!(streams[0].next_event().is_none());
     assert!(
         tokio::time::Instant::now() - started >= STREAM_SHUTDOWN_TIMEOUT,
         "it waited for the whole timeout"
     );
     assert!(ended.load(Ordering::SeqCst), "the task had ended when it returned");
-    assert!(streams.is_empty(), "and the runtime is gone");
+    assert!(streams[0].task.is_none(), "and its handle is joined");
 }
 
 #[tokio::test]
@@ -886,7 +890,9 @@ async fn r36_frames_queued_when_a_stream_is_stopped_are_stored() {
         sensitive_access_failure: Arc::new(AtomicBool::new(false)),
         events: receiver,
         _shutdown: Some(shutdown),
+        quiet: None,
         task: Some(task),
+        held_frame: None,
     }];
     let base = StreamBed::now_ms();
     for step in 0..3 {
@@ -949,7 +955,9 @@ async fn t13_the_audit_failure_shows_in_status_and_readiness_even_when_the_store
                 sensitive_access_failure: Arc::new(AtomicBool::new(false)),
                 events: receiver,
                 _shutdown: None,
+                quiet: None,
                 task: Some(task),
+                held_frame: None,
             }];
             while !streams[0].task.as_ref().is_some_and(JoinHandle::is_finished) {
                 tokio::task::yield_now().await;
@@ -1200,7 +1208,9 @@ impl StreamBed {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: None,
+            held_frame: None,
         };
         Self {
             _dir: dir,
@@ -1220,7 +1230,7 @@ impl StreamBed {
         process_stream_event(
             &self.store,
             &mut self.core.scheduler,
-            &self.runtime,
+            &mut self.runtime,
             event,
             &mut self.cache,
             &mut rejected,
@@ -1414,7 +1424,9 @@ async fn a_run_that_ends_with_an_error_is_spaced_and_leaves_the_collector_runnin
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: Some(task),
+            held_frame: None,
         }];
         while !streams[0]
             .task
@@ -1463,7 +1475,9 @@ async fn a_credential_authority_failure_still_stops_the_collector() {
         sensitive_access_failure: Arc::new(AtomicBool::new(true)),
         events: receiver,
         _shutdown: None,
+        quiet: None,
         task: Some(task),
+        held_frame: None,
     }];
     while !streams[0]
         .task
@@ -1508,7 +1522,9 @@ async fn a_panicked_or_cancelled_run_is_spaced_like_any_other_error() {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: None,
+            quiet: None,
             task: Some(task),
+            held_frame: None,
         }];
         while !streams[0]
             .task
@@ -2890,4 +2906,34 @@ fn m04_t12_answered_stream_check_cannot_delay_or_cancel_a_408_check() {
             Some(first)
         );
     }
+}
+
+#[test]
+fn park_frames_do_not_shorten_vehicle_read_backoff() {
+    let mut core = Core::owner();
+    let id = core_id(1);
+    core.scheduler
+        .accept_discovery(vec![core_vehicle(1, "online")], core.t0);
+    assert_eq!(core.scheduler.due_vehicles(core.t0), vec![id]);
+    core.scheduler
+        .vehicle_succeeded(id, PollPhase::Driving, false, core.t0);
+
+    let failed_at = core.at(20);
+    core.scheduler
+        .schedule_stream_evidence(id, Some("P"), Some(0.0), Some(0), failed_at);
+    assert_eq!(core.scheduler.due_vehicles(failed_at), vec![id]);
+    core.scheduler
+        .vehicle_failed_for_error(id, &ep_status(503), failed_at);
+
+    let retry_at = core.at(30);
+    for seconds in 21..30 {
+        let now = core.at(seconds);
+        core.scheduler
+            .schedule_stream_evidence(id, Some("P"), Some(0.0), Some(0), now);
+        assert!(
+            core.scheduler.due_vehicles(now).is_empty(),
+            "park evidence made the read due again at {seconds}s"
+        );
+    }
+    assert_eq!(core.scheduler.due_vehicles(retry_at), vec![id]);
 }

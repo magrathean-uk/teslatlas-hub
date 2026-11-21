@@ -190,8 +190,7 @@ impl ElevationWalk {
     /// are ignored; the first valid value sets the reference. Arithmetic is
     /// saturating.
     pub(crate) fn step(&mut self, elevation_m: Option<i64>) {
-        let Some(elevation) = elevation_m.filter(|value| (K_ELEV_MIN..=K_ELEV_MAX).contains(value))
-        else {
+        let Some(elevation) = Self::usable(elevation_m) else {
             return;
         };
         self.count = self.count.saturating_add(1);
@@ -209,6 +208,12 @@ impl ElevationWalk {
         }
     }
 
+    /// The walk's elevation-validity rule: present and inside
+    /// `K_ELEV_MIN..=K_ELEV_MAX`. Coverage (issue #32) reads the same rule.
+    pub(crate) fn usable(elevation_m: Option<i64>) -> Option<i64> {
+        elevation_m.filter(|value| (K_ELEV_MIN..=K_ELEV_MAX).contains(value))
+    }
+
     /// `(ascent, descent)`: `(None, None)` with fewer than two valid readings,
     /// because no change can be measured; otherwise each total saturated at
     /// [`K_SMALLINT_MAX`] (R50).
@@ -224,6 +229,16 @@ impl ElevationWalk {
 }
 
 impl OpenDrive {
+    /// Whether the odometer readings of this drive can be trusted: no
+    /// same-class fall is waiting for its next reading or has persisted.
+    fn odometer_is_known(&self) -> bool {
+        self.odometer_history.as_ref().is_none_or(|history| {
+            !history.invalid
+                && history.fine.pending_fall.is_none()
+                && history.coarse.pending_fall.is_none()
+        })
+    }
+
     /// A drive with nothing folded yet.
     fn empty(id: i64, car_id: i64, start_date_ms: i64) -> Self {
         Self {
@@ -245,6 +260,7 @@ impl OpenDrive {
             last_rated_range_km: None,
             last_odometer: None,
             first_odometer: None,
+            odometer_history: None,
             power_max: None,
             power_min: None,
             inside_temp_sum: 0.0,
@@ -339,6 +355,46 @@ fn fold_drive_point(
         }
     }
     if let Some(odometer) = point.odometer_km.filter(|value| value.is_finite()) {
+        // The lead taken from the parked snapshot stands as the previous
+        // reading of its own class until the drive folds a reading.
+        let lead = open
+            .odometer_history
+            .is_none()
+            .then_some(open.last_odometer)
+            .flatten()
+            .filter(|_| open.odometer_coarse == point.odometer_coarse);
+        let mut history = open.odometer_history.take().unwrap_or_default();
+        let maximum_before = open.last_odometer;
+        let class = if point.odometer_coarse {
+            &mut history.coarse
+        } else {
+            &mut history.fine
+        };
+        // A fall is judged only between two readings of the same class. A
+        // coarse stream frame below a full poll is the known precision
+        // difference between the sources, not an untrusted reading, so it
+        // keeps the clamp below.
+        if !history.invalid {
+            if let Some(before_fall) = class.pending_fall.take() {
+                // Only the next reading of the class can contradict a single
+                // fall. A fall that persists is retained as uncertainty.
+                history.invalid = odometer < before_fall;
+            } else if let Some(previous) = class.previous.or(lead)
+                && odometer < previous
+            {
+                if let Some(before) = class.maximum_before_previous
+                    && previous > before
+                    && odometer >= before
+                {
+                    // The preceding reading of this class jumped and returned.
+                    // Its stored position stays untouched; only the total rolls
+                    // back.
+                    open.last_odometer = Some(before);
+                } else {
+                    class.pending_fall = Some(previous);
+                }
+            }
+        }
         let first = *open.first_odometer.get_or_insert(odometer);
         // An odometer cannot decrease, and mixed-source rounding must not
         // create a negative distance, so "last" is the greatest reading and
@@ -348,6 +404,9 @@ fn fold_drive_point(
                 .map_or(odometer, |last| last.max(odometer))
                 .max(first),
         );
+        class.previous = Some(odometer);
+        class.maximum_before_previous = maximum_before;
+        open.odometer_history = Some(history);
         open.odometer_coarse |= point.odometer_coarse;
     }
     if let Some(level) = point.battery_level {
@@ -537,7 +596,32 @@ fn usable_energy_counter(sample: &ProjectionChargeSample) -> Option<f64> {
 ///   restart.
 ///
 /// The last usable counter `l` is written after every row.
+///
+/// A restart is provisional for exactly one reading (issue #13): the fallen
+/// value waits in `pending_counter_reset_kwh` with `l` still the pre-fall
+/// counter. The very next usable counter decides it: a value that is no
+/// restart against `l` returned to the pre-fall range, so the fallen reading
+/// is left out of the derived energy and the raw sample stays unchanged; a
+/// value that is still a restart against `l` corroborates it, and the segment
+/// rule above applies with the fallen reading as the new segment's start. A
+/// next sample without a usable counter leaves the reset unresolved
+/// ([`observe_charge_sample`]), and so does a session that ends with it
+/// pending ([`charge_energy_totals`]).
 fn fold_energy_counter(open: &mut OpenCharge, counter: f64) {
+    if let Some(pending) = open.pending_counter_reset_kwh.take() {
+        let corroborated = open
+            .last_energy_added
+            .is_some_and(|previous| counter_restarted(previous, counter));
+        if corroborated && let Some(max) = open.max_energy_added {
+            open.energy_added_carry_kwh += max - open.first_energy_added.unwrap_or(0.0);
+            open.first_energy_added = Some(0.0);
+            open.max_energy_added = Some(pending);
+            open.last_energy_added = Some(pending);
+            // The fallen reading opened the new segment, so the interval from
+            // it to this sample lies inside one session and is counted.
+            open.prev_energy_added_kwh = Some(pending);
+        }
+    }
     let mut baseline = open.first_energy_added.unwrap_or(0.0);
     match open.max_energy_added {
         None => {
@@ -552,9 +636,8 @@ fn fold_energy_counter(open: &mut OpenCharge, counter: f64) {
         Some(max) => {
             let previous = open.last_energy_added.unwrap_or(max);
             if counter_restarted(previous, counter) {
-                open.energy_added_carry_kwh += max - baseline;
-                baseline = 0.0;
-                open.max_energy_added = Some(counter);
+                open.pending_counter_reset_kwh = Some(counter);
+                return;
             }
         }
     }
@@ -620,10 +703,19 @@ fn fold_charge_interval(
 /// slice fold work without C1's step.
 fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample) {
     let first = open.sample_count == 0 && open.last_sample_timestamp_ms.is_none();
-    let counter = usable_energy_counter(sample);
-    if let Some(counter) = counter {
-        fold_energy_counter(open, counter);
-    }
+    let counter = match usable_energy_counter(sample) {
+        Some(counter) => {
+            fold_energy_counter(open, counter);
+            // A provisional reset's own reading feeds no interval (issue #13).
+            open.pending_counter_reset_kwh.is_none().then_some(counter)
+        }
+        None => {
+            if open.pending_counter_reset_kwh.take().is_some() {
+                open.counter_reading_unresolved = true;
+            }
+            None
+        }
+    };
     fold_charge_session_kind(&mut open.is_dc, &mut open.fast_charger_type, sample);
     let power = sample_grid_power_kw(sample, open.is_dc, open.phase_count);
     if first {
@@ -701,7 +793,9 @@ fn finalize_drive(
         .max(open.start_date_ms);
     // R46: odometer-based only; GPS path length is never substituted.
     let distance_km = match (open.first_odometer, open.last_odometer) {
-        (Some(first), Some(last)) if first.is_finite() && last.is_finite() => {
+        (Some(first), Some(last))
+            if first.is_finite() && last.is_finite() && open.odometer_is_known() =>
+        {
             Some((last - first).max(0.0))
         }
         _ => None,
@@ -770,14 +864,65 @@ fn finalize_drive(
 /// `recompute_terrain_drive`. The elevations are the drive's stored positions
 /// in `(date_ms, id)` order. `(None, None)` with fewer than two valid
 /// readings; each total saturates at [`K_SMALLINT_MAX`].
+#[cfg(test)]
 pub(crate) fn elevation_totals(
     elevations: impl IntoIterator<Item = Option<i64>>,
 ) -> (Option<i64>, Option<i64>) {
+    elevation_totals_and_coverage(elevations).0
+}
+
+/// Elevation coverage of a drive's ascent and descent (issue #32,
+/// hub-http-v1@1.4.0 `elevation_coverage`). Absent metadata means unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ElevationCoverage {
+    /// Every position the totals read has a usable elevation.
+    Complete,
+    /// The totals are numeric, but some position lacks a usable elevation.
+    Partial,
+    /// No numeric totals, or coverage cannot be established.
+    Unknown,
+}
+
+impl ElevationCoverage {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial => "partial",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// The stored side value; anything other than the two stored states,
+    /// including no row, is unknown.
+    pub(crate) fn from_stored(value: Option<&str>) -> Self {
+        match value {
+            Some("complete") => Self::Complete,
+            Some("partial") => Self::Partial,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// [`elevation_totals`] with its coverage (issue #32): complete only when every
+/// position passes the walk's own validity rule ([`ElevationWalk::usable`]),
+/// partial when the totals are numeric but some position fails it, and
+/// unknown when the walk has fewer than two usable readings.
+pub(crate) fn elevation_totals_and_coverage(
+    elevations: impl IntoIterator<Item = Option<i64>>,
+) -> ((Option<i64>, Option<i64>), ElevationCoverage) {
     let mut walk = ElevationWalk::default();
+    let mut gap = false;
     for elevation in elevations {
+        gap |= ElevationWalk::usable(elevation).is_none();
         walk.step(elevation);
     }
-    walk.totals()
+    let totals = walk.totals();
+    let coverage = match (totals.0, gap) {
+        (None, _) => ElevationCoverage::Unknown,
+        (Some(_), true) => ElevationCoverage::Partial,
+        (Some(_), false) => ElevationCoverage::Complete,
+    };
+    (totals, coverage)
 }
 
 fn finalize_charge(
@@ -879,6 +1024,14 @@ fn observe_charge_aggregate(open: &mut OpenCharge, sample: &ProjectionChargeSamp
 /// nothing: the per-kWh cost of a DC session reads the counter only (C2 R77).
 /// Both outputs are rounded once, here (R4).
 pub(crate) fn charge_energy_totals(open: &OpenCharge) -> ChargeEnergyTotals {
+    // An unresolved provisional counter reset (issue #13) leaves every total
+    // that reads the counter unknown, never a plausible number.
+    if open.counter_reading_unresolved || open.pending_counter_reset_kwh.is_some() {
+        return ChargeEnergyTotals {
+            added_kwh: None,
+            used_kwh: None,
+        };
+    }
     let energy = open.max_energy_added.map(|maximum| {
         open.energy_added_carry_kwh + (maximum - open.first_energy_added.unwrap_or(0.0))
     });
@@ -1702,17 +1855,19 @@ fn fold_into_open_drive(
 /// and is not listed.
 ///
 /// The close also leaves the parked snapshot (R69) and the references of the
-/// standalone rule (R53) at the drive's latest emitted position.
+/// standalone rule (R53) at the drive's latest emitted position. It returns
+/// whether a drive closed with an untrusted odometer.
 fn close_open_drive(
     state: &mut OpenSessionState,
     delta: &mut LifecycleDelta,
     loe_end: bool,
     closing_position: Option<ProjectionPosition>,
     explicit_end: Option<i64>,
-) -> Result<(), LifecycleError> {
+) -> Result<bool, LifecycleError> {
     let Some(mut open) = state.open_drive.take() else {
-        return Ok(());
+        return Ok(false);
     };
+    let odometer_untrusted = !open.odometer_is_known();
     record_drive_close_references(state, &open);
     let imported = state
         .imported_open
@@ -1765,7 +1920,7 @@ fn close_open_drive(
             }
         }
     }
-    Ok(())
+    Ok(odometer_untrusted)
 }
 
 /// What a closing drive leaves behind (C1 R53, R69), taken from the open drive
@@ -1796,7 +1951,7 @@ fn record_drive_close_references(state: &mut OpenSessionState, open: &OpenDrive)
         battery_level: open.last_soc,
         ideal_range_km: open.end_ideal_range_km,
         rated_range_km: open.last_rated_range_km,
-        odometer_km: open.last_odometer,
+        odometer_km: open.last_odometer.filter(|_| open.odometer_is_known()),
         odometer_coarse: open.odometer_coarse,
         latitude: open.last_latitude.or(open.start_latitude),
         longitude: open.last_longitude.or(open.start_longitude),
@@ -1816,13 +1971,14 @@ fn record_drive_close_references(state: &mut OpenSessionState, open: &OpenDrive)
 /// folding this observation first would stretch the drive across the gap. Park
 /// is the car's own end-of-drive state, and that observation carries the parked
 /// position the end geofence label needs. A plugged-in car cannot be driving.
+/// It returns whether a drive closed with an untrusted odometer.
 fn drive_close_step(
     state: &mut OpenSessionState,
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
-) -> Result<(), LifecycleError> {
+) -> Result<bool, LifecycleError> {
     let Some(open) = state.open_drive.as_ref() else {
-        return Ok(());
+        return Ok(false);
     };
     let drive_facts = has_fresh_drive_facts(observation);
     let t_drive = observation.parsed.drive_timestamp_ms;
@@ -1843,8 +1999,7 @@ fn drive_close_step(
             && observation.drive == DriveEvidence::NoInfo
             && t_drive.saturating_sub(last_motion) > gap);
     if loe {
-        close_open_drive(state, delta, true, None, None)?;
-        return Ok(());
+        return close_open_drive(state, delta, true, None, None);
     }
     // Item 6: Park in a fresh motion family. Item 7: plugged evidence.
     let parked = observation.drive == DriveEvidence::Park;
@@ -1857,12 +2012,11 @@ fn drive_close_step(
             || (observation.fresh.position && t_drive >= last_folded);
         if can_end_here {
             let position = fold_into_open_drive(state, observation)?;
-            close_open_drive(state, delta, false, position, Some(t_drive))?;
-        } else {
-            close_open_drive(state, delta, true, None, None)?;
+            return close_open_drive(state, delta, false, position, Some(t_drive));
         }
+        return close_open_drive(state, delta, true, None, None);
     }
-    Ok(())
+    Ok(false)
 }
 
 impl OpenCharge {
@@ -1899,6 +2053,8 @@ impl OpenCharge {
             ratio_added_kwh: 0.0,
             fully_powered: false,
             pre_sample_kwh: None,
+            pending_counter_reset_kwh: None,
+            counter_reading_unresolved: false,
             phase_count: None,
             last_odometer_km: None,
             last_odometer_coarse: None,
@@ -1950,6 +2106,10 @@ fn anchors_charge_sample(state: &OpenSessionState, observation: &Observation<'_>
             .as_ref()
             .and_then(|open| open.last_sample_timestamp_ms)
             .is_none_or(|last| t_charge > last)
+        && state
+            .pending_counter_reset
+            .as_ref()
+            .is_none_or(|pending| t_charge > pending.sample.timestamp_ms)
 }
 
 /// Whether an open charge continues across a gap longer than `T_gap` (C1 R65).
@@ -2000,30 +2160,148 @@ fn charge_close_step(
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
-    let Some(open) = state.open_charge.as_ref() else {
-        return Ok(());
-    };
-    let parsed = observation.parsed;
     let lost_evidence = observation.reach == Some(Reach::Asleep)
         || state.service_mode == Some(true)
         || observation.drive == DriveEvidence::Motion
         || observation.event() == Some(HubEventKind::Handback);
-    let close = lost_evidence
-        || (anchors_charge_sample(state, observation) && {
-            let counter_fell = matches!(
-                (parsed.charge_energy_added, open.last_energy_added),
-                (Some(now), Some(last)) if counter_restarted(last, now)
-            );
-            let gap = parsed
-                .charge_timestamp_ms
-                .saturating_sub(open.last_evidence_ms())
-                > observation.t_gap_ms;
-            counter_fell || (gap && !charge_continues_across_gap(open, observation))
+    resolve_pending_counter_reset(state, observation, lost_evidence, delta)?;
+    let Some(open) = state.open_charge.as_ref() else {
+        return Ok(());
+    };
+    let parsed = observation.parsed;
+    let anchors = anchors_charge_sample(state, observation);
+    let counter_fell = anchors
+        && matches!(
+            (parsed.charge_energy_added, open.last_energy_added),
+            (Some(now), Some(last)) if counter_restarted(last, now)
+        );
+    let gap = parsed
+        .charge_timestamp_ms
+        .saturating_sub(open.last_evidence_ms())
+        > observation.t_gap_ms;
+    let gap_breaks = anchors && gap && !charge_continues_across_gap(open, observation);
+    // Issue #13: a fall within a continuous Active charge is provisional for
+    // one reading. Its sample waits in the session state, and the next
+    // sample-anchoring observation decides where it belongs.
+    if counter_fell
+        && !lost_evidence
+        && !gap_breaks
+        && observation.charge == ChargeEvidence::Active
+        && usable_energy_counter_of(parsed).is_some()
+    {
+        let charge_id = open.id;
+        let observed = valid_coordinates(parsed.latitude, parsed.longitude);
+        state.pending_counter_reset = Some(PendingCounterReset {
+            charge_id,
+            sample: charge_sample_from(0, charge_id, parsed),
+            coordinates: observed,
+            odometer_km: parsed.odometer,
+            odometer_coarse: parsed.odometer.map(|_| parsed.kind != SourceKind::Full),
         });
+        return Ok(());
+    }
+    let close = lost_evidence || counter_fell || gap_breaks;
     if close {
         let end_ms = open.last_evidence_ms();
         close_open_charge(state, delta, end_ms, false)?;
     }
+    Ok(())
+}
+
+/// The observation's counter when usable (C2 R10), as [`usable_energy_counter`]
+/// reads it from a stored sample.
+fn usable_energy_counter_of(parsed: &ParsedSample) -> Option<f64> {
+    finite_reading(parsed.charge_energy_added).filter(|counter| *counter >= 0.0)
+}
+
+/// Resolve a provisional counter reset (issue #13) before this observation's
+/// closes. Only lost evidence or the next sample-anchoring observation decides
+/// it; anything else (a discovery, a stream frame) leaves it waiting.
+///
+/// - A usable counter that is still a restart against the open charge's last
+///   counter corroborates the reset: the charge closes at its own evidence,
+///   which the pending sample never touched, and the pending sample starts the
+///   successor with a zero baseline (C1 R61a), as the close at the fall would
+///   have done.
+/// - Anything else attaches the unchanged sample to the open charge: a
+///   returning counter contradicts the reset and the fold leaves that reading
+///   out of the derived energy; a missing counter, lost evidence or hand-back
+///   leaves the counter-dependent totals unknown ([`fold_energy_counter`]).
+fn resolve_pending_counter_reset(
+    state: &mut OpenSessionState,
+    observation: &Observation<'_>,
+    lost_evidence: bool,
+    delta: &mut LifecycleDelta,
+) -> Result<(), LifecycleError> {
+    let Some(pending) = state.pending_counter_reset.as_ref() else {
+        return Ok(());
+    };
+    let Some(open) = state
+        .open_charge
+        .as_ref()
+        .filter(|open| open.id == pending.charge_id)
+    else {
+        state.pending_counter_reset = None;
+        return Ok(());
+    };
+    if !lost_evidence && !anchors_charge_sample(state, observation) {
+        return Ok(());
+    }
+    let corroborated = !lost_evidence
+        && matches!(
+            (usable_energy_counter_of(observation.parsed), open.last_energy_added),
+            (Some(now), Some(last)) if counter_restarted(last, now)
+        );
+    let Some(pending) = state.pending_counter_reset.take() else {
+        return Ok(());
+    };
+    if !corroborated {
+        let id = allocate_charge_sample_id(state)?;
+        let mut sample = pending.sample;
+        sample.id = id;
+        if let Some(open) = state.open_charge.as_mut() {
+            sample.charge_process_id = open.id;
+            observe_charge_aggregate(open, &sample);
+            observe_charge_sample(open, &sample);
+            open.last_sample_timestamp_ms = Some(sample.timestamp_ms);
+        }
+        delta.open_charge_samples.push(sample);
+        return Ok(());
+    }
+    let end_ms = open.last_evidence_ms();
+    close_open_charge(state, delta, end_ms, false)?;
+    let start = pending.sample.timestamp_ms.max(end_ms);
+    let baseline = charge_energy_baseline(
+        state.parked_snapshot.as_ref(),
+        pending.sample.charge_energy_added_kwh,
+        pending.odometer_km,
+    );
+    let id = allocate_charge_id(state)?;
+    let mut open = OpenCharge::empty(id, observation.car_id, start);
+    open.start_battery_level = pending.sample.battery_level;
+    open.start_ideal_range_km = pending.sample.ideal_range_km;
+    open.start_rated_range_km = pending.sample.rated_range_km;
+    let coordinates = pending.coordinates.or_else(|| {
+        state
+            .parked_snapshot
+            .as_ref()
+            .and_then(|snapshot| valid_coordinates(snapshot.latitude, snapshot.longitude))
+    });
+    if let Some((latitude, longitude)) = coordinates {
+        open.start_latitude = Some(latitude);
+        open.start_longitude = Some(longitude);
+    }
+    open.last_odometer_km = pending.odometer_km;
+    open.last_odometer_coarse = pending.odometer_coarse;
+    open.first_energy_added = Some(baseline);
+    let mut sample = pending.sample;
+    sample.id = allocate_charge_sample_id(state)?;
+    sample.charge_process_id = id;
+    observe_charge_aggregate(&mut open, &sample);
+    observe_charge_sample(&mut open, &sample);
+    open.last_sample_timestamp_ms = Some(sample.timestamp_ms);
+    delta.open_charge_samples.push(sample);
+    state.open_charge = Some(open);
     Ok(())
 }
 

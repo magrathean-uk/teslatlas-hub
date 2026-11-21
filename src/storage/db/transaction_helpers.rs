@@ -415,7 +415,15 @@ fn promote_imported_open_session_in_transaction(
     }
     // C2 R80 (g), C2 R80 (d), C1 R84 (b), C1 R90, C9 R58: raise-only merge,
     // all-source cursor raise, then the boundary hook for changed Positions.
-    let watermarks = snapshot_watermark_pairs(&session.watermarks);
+    // #76: the stored drive reach is the reach the seam admitted; the raw
+    // all-source maximum stays in the staged session only.
+    let admitted = admitted_import_watermarks_in_transaction(
+        transaction,
+        &vehicle,
+        session,
+        session.drive.as_ref().filter(|_| kept_open.is_none()),
+    )?;
+    let watermarks = snapshot_watermark_pairs(&admitted);
     let changed_domains =
         raise_source_watermarks_in_transaction(transaction, source_id, vehicle_id, &watermarks)?;
     raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;
@@ -439,6 +447,64 @@ fn promote_imported_open_session_in_transaction(
         watermarks_written: watermarks.len(),
         no_op: false,
     })
+}
+
+/// The session's watermarks as a promotion stores them (#76): the drive
+/// domain reaches only the source drives the seam admitted. The source's raw
+/// maximum counts every drive of the car, including a drive the seam
+/// discarded in favour of the Hub's own collection; storing it would overstate
+/// the source history in the store, and the raise-only merge would keep the
+/// overstatement. When the seam has recorded no source drive as a loser at or
+/// below the raw maximum, every source drive up to it was admitted and the
+/// raw pair stands. Otherwise the reach is that of the source-id drives the
+/// store holds after the seam was applied, with the open drive this promotion
+/// writes, and never above the raw pair.
+fn admitted_import_watermarks_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_key: &str,
+    session: &SourceDbOpenSession,
+    promoted_open_drive: Option<&crate::source_db_projection::SourceDbDrive>,
+) -> Result<crate::source_db_projection::SourceDbWatermarks, StoreError> {
+    use crate::db::hub_ids::HUB_ID_BASE;
+    let mut admitted = session.watermarks.clone();
+    let raw = session.watermarks.drives;
+    let Some(raw_id) = raw.max_id else {
+        return Ok(admitted);
+    };
+    let discarded: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_seam_links
+              WHERE vehicle_id = ?1 AND entity = 'drive' AND loser_id < ?2 AND loser_id <= ?3)",
+            params![vehicle_key, HUB_ID_BASE, raw_id],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    if !discarded {
+        return Ok(admitted);
+    }
+    let (mut max_id, mut max_at): (Option<i64>, Option<i64>) = transaction
+        .query_row(
+            "SELECT MAX(drive_id),
+                    MAX(MAX(COALESCE(CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER), 0),
+                            COALESCE(CAST(json_extract(drive_json, '$.end_date_ms') AS INTEGER), 0)))
+               FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id < ?2",
+            params![vehicle_key, HUB_ID_BASE],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(StoreError::Query)?;
+    if let Some(drive) = promoted_open_drive {
+        max_id = max_id.max(Some(drive.id));
+        max_at = max_at.max(Some(drive.start_date_ms.max(drive.end_date_ms.unwrap_or(0))));
+    }
+    admitted.drives.max_id = max_id.filter(|id| *id <= raw_id);
+    admitted.drives.max_timestamp_ms = match (max_at, raw.max_timestamp_ms) {
+        (Some(at), Some(raw_at)) => Some(at.min(raw_at)),
+        _ => None,
+    };
+    if admitted.drives.max_id.is_none() {
+        admitted.drives.max_timestamp_ms = None;
+    }
+    Ok(admitted)
 }
 
 /// The collection coverage of one vehicle, read inside a publication

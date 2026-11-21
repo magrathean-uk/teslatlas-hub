@@ -110,6 +110,7 @@ pub(crate) const PINNED_MIGRATION_VERSIONS: [i64; SOURCE_DB_V4_MIGRATION_COUNT] 
     20260808090000,
     20261009120000,
     20261014120000,
+    20261102130000,
 ];
 
 fn complete_schema() -> Vec<ObservedColumn<'static>> {
@@ -171,6 +172,18 @@ fn collecting_probe_queries_end_in_limit_cap_plus_one() {
     );
     // The pinned migration set is far below its cap.
     const { assert!(SOURCE_DB_V4_MIGRATION_COUNT < MAX_MIGRATION_PROBE_ROWS) };
+}
+
+#[test]
+fn read_only_snapshot_refuses_role_filtered_history() {
+    let transaction_settings = READ_ONLY_SESSION_SQL[2]
+        .split(';')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    assert!(
+        transaction_settings.contains(&"SET LOCAL row_security = off"),
+        "source snapshots must fail if PostgreSQL would filter rows by role"
+    );
 }
 
 #[test]
@@ -305,10 +318,17 @@ fn reviewed_migration_pin_requires_the_exact_upstream_set() {
     assert_eq!(SOURCE_DB_V4_SOURCE_REVISION.len(), 40);
     assert_eq!(
         SOURCE_DB_V4_SOURCE_REVISION,
-        "42d187daadd0104fc9c4509785df47a26705845a"
+        "83652a688ef4ff2118572e9f48c49807e348453f"
     );
     assert!(is_supported_source_db_revision(
         SOURCE_DB_V4_SOURCE_REVISION
+    ));
+    assert_eq!(
+        SOURCE_DB_V4_4_SOURCE_REVISION,
+        "42d187daadd0104fc9c4509785df47a26705845a"
+    );
+    assert!(is_supported_source_db_revision(
+        SOURCE_DB_V4_4_SOURCE_REVISION
     ));
     assert!(is_supported_source_db_revision(
         SOURCE_DB_V4_2_SOURCE_REVISION
@@ -795,14 +815,14 @@ fn text_family_accepts_current_text_and_varchar_columns() {
 }
 
 #[test]
-fn source_db_schema_20261014120000_is_the_accepted_reviewed_set() {
-    assert_eq!(MAX_VALIDATED_MIGRATION, 20_261_014_120_000);
+fn source_db_schema_20261102130000_is_the_accepted_reviewed_set() {
+    assert_eq!(MAX_VALIDATED_MIGRATION, 20_261_102_130_000);
     assert_eq!(MIN_SUPPORTED_MIGRATION, MAX_VALIDATED_MIGRATION);
-    assert_eq!(PINNED_MIGRATION_VERSIONS.len(), 107);
-    assert_eq!(validate_migration_version(20_261_014_120_000), Ok(()));
+    assert_eq!(PINNED_MIGRATION_VERSIONS.len(), 108);
+    assert_eq!(validate_migration_version(20_261_102_130_000), Ok(()));
     assert_eq!(
         validate_migration_versions(&PINNED_MIGRATION_VERSIONS),
-        Ok(20_261_014_120_000)
+        Ok(20_261_102_130_000)
     );
     // The set hash is the sorted, newline-delimited 14-digit list.
     let mut digest = Sha256::new();
@@ -813,38 +833,96 @@ fn source_db_schema_20261014120000_is_the_accepted_reviewed_set() {
         hex::encode(digest.finalize()),
         SOURCE_DB_V4_MIGRATION_SET_SHA256
     );
+    // Pinned literal: the v4.5.0 database's 108 migrations, newest 20261102130000.
+    assert_eq!(
+        SOURCE_DB_V4_MIGRATION_SET_SHA256,
+        "65c5af7596b2a550cccc03203be2825ef1ce892154e1dc2ed573ad0cbb9db3da"
+    );
+    assert_eq!(PINNED_MIGRATION_VERSIONS.last(), Some(&20_261_102_130_000));
+}
+
+/// v4.5.0 adds the `terrain_elevation_queue` table. The importer does not read
+/// it: no probe or projection names it, and its columns in a probe result do
+/// not change admission.
+#[test]
+fn v4_5_terrain_elevation_queue_is_not_read_and_does_not_trip_the_probe() {
+    const NEW_TABLE: &str = "terrain_elevation_queue";
+    for sql in [
+        MIGRATION_VERSION_SQL,
+        MIGRATION_VERSIONS_SQL,
+        SCHEMA_PROBE_SQL,
+        ENUM_PROBE_SQL,
+        SETTINGS_RELATIONSHIP_SQL,
+    ] {
+        assert!(!sql.contains(NEW_TABLE));
+    }
+    for table in SourceTable::ALL {
+        assert_ne!(table.name(), NEW_TABLE);
+        assert!(!projection(table).sql.contains(NEW_TABLE));
+    }
+
+    let mut observed = complete_schema();
+    observed.push(ObservedColumn {
+        table: NEW_TABLE,
+        name: "drive_id",
+        type_name: "int4",
+        format_type: "integer",
+        nullable: false,
+    });
+    observed.push(ObservedColumn {
+        table: NEW_TABLE,
+        name: "attempted_at",
+        type_name: "timestamp",
+        format_type: "timestamp without time zone",
+        nullable: true,
+    });
+    assert_eq!(validate_observed_schema(&observed), Ok(()));
+    assert_eq!(
+        validate_migration_versions(&PINNED_MIGRATION_VERSIONS),
+        Ok(20_261_102_130_000)
+    );
 }
 
 #[test]
-fn source_db_schema_newer_than_20261014120000_is_still_refused() {
+fn source_db_schema_newer_than_20261102130000_is_still_refused() {
     assert_eq!(
-        validate_migration_version(20_261_014_120_001),
+        validate_migration_version(20_261_102_130_001),
         Err(SchemaCompatibilityError::UnreviewedMigration {
-            found: 20_261_014_120_001,
-            maximum: 20_261_014_120_000,
+            found: 20_261_102_130_001,
+            maximum: 20_261_102_130_000,
         })
     );
     let mut newer = PINNED_MIGRATION_VERSIONS.to_vec();
-    newer.push(20_261_101_000_000);
+    newer.push(20_261_201_000_000);
     assert_eq!(
         validate_migration_versions(&newer),
         Err(SchemaCompatibilityError::UnreviewedMigration {
-            found: 20_261_101_000_000,
-            maximum: 20_261_014_120_000,
+            found: 20_261_201_000_000,
+            maximum: 20_261_102_130_000,
         })
     );
 }
 
 #[test]
-fn source_db_schema_v4_2_set_and_partial_v4_4_sets_are_refused() {
+fn source_db_schema_v4_2_and_v4_4_sets_and_partial_sets_are_refused() {
     // The earlier v4.2-compatible set ends at 20260808090000.
-    let v4_2 = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 2];
+    let v4_2 = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 3];
     assert_eq!(v4_2.last(), Some(&20_260_808_090_000));
     assert_eq!(
         validate_migration_versions(v4_2),
         Err(SchemaCompatibilityError::LegacyMigration {
             found: 20_260_808_090_000,
-            minimum: 20_261_014_120_000,
+            minimum: 20_261_102_130_000,
+        })
+    );
+    // The v4.4-compatible set ends at 20261014120000 and must be upgraded.
+    let v4_4 = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 1];
+    assert_eq!(v4_4.last(), Some(&20_261_014_120_000));
+    assert_eq!(
+        validate_migration_versions(v4_4),
+        Err(SchemaCompatibilityError::LegacyMigration {
+            found: 20_261_014_120_000,
+            minimum: 20_261_102_130_000,
         })
     );
     // The newest migration without its 20261009120000 predecessor.
@@ -935,9 +1013,9 @@ fn reviewed_source_sets_keep_their_own_tuples_and_admission_stays_current() {
     let current = reviewed_source_set(SOURCE_DB_V4_SOURCE_REVISION).expect("current set");
     assert!(current.is_current());
     assert_eq!(current, &CURRENT_REVIEWED_SOURCE_SET);
-    assert_eq!(current.release, "4.4.0");
+    assert_eq!(current.release, "4.5.0");
     assert_eq!(current.migration_count, PINNED_MIGRATION_VERSIONS.len());
-    assert_eq!(current.newest_migration, 20_261_014_120_000);
+    assert_eq!(current.newest_migration, 20_261_102_130_000);
     assert_eq!(
         migration_set_sha256(&PINNED_MIGRATION_VERSIONS),
         current.migration_set_sha256
@@ -948,8 +1026,8 @@ fn reviewed_source_sets_keep_their_own_tuples_and_admission_stays_current() {
     assert_eq!(earlier.release, "4.2.0");
     assert_eq!(earlier.migration_count, 105);
     assert_eq!(earlier.newest_migration, 20_260_808_090_000);
-    // The v4.2 list is the current list without its two newest migrations.
-    let v4_2_versions = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 2];
+    // The v4.2 list is the current list without its three newest migrations.
+    let v4_2_versions = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 3];
     assert_eq!(v4_2_versions.last(), Some(&20_260_808_090_000));
     assert_eq!(
         migration_set_sha256(v4_2_versions),
@@ -963,6 +1041,8 @@ fn reviewed_source_sets_keep_their_own_tuples_and_admission_stays_current() {
     assert_eq!(beta.migration_set_sha256, earlier.migration_set_sha256);
 
     assert!(reviewed_source_set("0000000000000000000000000000000000000000").is_none());
+    assert_eq!(REVIEWED_SOURCE_SETS.len(), 4);
+    assert_eq!(REVIEWED_SOURCE_SETS[0], CURRENT_REVIEWED_SOURCE_SET);
     // Admission accepts only the current list: the v4.2 list is a legacy source.
     assert!(matches!(
         validate_migration_versions(v4_2_versions),
@@ -976,4 +1056,33 @@ fn migration_set_sha256(versions: &[i64]) -> String {
         digest.update(format!("{version:014}\n").as_bytes());
     }
     hex::encode(digest.finalize())
+}
+
+/// v4.5.0 adds migration 20261102130000 to the v4.4.0 list. New imports admit
+/// and record only the v4.5.0 set; artefacts published under v4.4.0 still
+/// verify against their own revision and tuple.
+#[test]
+fn v4_4_set_verifies_its_own_artefacts_and_is_refused_for_admission() {
+    let current = reviewed_source_set(SOURCE_DB_V4_SOURCE_REVISION).expect("v4.5.0 set");
+    assert_eq!(current.release, "4.5.0");
+    assert!(current.is_current());
+
+    let v4_4 = reviewed_source_set(SOURCE_DB_V4_4_SOURCE_REVISION).expect("v4.4.0 set");
+    assert_eq!(v4_4, &V4_4_REVIEWED_SOURCE_SET);
+    assert_eq!(v4_4.release, "4.4.0");
+    assert!(!v4_4.is_current());
+    assert_eq!(v4_4.migration_count, 107);
+    assert_eq!(v4_4.newest_migration, 20_261_014_120_000);
+    let v4_4_versions = &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 1];
+    assert_eq!(
+        migration_set_sha256(v4_4_versions),
+        v4_4.migration_set_sha256
+    );
+    assert!(v4_4.matches(v4_4.migration_set_sha256, 107, 20_261_014_120_000));
+    assert!(!v4_4.matches(current.migration_set_sha256, 108, 20_261_102_130_000));
+    assert!(!current.matches(v4_4.migration_set_sha256, 107, 20_261_014_120_000));
+    assert!(matches!(
+        validate_migration_versions(v4_4_versions),
+        Err(SchemaCompatibilityError::LegacyMigration { .. })
+    ));
 }

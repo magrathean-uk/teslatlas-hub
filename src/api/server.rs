@@ -37,7 +37,8 @@ use uuid::Uuid;
 
 use super::public_query::{
     MAX_PUBLIC_PAGE_BYTES, PageItem, PageKind, PageQuery, PageQueryError, PageQueryParameters,
-    PublicCharge, PublicChargeSample, PublicDrive, PublicPage, PublicPosition, bounded_public_page,
+    HUB_HTTP_PROFILE_1_4, HUB_HTTP_PROFILE_HEADER, PublicCharge, PublicChargeSample, PublicDrive,
+    PublicDriveWithCoverage, PublicPage, PublicPosition, bounded_public_page,
 };
 
 #[path = "server/connection_policy.rs"]
@@ -102,6 +103,9 @@ const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ADMITTED_PHYSICAL_PACK_BYTES: u64 = 16 * 1024 * 1024;
+/// The legacy profile's object ceiling (`ProtocolLimits::default()`), which
+/// bounds the buffer a legacy catalogued pack is verified in before it is sent.
+const MAX_CATALOGUED_PACK_BYTES: u64 = 64 * 1024 * 1024;
 const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 /// The `hub-http-v1` revision discovery names. It tracks the committed profile
 /// under `protocol/profiles/hub-http-v1/`; a test pins the two together. The
@@ -1130,25 +1134,25 @@ where
                 })
         }
     };
-    let publication_drain = match (collector_owns_replay, cursor_key.as_ref()) {
-        (false, Some(cursor_key)) => Some(crate::collector::PublicationDrain::spawn(
-            store.clone(),
-            cursor_key.clone(),
-            Some(std::sync::Arc::clone(&admission)),
-            crate::collector::PublicationDrainConfig::default(),
-        )),
+    // The publication and import workers run beside serving: they start once the
+    // listeners are bound, before the caller's listening work (M08-T32).
+    let drain_cursor_key = match (collector_owns_replay, cursor_key.as_ref()) {
+        (false, Some(cursor_key)) => Some(cursor_key.clone()),
         _ => None,
     };
     let (current_stop, stopped) = tokio::sync::oneshot::channel();
-    let mut current_worker = config.import_source.current.clone().map(|current| {
-        tokio::spawn(crate::collection::source_db_current::run(
-            store.clone(),
-            current,
-            std::sync::Arc::clone(&admission),
-            async move {
-                let _ = stopped.await;
-            },
-        ))
+    type StartedWorkers = (Option<crate::collector::PublicationDrain>, Option<tokio::task::JoinHandle<()>>);
+    let started_workers: Arc<Mutex<StartedWorkers>> = Arc::default();
+    let (started, worker_store, worker_admission) = (Arc::clone(&started_workers), store.clone(), Arc::clone(&admission));
+    let current = config.import_source.current.clone();
+    let start_workers: ListeningHook = Box::new(move || {
+        let drain = drain_cursor_key.map(|cursor_key| crate::collector::PublicationDrain::spawn(
+            worker_store.clone(), cursor_key, Some(Arc::clone(&worker_admission)),
+            crate::collector::PublicationDrainConfig::default()));
+        let current = current.map(|current| tokio::spawn(crate::collection::source_db_current::run(
+            worker_store, current, worker_admission, async move { let _ = stopped.await; })));
+        *started.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = (drain, current);
+        run_listening_hook(on_listening);
     });
     let result = serve_with_cursor_key_at(
         store,
@@ -1157,10 +1161,12 @@ where
         cursor_key,
         Some(admission),
         summary_now_ms,
-        on_listening,
+        Some(start_workers),
         shutdown,
     )
     .await;
+    let (publication_drain, mut current_worker) =
+        std::mem::take(&mut *started_workers.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     // The publication task ends cooperatively; its active bounded turn finishes
     // before serving returns.
     if let Some(drain) = publication_drain
@@ -1443,7 +1449,8 @@ async fn ingest_fleet_telemetry(
 }
 
 async fn ready(State(state): State<AppState>) -> impl IntoResponse {
-    let readiness = state.service_readiness().await;
+    // The credential store is read first: when it decides the answer, the service
+    // readiness, which reads the packs' metadata, is not read (M08-T32).
     let credential_store_error = {
         let store = Arc::clone(&state.store);
         let mode = state.readiness_mode;
@@ -1461,13 +1468,14 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
             }
         }).await.unwrap_or(true)
     };
-    let mut response = match (credential_store_error, readiness) {
-        (true, _) => (
+    let readiness = if credential_store_error { None } else { Some(state.service_readiness().await) };
+    let mut response = match readiness {
+        None => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready { status: "not_ready", reason: Some("credential_store_error") }),
         ).into_response(),
-        (false, Ok(())) => (
+        Some(Ok(())) => (
             StatusCode::OK,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {
@@ -1476,7 +1484,7 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
             }),
         )
             .into_response(),
-        (false, Err(reason)) => (
+        Some(Err(reason)) => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
             Json(Ready {
@@ -1572,27 +1580,13 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
     ) {
         return denied.into_status_response();
     }
-    let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
-        Ok(observations) => observations,
+    let rows = match state.store.current_vehicle_rows(vehicle_id) {
+        Ok(rows) => rows,
         Err(crate::db::StoreError::UnknownVehicle(_)) => {
             return StatusCode::NOT_FOUND.into_response();
         }
         Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle observations");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let car = match state.store.materialised_car_for_vehicle(vehicle_id) {
-        Ok(car) => car,
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle identity");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
-    let lifecycle = match state.store.load_lifecycle_state(vehicle_id) {
-        Ok(lifecycle) => lifecycle,
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load current vehicle lifecycle");
+            tracing::error!(%error, %vehicle_id, "cannot load current vehicle rows");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
@@ -1602,9 +1596,9 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
     };
     let mut summary = crate::current_state::build_current_vehicle_summary(
         vehicle_id,
-        &observations,
-        car,
-        lifecycle.as_ref(),
+        &rows.observations,
+        rows.car,
+        rows.lifecycle.as_ref(),
         None,
         now_ms,
         state.offline_drive_timeout_ms,
@@ -2576,28 +2570,32 @@ async fn stream_pack(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let verified_bytes = if verify_digest {
-        match read_verified_physical_pack(&mut file, stored.compressed_bytes, stored.digest).await {
-            Ok(bytes) => Some(bytes),
-            Err(error) => {
-                tracing::error!(%error, digest = %stored.digest, "cannot verify admitted physical pack");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-        }
+    // Every pack, a legacy catalogued one included, is read whole through the
+    // descriptor it is served from and checked against its digest before any
+    // byte is sent, so a same-size damaged file is refused for a range too.
+    let max_bytes = if verify_digest {
+        MAX_ADMITTED_PHYSICAL_PACK_BYTES
     } else {
-        None
+        MAX_CATALOGUED_PACK_BYTES
+    };
+    let verified_bytes = match read_verified_physical_pack(
+        &mut file,
+        stored.compressed_bytes,
+        stored.digest,
+        max_bytes,
+    )
+    .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(%error, digest = %stored.digest, "cannot verify pack bytes against their digest");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
     };
     let range = match parse_single_range(range_header, metadata.len()) {
         Ok(range) => range,
         Err(_) => return range_not_satisfiable(metadata.len()),
     };
-    if verified_bytes.is_none()
-        && let Err(error) =
-            tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(range.start)).await
-    {
-        tracing::error!(%error, digest = %stored.digest, "cannot seek pack file");
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    }
     let content_length = match HeaderValue::from_str(&range.len().to_string()) {
         Ok(value) => value,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -2627,23 +2625,14 @@ async fn stream_pack(
         };
         response = response.header(header::CONTENT_RANGE, content_range);
     }
-    let body = if let Some(bytes) = verified_bytes {
-        let start = usize::try_from(range.start).expect("physical pack start fits usize");
-        let end = usize::try_from(range.end + 1).expect("physical pack end fits usize");
-        verified_pack_body(
-            bytes.slice(start..end),
-            permit,
-            device_slot,
-            PACK_STREAM_IDLE_TIMEOUT,
-        )
-    } else {
-        pack_stream_body(
-            tokio::io::AsyncReadExt::take(file, range.len()),
-            permit,
-            device_slot,
-            PACK_STREAM_IDLE_TIMEOUT,
-        )
-    };
+    let start = usize::try_from(range.start).expect("pack start fits usize");
+    let end = usize::try_from(range.end + 1).expect("pack end fits usize");
+    let body = verified_pack_body(
+        verified_bytes.slice(start..end),
+        permit,
+        device_slot,
+        PACK_STREAM_IDLE_TIMEOUT,
+    );
     response
         .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
@@ -2664,11 +2653,10 @@ async fn read_verified_physical_pack(
     file: &mut tokio::fs::File,
     expected_bytes: u64,
     expected_digest: Sha256Digest,
+    max_bytes: u64,
 ) -> std::io::Result<Bytes> {
-    if !(1..=MAX_ADMITTED_PHYSICAL_PACK_BYTES).contains(&expected_bytes) {
-        return Err(std::io::Error::other(
-            "admitted physical pack size is outside the profile",
-        ));
+    if !(1..=max_bytes).contains(&expected_bytes) {
+        return Err(std::io::Error::other("pack size is outside the profile"));
     }
     tokio::io::AsyncSeekExt::seek(file, std::io::SeekFrom::Start(0)).await?;
     let capacity = usize::try_from(expected_bytes)
@@ -2678,7 +2666,7 @@ async fn read_verified_physical_pack(
     tokio::io::AsyncReadExt::read_to_end(&mut bounded, &mut bytes).await?;
     if bytes.len() != capacity || Sha256Digest::of_bytes(&bytes) != expected_digest {
         return Err(std::io::Error::other(
-            "admitted physical pack bytes do not match the durable marker",
+            "pack bytes do not match the catalogued digest",
         ));
     }
     Ok(Bytes::from(bytes))

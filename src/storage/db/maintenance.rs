@@ -543,6 +543,26 @@ impl HubStore {
                 )
                 .ok_or(StoreError::BackupCapacityOverflow)?;
         }
+        // Each kept-archive file the catalogue names (DEC-250): the archive
+        // at its recorded size, the source sessions at their size now. The
+        // publication gate holds their writers off.
+        for file in physical_v3_kept_files_in(&connection)? {
+            let bytes = match file.bytes {
+                Some(bytes) => bytes,
+                None => {
+                    let path = self.packs_dir.join(PHYSICAL_V3_KEPT_DIRECTORY).join(&file.name);
+                    fs::symlink_metadata(&path)
+                        .map_err(|source| StoreError::InspectCatalogPack { path, source })?
+                        .len()
+                }
+            };
+            members = members
+                .checked_add(1)
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+            total = total
+                .checked_add(bytes)
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+        }
         let manifest_rows = connection
             .prepare(
                 "SELECT manifest_json FROM sync_manifests
@@ -577,6 +597,13 @@ impl HubStore {
 
     pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
         let publication_gate = self.try_acquire_publication_gate()?;
+        // A live legacy raw replay base is converted to a kept archive under
+        // this gate, so the backup carries it (the refusal below stays for a
+        // base that did not convert).
+        crate::import::source_db::importer::convert_legacy_kept_bases(self, &publication_gate)
+            .map_err(|(vehicle_id, reason)| {
+                StoreError::BackupLegacyKeptConversion { vehicle_id, reason }
+            })?;
         let credential_backup_admission = match self.credential_format_state()? {
             None => CredentialBackupAdmission::Pending,
             Some(state) if state.converted_at_ms.is_some() && !state.purge_required => {
@@ -701,12 +728,59 @@ impl HubStore {
                 return Err(StoreError::BackupPackDigestMismatch { path: backup });
             }
         }
+        self.backup_kept_archives(destination, &copied_catalogue)?;
         self.backup_current_schema_22_noops(
             destination,
             &catalogue,
             &copied_catalogue,
             publication_gate,
         )?;
+        Ok(())
+    }
+
+    /// Copy every kept-archive file the copied catalogue names (DEC-250)
+    /// into `<destination>/packs/physical-kept` (0700, files 0600), each
+    /// checked against its record: the archive's length and digest, the
+    /// source sessions' digest. The caller holds the publication gate, so
+    /// no writer replaces or removes them meanwhile. Without archive records
+    /// the directory is not made.
+    fn backup_kept_archives(
+        &self,
+        destination: &Path,
+        copied_catalogue: &Connection,
+    ) -> Result<(), StoreError> {
+        require_no_legacy_kept_base_in(copied_catalogue)?;
+        let files = physical_v3_kept_files_in(copied_catalogue)?;
+        if files.is_empty() {
+            return Ok(());
+        }
+        let kept = destination.join("packs").join(PHYSICAL_V3_KEPT_DIRECTORY);
+        fs::create_dir(&kept)
+            .and_then(|()| fs::set_permissions(&kept, fs::Permissions::from_mode(0o700)))
+            .map_err(StoreError::CreateBackupDirectory)?;
+        for file in files {
+            let source = self.packs_dir.join(PHYSICAL_V3_KEPT_DIRECTORY).join(&file.name);
+            let backup = kept.join(&file.name);
+            let copy_error = |source_error| StoreError::CopyBackupPack {
+                source_path: source.clone(),
+                destination: backup.clone(),
+                source_error,
+            };
+            let copied = fs::copy(&source, &backup).map_err(copy_error)?;
+            fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).map_err(copy_error)?;
+            if let Some(expected) = file.bytes
+                && copied != expected
+            {
+                return Err(StoreError::BackupPackSizeMismatch {
+                    path: source,
+                    expected,
+                    actual: copied,
+                });
+            }
+            if sha256_file_hex(&backup)? != file.sha256 {
+                return Err(StoreError::BackupPackDigestMismatch { path: backup });
+            }
+        }
         Ok(())
     }
 
@@ -1138,27 +1212,7 @@ impl HubStore {
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            let expected_bytes =
-                u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
-            let path = self
-                .packs_dir
-                .join("sha256")
-                .join(format!("{sha256}.sqlite.zst"));
-            let metadata =
-                fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
-                    path: path.clone(),
-                    source,
-                })?;
-            if !metadata.file_type().is_file() {
-                return Err(StoreError::CatalogPackNotRegular { path });
-            }
-            if metadata.len() != expected_bytes {
-                return Err(StoreError::CatalogPackSizeMismatch {
-                    path,
-                    expected: expected_bytes,
-                    actual: metadata.len(),
-                });
-            }
+            self.verify_catalogued_pack_file_metadata(&sha256, compressed_bytes)?;
             let entry = (
                 snapshot_id,
                 ordinal,
@@ -1208,6 +1262,13 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?;
+        // Pin the admission and its chunk rows to the same catalogue snapshot
+        // while a physical head can be replaced by another connection.
+        let physical_catalogue = connection.unchecked_transaction().map_err(StoreError::Begin)?;
+        for (digest, _, bytes) in pending_physical_v3_pack_rows(&physical_catalogue)? {
+            self.verify_catalogued_pack_file_metadata(&digest, bytes)?;
+        }
+        drop(physical_catalogue);
         drop(connection);
         for vehicle_id in lineage_vehicle_ids {
             let vehicle_id = Uuid::parse_str(&vehicle_id)
@@ -1237,6 +1298,134 @@ impl HubStore {
         self.quick_check()?;
         self.readiness_check()?;
         self.verify_referenced_packs()
+    }
+
+    /// Background pack reconciliation (issue #51). Runs after the listener is
+    /// bound, never on the startup path. Final content names are read in
+    /// bounded pages and referenced objects hashed in bounded chunks, with
+    /// `cancelled` asked between pages and chunks; a cancelled scan returns
+    /// an incomplete report. A final name the catalogue does not reference
+    /// is counted as unreferenced only after a recheck under the publication
+    /// gate, so an installation committing it is not mistaken for an orphan.
+    /// Nothing is deleted, recatalogued or served from here.
+    pub fn reconcile_packs(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<PackReconciliationReport, StoreError> {
+        self.reconcile_packs_with(cancelled, &|| {})
+    }
+
+    /// [`Self::reconcile_packs`] with a hook called after the final names
+    /// were read and before the recheck (tests interleave a publication).
+    pub(crate) fn reconcile_packs_with(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+        before_recheck: &dyn Fn(),
+    ) -> Result<PackReconciliationReport, StoreError> {
+        let mut report = PackReconciliationReport::default();
+        let cutoff_ms = retired_lineage_clock_ms()?;
+        let referenced = {
+            let connection = self.open_read_only_connection()?;
+            referenced_pack_digests(&connection, cutoff_ms)?
+        };
+        let finals_dir = self.packs_dir.join("sha256");
+        let mut candidates = Vec::new();
+        match fs::read_dir(&finals_dir) {
+            Ok(entries) => {
+                let mut in_page = 0_usize;
+                for entry in entries {
+                    if in_page == PACK_RECONCILIATION_PAGE {
+                        in_page = 0;
+                        if cancelled() {
+                            return Ok(report);
+                        }
+                    }
+                    in_page += 1;
+                    let entry = entry.map_err(|source| StoreError::InspectCatalogPack {
+                        path: finals_dir.clone(),
+                        source,
+                    })?;
+                    let name = entry.file_name();
+                    let Some(digest) = name
+                        .to_str()
+                        .and_then(|name| name.strip_suffix(".sqlite.zst"))
+                        .filter(|digest| is_sha256_hex(digest))
+                    else {
+                        continue;
+                    };
+                    report.final_names += 1;
+                    if !referenced.contains_key(digest) {
+                        candidates.push(digest.to_owned());
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(StoreError::InspectCatalogPack {
+                    path: finals_dir,
+                    source,
+                });
+            }
+        }
+        if cancelled() {
+            return Ok(report);
+        }
+        before_recheck();
+        if !candidates.is_empty() {
+            match self.try_acquire_publication_gate() {
+                Ok(gate) => {
+                    let connection = self.open_read_only_connection()?;
+                    let now_referenced = referenced_pack_digests(&connection, cutoff_ms)?;
+                    drop(connection);
+                    drop(gate);
+                    report.unreferenced_finals = u64::try_from(
+                        candidates
+                            .iter()
+                            .filter(|digest| !now_referenced.contains_key(digest.as_str()))
+                            .count(),
+                    )
+                    .map_err(|_| StoreError::InvalidStoredCount)?;
+                }
+                Err(StoreError::PublicationGateBusy) => {
+                    report.unclassified_finals =
+                        u64::try_from(candidates.len()).map_err(|_| StoreError::InvalidStoredCount)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let mut referenced: Vec<_> = referenced.into_iter().collect();
+        referenced.sort_unstable();
+        for (digest, compressed_bytes) in referenced {
+            if cancelled() {
+                return Ok(report);
+            }
+            let path = finals_dir.join(format!("{digest}.sqlite.zst"));
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    report.missing_objects += 1;
+                    continue;
+                }
+                Err(source) => return Err(StoreError::InspectCatalogPack { path, source }),
+            };
+            if !metadata.file_type().is_file() {
+                report.not_regular_objects += 1;
+                continue;
+            }
+            if u64::try_from(compressed_bytes).ok() != Some(metadata.len()) {
+                report.size_mismatches += 1;
+                continue;
+            }
+            let Some(actual) = sha256_file_hex_cancellable(&path, cancelled)? else {
+                return Ok(report);
+            };
+            report.referenced_checked += 1;
+            if actual != digest {
+                report.digest_mismatches += 1;
+            }
+        }
+        report.complete = report.unclassified_finals == 0;
+        Ok(report)
     }
 
     /// Bounded inventory for collector/serve startup logging. This avoids
@@ -1425,37 +1614,43 @@ impl HubStore {
         let rows = referenced_pack_rows_at(&connection, now_ms)?;
 
         for (sha256, relative_path, compressed_bytes) in rows {
-            let compressed_bytes =
-                u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
             if !is_sha256_hex(&sha256)
                 || relative_path != format!("/v1/packs/sha256/{sha256}.sqlite.zst")
             {
                 return Err(StoreError::UnsafeStoredPackPath);
             }
-            let path = self
-                .packs_dir
-                .join("sha256")
-                .join(format!("{sha256}.sqlite.zst"));
-            let metadata =
-                fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
-                    path: path.clone(),
-                    source,
-                })?;
-            if !metadata.file_type().is_file() {
-                return Err(StoreError::CatalogPackNotRegular { path });
-            }
-            if metadata.len() != compressed_bytes {
-                return Err(StoreError::CatalogPackSizeMismatch {
-                    path,
-                    expected: compressed_bytes,
-                    actual: metadata.len(),
-                });
-            }
+            let path = self.verify_catalogued_pack_file_metadata(&sha256, compressed_bytes)?;
             if sha256_file_hex(&path)? != sha256 {
                 return Err(StoreError::CatalogPackDigestMismatch { path });
             }
         }
         Ok(())
+    }
+
+    fn verify_catalogued_pack_file_metadata(
+        &self,
+        digest: &str,
+        compressed_bytes: i64,
+    ) -> Result<PathBuf, StoreError> {
+        let expected =
+            u64::try_from(compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?;
+        let path = self.packs_dir.join("sha256").join(format!("{digest}.sqlite.zst"));
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
+                path: path.clone(),
+                source,
+            })?;
+        if !metadata.file_type().is_file() {
+            return Err(StoreError::CatalogPackNotRegular { path });
+        }
+        if metadata.len() != expected {
+            return Err(StoreError::CatalogPackSizeMismatch {
+                path,
+                expected,
+                actual: metadata.len(),
+            });
+        }
+        Ok(path)
     }
 
     pub fn sqlite_version(&self) -> Result<String, StoreError> {
@@ -1477,5 +1672,58 @@ impl HubStore {
             )
             .map_err(StoreError::InstallationIdentity)?;
         parse_stored_uuid("installation_id", &value)
+    }
+}
+
+/// Final names read between two cancellation checks of a pack
+/// reconciliation.
+const PACK_RECONCILIATION_PAGE: usize = 256;
+/// Bytes hashed between two cancellation checks of a pack reconciliation.
+const PACK_RECONCILIATION_CHUNK: usize = 1024 * 1024;
+
+/// Every digest the catalogue references at `cutoff_ms`, with its size.
+fn referenced_pack_digests(
+    connection: &Connection,
+    cutoff_ms: i64,
+) -> Result<std::collections::HashMap<String, i64>, StoreError> {
+    Ok(referenced_pack_rows_at(connection, cutoff_ms)?
+        .into_iter()
+        .map(|(digest, _, bytes)| (digest, bytes))
+        .collect())
+}
+
+/// The SHA-256 of `path`, read in bounded chunks; `None` when `cancelled`
+/// answered true between two chunks.
+fn sha256_file_hex_cancellable(
+    path: &Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Option<String>, StoreError> {
+    let mut file = fs::File::open(path).map_err(|source| StoreError::InspectCatalogPack {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; PACK_RECONCILIATION_CHUNK];
+    loop {
+        if cancelled() {
+            return Ok(None);
+        }
+        let mut filled = 0;
+        while filled < buffer.len() {
+            let read = file.read(&mut buffer[filled..]).map_err(|source| {
+                StoreError::InspectCatalogPack {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            })?;
+            if read == 0 {
+                break;
+            }
+            filled += read;
+        }
+        digest.update(&buffer[..filled]);
+        if filled < buffer.len() {
+            return Ok(Some(hex::encode(digest.finalize())));
+        }
     }
 }

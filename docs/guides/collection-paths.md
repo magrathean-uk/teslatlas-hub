@@ -9,7 +9,7 @@ This guide explains the four ways Tesatlas Hub can receive data from a Tesla, wh
 | 1. Legacy (default) | Your Tesla account, signed in to Hub or taken over from the stopped source application | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
 | 2. Provider | An account with Teslemetry, Tessie or an Owner-API-compatible provider | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
 | 3. Direct Fleet polling | Your own Tesla developer application, a card on file, a web page you control for the key file | Tesla usage charges, about $0.12 per awake hour at a 60 s interval; a $10 monthly allowance covers light use | Snapshots at the interval you choose | Tesla and your Hub only |
-| 4. Self-hosted Fleet Telemetry | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
+| 4. Self-hosted Fleet Telemetry (not offered) | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
 
 Legacy is the default because it is free, has the highest resolution, and uses your Tesla account login. Tesla has said it will phase out this unofficial API; when that happens Hub tells you and offers paths 2 to 4. Path 2 is the one most people without a server will use. Direct Fleet polling needs a public key file on your domain; self-hosted telemetry additionally needs an inbound service.
 
@@ -43,6 +43,9 @@ The app can find a deployment that is already stopped. Stop its application
 containers and disconnect its dashboards and other database clients, leaving
 PostgreSQL running. Disable automatic restart and keep the application stopped;
 closing its web page or pausing collection is insufficient.
+Guided import reads the source application's own database user and password from
+its container and uses that same pair to identify the car and read the history;
+it does not ask for a separate read-only account. The import itself only reads.
 The history import sets up the selected car first. With no car, take-over
 refuses with `history_import_required` and asks you to import history first.
 Hub then takes over its stored Tesla login using the encryption key
@@ -105,11 +108,23 @@ needs no inbound connection to Hub; the public key file is hosted on a domain
 you control. It is a separate sign-in path for a new installation, rather than
 part of the source login take-over.
 
-Use the [Fleet guide](fleet-setup.md) for prerequisites and onboarding. The
-Legacy migration procedure here does not configure Fleet registration or
-consent, and does not enable telemetry push or vehicle commands.
+**What you need.** A Tesla developer application (client ID, client secret and
+one registered redirect URI), a domain that serves the Hub-made public key file,
+and a payment method with a billing limit on the developer account.
 
-## Path 4: Self-hosted Fleet Telemetry
+**Steps.** In the Hub app choose *New installation*, then *Fleet API*. The app
+saves the public key, registers your domain through Hub, shows the cost for you
+to accept, signs you in with Tesla and starts polling on the last page. The
+[Fleet guide](fleet-setup.md) describes each step. No token is ever pasted.
+
+**What to expect.** Hub polls at its interval, only inside an open collection
+window, and stops at its own monthly cap. Push telemetry is not offered in this
+release and Hub sends no vehicle command. The Legacy migration procedure here
+does not configure Fleet registration or consent.
+
+## Path 4: Self-hosted Fleet Telemetry (not offered)
+
+**Status.** Not offered in this release. Hub does not configure Fleet Telemetry push, runs no receiver or proxy as a helper, and refuses a configuration that names one. The text below describes the design for a later release and is not a procedure to follow.
 
 **How it works.** Your car streams directly to a Fleet Telemetry server you run next to Hub. This is the highest-quality official path and the hardest to set up.
 

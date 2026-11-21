@@ -192,9 +192,11 @@ pub enum ControlCommand {
     /// Rotate the credential key while the service is stopped.
     #[command(name = "rotate-credential-key")]
     RotateCredentialKey,
-    // The vehicle actions keep `--confirm` for scripts that pass it, but no
-    // longer require it: with or without it, every one ends in the product's
-    // refusal `vehicle_commands_not_offered`, exit 1 (M09-T19 ruling 1).
+    // The vehicle actions (DEC-246): a Legacy Hub sends one only with
+    // `--confirm` and only while the running service collects inside an Open
+    // window, and audits it as an explicit vehicle command; otherwise it ends
+    // in a contracted refusal, exit 1. A Fleet Hub refuses every one with
+    // `vehicle_commands_not_offered`, with or without `--confirm`.
     /// Explicitly wake the selected car once.
     Wake {
         #[arg(long)]
@@ -438,8 +440,8 @@ pub enum Command {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
         source: String,
-        /// Positive source car id that will be imported.
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        /// Source car ID from 1 to 32767.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..=i64::from(i16::MAX)))]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
@@ -523,8 +525,8 @@ pub enum Command {
         /// Explicitly allow registration of another import source.
         #[arg(long)]
         new_import_source: bool,
-        /// Positive source car id to import.
-        #[arg(long)]
+        /// Source car ID from 1 to 32767.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..=i64::from(i16::MAX)))]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
@@ -535,7 +537,7 @@ pub enum Command {
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
         #[arg(long)]
         online_snapshot: bool,
-        /// Confirm source application release 4.4.0 or later; database evidence alone cannot prove the application release.
+        /// Confirm source application release 4.5.0 or later; database evidence alone cannot prove the application release.
         #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
         accept_schema_evidence: bool,
     },
@@ -596,6 +598,15 @@ pub enum Command {
     },
     /// Validate database integrity, report quarantined sessions, and clean orphaned packs.
     Repair,
+    /// Count the pack files by class and the bytes no reference, download,
+    /// recovery path or backup pin needs; counts and sizes only. With
+    /// `--reclaim`, remove exactly those files and print the measured saving.
+    #[command(name = "storage-census")]
+    StorageCensus {
+        /// Remove the reclaimable files after counting them.
+        #[arg(long)]
+        reclaim: bool,
+    },
     /// Create one encrypted backup generation (the default format). The
     /// recovery password is typed at a prompt with echo off, or read from
     /// standard input when that is not a terminal; it is never an argument.

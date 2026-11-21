@@ -6,16 +6,19 @@
 
 use std::{
     ffi::OsString,
-    os::{fd::AsFd, unix::fs::FileExt},
-    path::Path,
+    os::{
+        fd::{AsFd, OwnedFd},
+        unix::fs::FileExt,
+    },
+    path::{Path, PathBuf},
 };
 
 use rusqlite::{Connection, OpenFlags};
 use uuid::Uuid;
 
 use super::{
-    STAGE_FILE_EXTENSION, STAGING_DIRECTORY, SourceDbStage, SourceDbStageError,
-    SourceDbStageFormat, SourceDbStageState, available_bytes, configure_writable_connection,
+    PrivateDirectory, STAGE_FILE_EXTENSION, STAGING_DIRECTORY, SourceDbStage, SourceDbStageError,
+    SourceDbStageFormat, SourceDbStageLimits, SourceDbStageState, StageFileIdentity, available_bytes, configure_writable_connection,
     create_private_stage_file, ensure_private_child_directory, ensure_private_directory,
     read_stage_format, verify_stage_path_identity,
 };
@@ -112,7 +115,29 @@ impl SourceDbStage {
         if let Some(damage) = AFTER_SEALED_COPY.with(|hook| hook.borrow_mut().take()) {
             damage(&path);
         }
-        let opened = (|| -> Result<Self, SourceDbStageError> {
+        Self::open_private_sealed_copy(
+            staging_dir,
+            file_name,
+            path,
+            file_descriptor,
+            file_identity,
+            limits,
+        )
+    }
+
+    /// Opens a private sealed copy just written under a `.staging`
+    /// directory (a copy of a kept stage, or a decoded kept archive) as a
+    /// writable sealed stage, checking its state and accounting, not its
+    /// pages. A copy that fails is removed.
+    pub(super) fn open_private_sealed_copy(
+        staging_dir: PrivateDirectory,
+        file_name: OsString,
+        path: PathBuf,
+        file_descriptor: OwnedFd,
+        file_identity: StageFileIdentity,
+        limits: SourceDbStageLimits,
+    ) -> Result<Self, SourceDbStageError> {
+        let opened = (|| -> Result<(Connection, SourceDbStageFormat), SourceDbStageError> {
             let connection = Connection::open_with_flags(
                 &path,
                 OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
@@ -120,23 +145,24 @@ impl SourceDbStage {
             verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
             configure_writable_connection(&connection, limits)?;
             let format = read_stage_format(&connection)?;
-            Ok(Self {
-                path: path.clone(),
-                connection,
-                writable: true,
-                format,
-                file_identity,
-                directory: staging_dir,
-                file_name,
-                file_descriptor,
-            })
+            Ok((connection, format))
         })();
-        let copy = match opened {
-            Ok(copy) => copy,
+        let (connection, format) = match opened {
+            Ok(opened) => opened,
             Err(error) => {
                 let _ = std::fs::remove_file(&path);
                 return Err(error);
             }
+        };
+        let copy = Self {
+            path,
+            connection,
+            writable: true,
+            format,
+            file_identity,
+            directory: staging_dir,
+            file_name,
+            file_descriptor,
         };
         let checked = (|| -> Result<(), SourceDbStageError> {
             let copied = copy.stats()?;

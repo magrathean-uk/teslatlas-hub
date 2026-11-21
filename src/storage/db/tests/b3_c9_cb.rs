@@ -696,7 +696,9 @@ fn c9_st76_lifecycle_rewrite() {
         );
         assert_eq!(stored_position(&tx, vehicle, 1), p1);
         assert_eq!(provenance(&tx, vehicle, 1), prov1);
-        let expected = if mode == "car" {
+        // Issue #32: a recomputed drive whose elevation coverage changed is
+        // published even when its totals did not.
+        let expected = if mode != "detach" {
             vec![
                 ("position".into(), 2),
                 ("drive".into(), 1),
@@ -712,8 +714,10 @@ fn c9_st76_lifecycle_rewrite() {
                     (payload["ascent"].as_i64(), payload["descent"].as_i64()),
                     if id == 1 {
                         (None, None)
-                    } else {
+                    } else if mode == "car" {
                         (Some(10), Some(20))
+                    } else {
+                        (Some(10), Some(0))
                     }
                 );
             }
@@ -817,7 +821,9 @@ fn c9_st76_lifecycle_rewrite() {
             expected.push(("drive".into(), 2));
         }
         expected.push(("drive".into(), 1));
-        if !inherited && closing_descent == 0 {
+        // Issue #32: the recomputed drive is published again when its
+        // elevation coverage changed, whatever the closing totals were.
+        if !inherited {
             expected.push(("drive".into(), 2));
         }
         expected.push(("charge".into(), 7));
@@ -954,7 +960,9 @@ fn c9_st76_lifecycle_rewrite() {
                 [
                     ("drive".into(), 1),
                     ("position".into(), 2),
-                    ("position".into(), 3)
+                    ("position".into(), 3),
+                    // Issue #32: the coverage change publishes the drive again.
+                    ("drive".into(), 1),
                 ]
             );
         }
@@ -1237,7 +1245,7 @@ fn assert_imported_closed_exclusion() {
                 concat!(
                     "INSERT INTO ",
                     crate::db::import_table_names::import_projection_state_rows_table!(),
-                    " VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                    " VALUES (?1, 1, 9, 1, zeroblob(32))"
                 ),
                 [vehicle.to_string()],
             )
@@ -1501,7 +1509,7 @@ fn c9_r40_relocated_retry_preserves_imported_closed_totals() {
                         "INSERT INTO ",
                         crate::db::import_table_names::import_projection_state_rows_table!(),
                         "
-                VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                VALUES (?1, 1, 9, 1, zeroblob(32))"
                     ),
                     [vehicle.to_string()],
                 )

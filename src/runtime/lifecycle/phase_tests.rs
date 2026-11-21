@@ -81,7 +81,7 @@ fn e(id: i64, t: i64, kind: &str) -> LifecycleSample {
 }
 
 /// A stream frame built the way production builds it: wire frame, parser,
-/// stored payload. `columns` are the 11 wire columns in `STREAM_COLUMNS` order;
+/// stored payload. `columns` are the 12 wire columns in `STREAM_COLUMNS` order;
 /// the sample time `t` is element 0 of `value` (C4 R19).
 fn frame(id: i64, t: i64, columns: &str) -> LifecycleSample {
     let wire = format!(r#"{{"msg_type":"data:update","tag":"9","value":"{t},{columns}"}}"#);
@@ -1068,7 +1068,7 @@ fn a_late_observation_does_not_move_a_last_known_value_backwards() {
     // A later frame without climate inherits the fresh values.
     let next = step(
         state,
-        &frame(3, T0 + 20 * MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(3, T0 + 20 * MIN, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     );
     let position = next
         .delta
@@ -1101,7 +1101,7 @@ fn a_late_vehicle_status_observation_does_not_move_the_last_tyre_pressure_backwa
     // A later frame without pressures inherits the fresh value.
     let next = step(
         state,
-        &frame(3, T0 + 20 * MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(3, T0 + 20 * MIN, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     );
     let position = next
         .delta
@@ -1180,7 +1180,7 @@ fn a_late_charge_session_observation_does_not_move_the_last_battery_heater_on_ba
     // A later frame without the field inherits the fresh value.
     let next = step(
         state,
-        &frame(3, T0 + 20 * MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(3, T0 + 20 * MIN, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     );
     let position = next
         .delta
@@ -1211,7 +1211,7 @@ fn a_fresh_value_still_moves_a_last_known_value() {
     // An observation that does not carry the field leaves it alone.
     state = step(
         state,
-        &frame(3, T0 + 2 * MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(3, T0 + 2 * MIN, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     )
     .state;
     assert_eq!(state.last_position_fan_status, Some(5));
@@ -2109,7 +2109,7 @@ fn text_fields_are_trimmed_and_bounded() {
 
 #[test]
 fn st22_stream_fold_has_the_stored_shape() {
-    let wire = r#"{"msg_type":"data:update","tag":"9","timestamp":1760000000000,"value":"1760000000000,25,10.0001,20.0001,210,181,1000.5,,200,,80,12"}"#;
+    let wire = r#"{"msg_type":"data:update","tag":"9","timestamp":1760000000000,"value":"1760000000000,12,1000.5,80,25,,10.0001,20.0001,,,200,210,181"}"#;
     let update = parse_data_update(wire).expect("frame");
     let payload = stream_observation_payload(&update);
     assert_eq!(
@@ -2147,7 +2147,7 @@ fn st22_stream_fold_has_the_stored_shape() {
     );
     // A shift text is trimmed.
     let with_shift = parse_data_update(
-        r#"{"msg_type":"data:update","tag":"9","timestamp":1760000000000,"value":"1760000000000,25,10.0,20.0,210,181,1.0,3,200,P,80,0"}"#,
+        r#"{"msg_type":"data:update","tag":"9","timestamp":1760000000000,"value":"1760000000000,0,1.0,80,25,,10.0,20.0,3,P,200,210,181"}"#,
     )
     .expect("frame");
     let payload = stream_observation_payload(&with_shift);
@@ -2157,7 +2157,7 @@ fn st22_stream_fold_has_the_stored_shape() {
 
 #[test]
 fn stream_frames_carry_motion_position_battery_and_odometer_only() {
-    let sample = frame(1, T0, "25,10.0,20.0,210,181,1000.0,,200,,80,20");
+    let sample = frame(1, T0, "20,1000.0,80,25,,10.0,20.0,,,200,210,181");
     let parsed = parse_sample(&sample).unwrap();
     assert_eq!(parsed.kind, SourceKind::Stream);
     assert_eq!(
@@ -2182,12 +2182,12 @@ fn stream_frames_carry_motion_position_battery_and_odometer_only() {
     // The empty gear is a null key, which a stream never reads as Park.
     let result = step(
         OpenSessionState::new(),
-        &frame(1, T0, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(1, T0, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     );
     assert_eq!(result.state.last_reach.as_deref(), Some("online"));
     let (drive, _, _) = evidence(
         &OpenSessionState::new(),
-        &frame(1, T0, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
+        &frame(1, T0, "0,1000.0,80,25,,10.0,20.0,,,200,210,181"),
     );
     assert_eq!(drive, DriveEvidence::NoInfo);
 }

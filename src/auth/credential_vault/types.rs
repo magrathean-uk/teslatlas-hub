@@ -4,7 +4,11 @@ use zeroize::Zeroize;
 
 /// V2 displays these fixed codes, never issuer descriptions.
 #[derive(Debug)]
-pub(crate) enum SignInError { StateMismatch, Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed,
+pub(crate) enum SignInError {
+    /// Raised only by the generic sign-in, which test builds alone compile (M09-T22).
+    #[cfg_attr(not(any(test, feature = "journey-doubles")), allow(dead_code, reason = "only the test-only generic sign-in compares the state"))]
+    StateMismatch,
+    Refused(SignInRefusalCode), Expired, AnswerInvalid, Unavailable, BindingInvalid, SettingsInvalid, Cancelled, ServicePauseFailed,
     /// The grant's pair was committed but its durability barrier failed: the
     /// sign-in may have replaced the stored pair (M02-T12).
     StoredUnconfirmed,

@@ -1388,3 +1388,360 @@ mod m06_t15;
 
 #[path = "tests/m06_t18.rs"]
 mod m06_t18;
+
+#[path = "tests/m06_t21.rs"]
+mod m06_t21;
+
+// DEC-250: every data backup carries the kept archives its catalogue names,
+// and every restore places and verifies them. Synthetic bytes only: a backup
+// never decodes an archive.
+
+const KEPT_ARCHIVE_TEST_BYTES: &[u8] = b"synthetic kept archive bytes, never decoded by a backup";
+const KEPT_ARCHIVE_TEST_SOURCE: &[u8] = br#"{"binding":"synthetic","drives":[],"charges":[]}"#;
+const KEPT_ARCHIVE_PASSWORD: &str = "correct horse battery staple";
+
+struct KeptArchiveFixture {
+    vehicle_id: Uuid,
+    kept: crate::db::PhysicalV3Kept,
+    archive_name: String,
+    source_name: String,
+}
+
+/// Write one kept archive pair into the live kept directory and record it
+/// through the store API, as the importer does under the publication gate.
+fn keep_synthetic_kept_archive(store: &HubStore) -> KeptArchiveFixture {
+    let vehicle_id = Uuid::new_v4();
+    let generation = Uuid::new_v4();
+    let directory = store.packs_dir().join("physical-kept");
+    fs::create_dir_all(&directory).expect("kept directory");
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).expect("kept mode");
+    let archive_name = format!("{vehicle_id}.{generation}.kept");
+    let source_name = format!("{vehicle_id}.{generation}.source.json");
+    for (name, bytes) in [
+        (&archive_name, KEPT_ARCHIVE_TEST_BYTES),
+        (&source_name, KEPT_ARCHIVE_TEST_SOURCE),
+    ] {
+        let path = directory.join(name);
+        fs::write(&path, bytes).expect("kept file");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("kept file mode");
+    }
+    let kept = crate::db::PhysicalV3Kept {
+        stage: sha256_bytes_hex(b"synthetic stage"),
+        source: sha256_bytes_hex(KEPT_ARCHIVE_TEST_SOURCE),
+        archive: Some(crate::db::PhysicalV3KeptArchive {
+            generation,
+            format: 1,
+            digest: sha256_bytes_hex(KEPT_ARCHIVE_TEST_BYTES),
+            bytes: KEPT_ARCHIVE_TEST_BYTES.len() as u64,
+            decoded_bytes: 4_096,
+        }),
+    };
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    assert!(
+        store
+            .swap_physical_v3_kept(&gate, vehicle_id, None, Some(&kept), false)
+            .expect("kept record")
+    );
+    KeptArchiveFixture {
+        vehicle_id,
+        kept,
+        archive_name,
+        source_name,
+    }
+}
+
+/// Both kept files sit private and byte-identical in `data`'s kept
+/// directory, which holds nothing else.
+fn assert_kept_archive_files(data: &Path, fixture: &KeptArchiveFixture) {
+    let directory = data.join("packs").join("physical-kept");
+    assert_eq!(
+        permission_mode(&fs::symlink_metadata(&directory).expect("kept directory")),
+        PRIVATE_DIRECTORY_MODE
+    );
+    let mut names = fs::read_dir(&directory)
+        .expect("kept entries")
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    names.sort();
+    assert_eq!(names, [fixture.archive_name.clone(), fixture.source_name.clone()]);
+    for (name, bytes) in [
+        (&fixture.archive_name, KEPT_ARCHIVE_TEST_BYTES),
+        (&fixture.source_name, KEPT_ARCHIVE_TEST_SOURCE),
+    ] {
+        let path = directory.join(name);
+        let metadata = fs::symlink_metadata(&path).expect("kept file");
+        assert!(metadata.file_type().is_file());
+        assert_eq!(permission_mode(&metadata), PRIVATE_FILE_MODE);
+        assert_eq!(metadata.nlink(), 1);
+        assert_eq!(fs::read(&path).expect("kept bytes"), bytes);
+    }
+}
+
+/// The restored tree holds the kept files and its catalogue the record.
+fn assert_kept_archive_restored(restored: &Path, fixture: &KeptArchiveFixture) {
+    assert_kept_archive_files(restored, fixture);
+    let store = HubStore::open_immutable_read_only(restored).expect("restored store");
+    assert_eq!(
+        store.physical_v3_kept(fixture.vehicle_id).expect("restored record"),
+        Some(fixture.kept.clone())
+    );
+}
+
+fn kept_archive_encrypted_request(destination: &Path) -> crate::data_recovery::EncryptedBackupRequest<'_> {
+    crate::data_recovery::encrypted_backup::clear_hook();
+    crate::data_recovery::backup_admission::test_seam::force(Some(
+        crate::data_recovery::backup_admission::VolumeTrust::Posix,
+    ));
+    let mut request =
+        crate::data_recovery::EncryptedBackupRequest::new(destination, KEPT_ARCHIVE_PASSWORD);
+    request.kdf = crate::data_recovery::archive_crypto::KdfParams {
+        memory_kib: 64,
+        passes: 1,
+        lanes: 1,
+    };
+    request.chunk_bytes = 4096;
+    request
+}
+
+#[test]
+fn backup_restore_kept_archive_round_trip_directory() {
+    let (temporary, store) = create_fixture();
+    let fixture = keep_synthetic_kept_archive(&store);
+    let backup = temporary.path().join("kept-backup");
+    let created = create_data_backup(&store, &backup).expect("create backup");
+    assert_kept_archive_files(&backup.join(DATA_DIRECTORY), &fixture);
+    let manifest: BackupManifest =
+        parse_canonical_json(&fs::read(backup.join(MANIFEST_NAME)).expect("manifest bytes"))
+            .expect("manifest");
+    let kept_members = manifest
+        .members
+        .iter()
+        .filter(|member| member.path.starts_with("data/packs/physical-kept/"))
+        .map(|member| (member.path.clone(), member.size, member.sha256.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kept_members,
+        [
+            (
+                format!("data/packs/physical-kept/{}", fixture.archive_name),
+                KEPT_ARCHIVE_TEST_BYTES.len() as u64,
+                sha256_bytes_hex(KEPT_ARCHIVE_TEST_BYTES),
+            ),
+            (
+                format!("data/packs/physical-kept/{}", fixture.source_name),
+                KEPT_ARCHIVE_TEST_SOURCE.len() as u64,
+                sha256_bytes_hex(KEPT_ARCHIVE_TEST_SOURCE),
+            ),
+        ]
+    );
+    assert_eq!(created.member_count, manifest.members.len());
+    verify_data_backup(&backup).expect("verify backup");
+
+    let restored = temporary.path().join("kept-restored");
+    restore_data_backup(&backup, &restored).expect("restore backup");
+    assert_kept_archive_restored(&restored, &fixture);
+}
+
+#[test]
+fn backup_restore_kept_archive_round_trip_streamed_directory() {
+    let (temporary, store) = create_fixture();
+    let (manifest, _) = publish_schema_22_fixture(&store);
+    let fixture = keep_synthetic_kept_archive(&store);
+    // Above the listed bound, so the backup takes the streamed directory
+    // format (M06-T15).
+    let directory = store.packs_dir().join("sha256");
+    let connection = Connection::open(store.database_path()).expect("live catalogue");
+    let transaction = connection.unchecked_transaction().expect("transaction");
+    for index in 0..LISTED_FORMAT_MAX_MEMBERS + 8 {
+        let bytes = format!("kept archive streamed pack {index}").into_bytes();
+        let digest = sha256_bytes_hex(&bytes);
+        let path = directory.join(format!("{digest}.sqlite.zst"));
+        fs::write(&path, &bytes).expect("synthetic pack");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("pack mode");
+        transaction
+            .execute(
+                "INSERT INTO sync_packs(sha256, snapshot_id, ordinal, relative_path,
+                     compressed_bytes, uncompressed_bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 100)",
+                rusqlite::params![
+                    digest,
+                    manifest.snapshot_id.to_string(),
+                    index as i64 + 1,
+                    format!("/v1/packs/sha256/{digest}.sqlite.zst"),
+                    bytes.len() as i64
+                ],
+            )
+            .expect("pack reference");
+    }
+    transaction.commit().expect("references");
+    drop(connection);
+
+    let backup = temporary.path().join("kept-streamed");
+    let created = create_data_backup(&store, &backup).expect("create streamed backup");
+    assert!(backup.join(STREAMED_DIRECTORY_MANIFEST_NAME).exists());
+    assert_kept_archive_files(&backup.join(DATA_DIRECTORY), &fixture);
+    let verified = verify_data_backup(&backup).expect("verify streamed backup");
+    assert_eq!(verified.member_count, created.member_count);
+    assert_eq!(verified.total_bytes, created.total_bytes);
+
+    let restored = temporary.path().join("kept-streamed-restored");
+    let report = restore_data_backup(&backup, &restored).expect("restore streamed backup");
+    assert_eq!(report.member_count, created.member_count);
+    assert_kept_archive_restored(&restored, &fixture);
+
+    let damaged = backup
+        .join(DATA_DIRECTORY)
+        .join("packs")
+        .join("physical-kept")
+        .join(&fixture.source_name);
+    let mut bytes = fs::read(&damaged).unwrap();
+    bytes[0] ^= 1;
+    fs::write(&damaged, bytes).unwrap();
+    assert!(verify_data_backup(&backup).is_err(), "a damaged kept member is refused");
+    assert!(restore_data_backup(&backup, &temporary.path().join("refused")).is_err());
+    assert!(!temporary.path().join("refused").exists());
+}
+
+#[test]
+fn backup_restore_kept_archive_round_trip_encrypted() {
+    let (temporary, store) = create_fixture();
+    let fixture = keep_synthetic_kept_archive(&store);
+    let destination = temporary.path().join("kept-encrypted");
+    fs::create_dir(&destination).expect("destination");
+    let request = kept_archive_encrypted_request(&destination);
+    let created = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect("create encrypted backup");
+    crate::data_recovery::verify_encrypted_backup(&created.path, KEPT_ARCHIVE_PASSWORD)
+        .expect("verify encrypted backup");
+    let restored = temporary.path().join("kept-encrypted-restored");
+    let report = crate::data_recovery::restore_encrypted_backup(
+        &created.path,
+        KEPT_ARCHIVE_PASSWORD,
+        &restored,
+    )
+    .expect("restore encrypted backup");
+    assert_eq!(report.member_count, created.member_count);
+    assert_kept_archive_restored(&restored, &fixture);
+}
+
+#[test]
+fn restore_refuses_a_kept_archive_member_that_differs() {
+    let (temporary, store) = create_fixture();
+    let fixture = keep_synthetic_kept_archive(&store);
+    let backup = temporary.path().join("kept-damaged");
+    create_data_backup(&store, &backup).expect("create backup");
+    let member = backup
+        .join(DATA_DIRECTORY)
+        .join("packs")
+        .join("physical-kept")
+        .join(&fixture.archive_name);
+    let mut bytes = fs::read(&member).unwrap();
+    bytes[3] ^= 0x20;
+    fs::write(&member, bytes).unwrap();
+    assert!(verify_data_backup(&backup).is_err(), "verify refuses the changed byte");
+    let restored = temporary.path().join("kept-damaged-restored");
+    assert!(restore_data_backup(&backup, &restored).is_err());
+    assert!(!restored.exists(), "nothing is published");
+
+    // A kept file no record names is refused too.
+    let other = create_fixture();
+    let fixture = keep_synthetic_kept_archive(&other.1);
+    let backup = other.0.path().join("kept-extra");
+    create_data_backup(&other.1, &backup).expect("create backup");
+    let extra = backup
+        .join(DATA_DIRECTORY)
+        .join("packs")
+        .join("physical-kept")
+        .join(format!("{}.{}.kept", fixture.vehicle_id, Uuid::new_v4()));
+    fs::write(&extra, b"unnamed").unwrap();
+    fs::set_permissions(&extra, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(verify_data_backup(&backup).is_err(), "an unnamed kept file is refused");
+}
+
+/// A legacy replay base (a kept record without an archive) that cannot be
+/// converted to a kept archive (here a stage that is not a database) is not
+/// silently dropped: a new backup is refused in the directory and the
+/// encrypted format, leaving the base untouched; a store without kept records
+/// backs up and restores as before.
+#[test]
+fn backup_refuses_a_live_unconverted_legacy_replay_base() {
+    let (temporary, store) = create_fixture();
+    let plain = temporary.path().join("no-kept-records");
+    create_data_backup(&store, &plain).expect("create backup");
+    assert!(!plain.join(DATA_DIRECTORY).join("packs").join("physical-kept").exists());
+    verify_data_backup(&plain).expect("verify backup");
+    let restored = temporary.path().join("no-kept-records-restored");
+    restore_data_backup(&plain, &restored).expect("restore backup");
+    assert!(!restored.join("packs").join("physical-kept").exists());
+
+    let vehicle_id = Uuid::new_v4();
+    let kept_directory = store.packs_dir().join("physical-kept");
+    fs::create_dir_all(kept_directory.join(".staging")).expect("legacy staging");
+    fs::write(kept_directory.join(".staging").join(format!("{vehicle_id}.sqlite")), b"raw")
+        .expect("legacy stage");
+    fs::write(kept_directory.join(format!("{vehicle_id}.source.json")), b"{}")
+        .expect("legacy source");
+    let legacy = crate::db::PhysicalV3Kept {
+        stage: sha256_bytes_hex(b"raw"),
+        source: sha256_bytes_hex(b"{}"),
+        archive: None,
+    };
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    assert!(
+        store
+            .swap_physical_v3_kept(&gate, vehicle_id, None, Some(&legacy), false)
+            .expect("legacy record")
+    );
+    drop(gate);
+
+    let refused = temporary.path().join("legacy-refused");
+    let error = create_data_backup(&store, &refused).expect_err("a legacy base is not dropped");
+    assert!(error.to_string().contains(&vehicle_id.to_string()), "{error}");
+    assert!(!refused.exists(), "nothing is published");
+    let destination = temporary.path().join("legacy-encrypted");
+    fs::create_dir(&destination).expect("destination");
+    let request = kept_archive_encrypted_request(&destination);
+    let error = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect_err("the encrypted backup refuses it too")
+        .to_string();
+    crate::data_recovery::encrypted_backup::clear_hook();
+    assert!(error.contains(&vehicle_id.to_string()), "{error}");
+    // The base itself is untouched by the refusals.
+    assert!(kept_directory.join(format!("{vehicle_id}.source.json")).exists());
+    assert_eq!(store.physical_v3_kept(vehicle_id).expect("record"), Some(legacy));
+}
+
+#[test]
+fn encrypted_backup_refuses_a_kept_archive_changed_or_missing() {
+    let (temporary, store) = create_fixture();
+    let fixture = keep_synthetic_kept_archive(&store);
+    let destination = temporary.path().join("kept-changed");
+    fs::create_dir(&destination).expect("destination");
+    let request = kept_archive_encrypted_request(&destination);
+    let live = store.packs_dir().join("physical-kept").join(&fixture.archive_name);
+    let changed = live.clone();
+    // After the gate is released the live archive changes in place.
+    crate::data_recovery::encrypted_backup::set_hook(move |stage, _| {
+        if stage == "catalogue_copied" {
+            let mut file = OpenOptions::new().write(true).open(&changed).expect("live archive");
+            file.write_all(b"X").expect("change one byte");
+        }
+        crate::data_recovery::encrypted_backup::HookAction::Continue
+    });
+    let error = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect_err("a changed kept archive fails the backup")
+        .to_string();
+    crate::data_recovery::encrypted_backup::clear_hook();
+    assert!(error.contains("physical-kept"), "{error}");
+
+    // A kept archive the catalogue names but the store lacks fails the
+    // backup in every format; nothing is silently left out.
+    fs::remove_file(&live).expect("remove live archive");
+    let request = kept_archive_encrypted_request(&destination);
+    let error = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect_err("a missing kept archive fails the backup")
+        .to_string();
+    assert!(error.contains("physical-kept"), "{error}");
+    assert!(create_data_backup(&store, &temporary.path().join("kept-missing")).is_err());
+    assert!(!temporary.path().join("kept-missing").exists());
+}

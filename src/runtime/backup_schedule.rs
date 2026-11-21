@@ -93,6 +93,16 @@ pub struct BackupSettings {
     pub keep: Option<NonZeroUsize>,
     pub retry_ms: i64,
     pub startup_delay_ms: i64,
+    /// The scratch budget and approved scratch folder (M06-T21).
+    pub scratch: BackupScratch,
+}
+
+/// The encrypted backup's scratch budget in bytes and approved scratch
+/// folder (M06-T21); `None` sets no budget and uses the temporary folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackupScratch {
+    pub budget_bytes: Option<u64>,
+    pub directory: Option<PathBuf>,
 }
 
 impl BackupSettings {
@@ -111,6 +121,10 @@ impl BackupSettings {
             keep: NonZeroUsize::new(usize::try_from(config.keep).unwrap_or(usize::MAX)),
             retry_ms: RETRY_AFTER_MS.min(interval_ms),
             startup_delay_ms: STARTUP_DELAY_MS.min(interval_ms),
+            scratch: BackupScratch {
+                budget_bytes: config.scratch_budget_bytes,
+                directory: config.scratch_directory.clone(),
+            },
         }
     }
 
@@ -161,6 +175,7 @@ pub struct BackupJob {
     pub keep: Option<NonZeroUsize>,
     /// Set when the service stops; the run checks it per chunk.
     pub cancel: Arc<AtomicBool>,
+    pub scratch: BackupScratch,
 }
 
 /// What a run does. The service's is [`StoreBackupRunner`]; tests supply others.
@@ -216,6 +231,8 @@ impl BackupRunner for StoreBackupRunner {
         let mut request = EncryptedBackupRequest::new(&job.destination, password.as_str());
         request.keep = job.keep;
         request.cancel = Some(Arc::clone(&job.cancel));
+        request.scratch_budget_bytes = job.scratch.budget_bytes;
+        request.scratch_directory = job.scratch.directory.as_deref();
         let report = create_encrypted_backup(&self.store, &request).map_err(|error| {
             refusal_from(&error, refused_credential_backup_message(&self.store, &error))
         })?;
@@ -337,6 +354,7 @@ impl Shared {
             password: self.settings.password.clone()?,
             keep: self.settings.keep,
             cancel: Arc::clone(&self.cancel),
+            scratch: self.settings.scratch.clone(),
         })
     }
 
@@ -489,11 +507,19 @@ impl BackupScheduler {
                 "the backup destination and password file are named by absolute paths",
             ));
         }
+        // A stopping service starts no new backup (issue #38).
+        if self.shared.cancel.load(Ordering::SeqCst) {
+            return Err(OperatorRefusal::new(
+                BACKUP_CANCELLED,
+                "the service is stopping; no backup starts",
+            ));
+        }
         let job = BackupJob {
             destination,
             password,
             keep: settings.keep,
             cancel: Arc::clone(&self.shared.cancel),
+            scratch: settings.scratch.clone(),
         };
         let mut report = self.shared.execute(&job, wall_ms())?;
         if let Value::Object(map) = &mut report {
@@ -548,22 +574,57 @@ impl BackupScheduler {
         self.shared.tick(now_ms)
     }
 
+    /// Quiesces the schedule at once (issue #38): the timer stops, a run in
+    /// progress is cancelled at its next chunk and no new run starts. Does
+    /// not wait.
+    pub fn request_stop(&self) {
+        self.shared.cancel.store(true, Ordering::SeqCst);
+        let _guard = lock(&self.shared.wake_lock);
+        self.shared.wake.notify_all();
+    }
+
     /// Stops the timer and cancels a run in progress.
     pub fn stop(&self) {
-        self.shared.cancel.store(true, Ordering::SeqCst);
-        {
-            let _guard = lock(&self.shared.wake_lock);
-            self.shared.wake.notify_all();
-        }
+        self.request_stop();
         let handle = lock(&self.thread).take();
         if let Some(handle) = handle {
             let _ = handle.join();
+        }
+    }
+
+    /// Stops the timer and waits for it only within what is left of the
+    /// service's shutdown budget. A run still finishing a chunk when the
+    /// budget ends stays owned here (a later [`Self::stop`] or the drop
+    /// joins it) and the timeout is reported; the run itself sees the
+    /// cancellation at its next chunk.
+    pub fn stop_within(
+        &self,
+        budget: &crate::runtime::shutdown::ShutdownBudget,
+    ) -> Result<(), crate::runtime::shutdown::ShutdownTimedOut> {
+        self.request_stop();
+        let handle = lock(&self.thread).take();
+        let Some(handle) = handle else {
+            return Ok(());
+        };
+        match crate::runtime::shutdown::join_within(handle, budget, "backup schedule") {
+            Ok(_) => Ok(()),
+            Err((handle, timeout)) => {
+                *lock(&self.thread) = Some(handle);
+                Err(timeout)
+            }
         }
     }
 }
 
 impl Drop for BackupScheduler {
     fn drop(&mut self) {
-        self.stop();
+        // A stop that already ran out of its shutdown budget is not waited
+        // for again here: the process is exiting.
+        let budget = crate::runtime::shutdown::ShutdownBudget::process();
+        if budget.is_stopping() {
+            let _ = self.stop_within(&budget);
+        } else {
+            self.stop();
+        }
     }
 }

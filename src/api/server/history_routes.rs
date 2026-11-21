@@ -202,6 +202,36 @@ pub(super) async fn drives(
         Ok(query) => query,
         Err(response) => return response,
     };
+    if requests_hub_http_1_4(&headers) {
+        // Totals and coverage come from one store snapshot (REV-CX-R5 ISS-A1332).
+        let rows = match state
+            .store
+            .materialised_drives_page_with_elevation_coverage(
+                vehicle_id,
+                query.from_ms,
+                query.to_ms,
+                query.after,
+                lookahead_limit(query),
+            ) {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::error!(%error, %vehicle_id, "cannot load public drive page");
+                return service_unavailable(DRIVE_HISTORY_TEXT.unavailable);
+            }
+        };
+        let (rows, has_more) = trim_lookahead(rows, query);
+        let items: Vec<PublicDriveWithCoverage> = rows
+            .into_iter()
+            .map(|(drive, coverage)| with_elevation_coverage(vehicle_id, drive, coverage))
+            .collect();
+        return serve_public_page(
+            &headers,
+            items,
+            has_more,
+            |last| query.next_cursor(cursor_key, last),
+            &DRIVE_HISTORY_TEXT,
+        );
+    }
     let rows = match state.store.materialised_drives_page(
         vehicle_id,
         query.from_ms,
@@ -229,6 +259,29 @@ pub(super) async fn drives(
     )
 }
 
+/// Whether the request selects hub-http-v1@1.4.0 (issue #32): exactly one
+/// [`HUB_HTTP_PROFILE_HEADER`] whose value is the 1.4.0 identifier. Anything
+/// else keeps the exact 1.3.0 items.
+fn requests_hub_http_1_4(headers: &HeaderMap) -> bool {
+    let mut values = headers.get_all(HUB_HTTP_PROFILE_HEADER).iter();
+    matches!(
+        (values.next(), values.next()),
+        (Some(value), None) if value.as_bytes() == HUB_HTTP_PROFILE_1_4.as_bytes()
+    )
+}
+
+/// One 1.4.0 drive item with the coverage read beside its totals.
+fn with_elevation_coverage(
+    vehicle_id: Uuid,
+    drive: crate::hub_pack::ProjectionDrive,
+    coverage: crate::lifecycle::ElevationCoverage,
+) -> PublicDriveWithCoverage {
+    PublicDriveWithCoverage {
+        drive: PublicDrive::from_projection(vehicle_id, drive),
+        elevation_coverage: coverage.as_str(),
+    }
+}
+
 pub(super) async fn drive(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
     // The query string of an item route is ignored.
     let (_, vehicle_id) =
@@ -239,6 +292,23 @@ pub(super) async fn drive(State(state): State<AppState>, uri: Uri, headers: Head
     let Some(drive_id) = path_session_id(&uri) else {
         return drive_not_found();
     };
+    if requests_hub_http_1_4(&headers) {
+        // Totals and coverage come from one store snapshot (REV-CX-R5 ISS-A1332).
+        return match state
+            .store
+            .materialised_closed_drive_with_elevation_coverage(vehicle_id, drive_id)
+        {
+            Ok(Some((drive, coverage))) => public_item_response(
+                &with_elevation_coverage(vehicle_id, drive, coverage),
+                &DRIVE_HISTORY_TEXT,
+            ),
+            Ok(None) => drive_not_found(),
+            Err(error) => {
+                tracing::error!(%error, %vehicle_id, "cannot load public drive");
+                service_unavailable(DRIVE_HISTORY_TEXT.unavailable)
+            }
+        };
+    }
     match state
         .store
         .materialised_closed_drive_for_vehicle(vehicle_id, drive_id)

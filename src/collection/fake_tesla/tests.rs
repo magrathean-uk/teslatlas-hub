@@ -873,11 +873,22 @@ fn sc66_the_fake_accepts_only_the_hub_column_list_in_its_order() {
         exact_subscribe_fields(&subscribe_text(&reversed.join(","))),
         Err("unexpected_subscribe_fields")
     );
-    // So is the 12-name list that includes `est_heading`.
-    let mut with_heading = columns.to_vec();
-    with_heading.push("est_heading");
+    // So is the earlier 11-name alphabetical list without `est_heading`.
+    let alphabetical = [
+        "elevation",
+        "est_lat",
+        "est_lng",
+        "est_range",
+        "heading",
+        "odometer",
+        "power",
+        "range",
+        "shift_state",
+        "soc",
+        "speed",
+    ];
     assert_eq!(
-        exact_subscribe_fields(&subscribe_text(&with_heading.join(","))),
+        exact_subscribe_fields(&subscribe_text(&alphabetical.join(","))),
         Err("unexpected_subscribe_fields")
     );
     // And a list with one name missing.
@@ -888,15 +899,15 @@ fn sc66_the_fake_accepts_only_the_hub_column_list_in_its_order() {
 }
 
 #[test]
-fn the_fake_value_has_the_time_then_eleven_values_in_column_order() {
+fn the_fake_value_has_the_time_then_twelve_values_in_documented_order() {
     let value = stream_update_value(1_700_000_000_123, 20, 12_345.5, 64, 47.5, 19.05, -11, "P");
     let elements: Vec<&str> = value.split(',').collect();
-    assert_eq!(elements.len(), 12);
+    assert_eq!(elements.len(), 13);
     assert_eq!(elements[0], "1700000000123");
-    // power is element 7 (column 6) and speed the last element.
-    assert_eq!(elements[7], "-11");
+    // speed is element 1 (column 0), power element 8 and shift_state element 9.
+    assert_eq!(elements[1], "20");
+    assert_eq!(elements[8], "-11");
     assert_eq!(elements[9], "P");
-    assert_eq!(elements[11], "20");
     let update = crate::tesla_stream::parse_data_update(&format!(
         r#"{{"msg_type":"data:update","tag":"9","value":"{value}"}}"#
     ))
@@ -909,7 +920,7 @@ fn the_fake_value_has_the_time_then_eleven_values_in_column_order() {
     assert_eq!(update.shift_state.as_deref(), Some("P"));
     assert_eq!(update.soc, Some(64.0));
     assert_eq!(update.speed, Some(20.0));
-    assert_eq!(update.est_heading, None);
+    assert_eq!(update.est_heading, Some(90));
     assert!(update.elevation.is_some() && update.heading.is_some());
     assert!(update.range.is_some() && update.est_range.is_some());
 }

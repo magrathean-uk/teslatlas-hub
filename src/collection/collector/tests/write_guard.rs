@@ -221,7 +221,8 @@ impl GuardBed {
     }
 
     /// The boundary armed at `point` was never reached: the work was refused
-    /// before it (M09-T19 ruling 1), so it wrote nothing there.
+    /// before it (the Fleet route sends no command, DEC-246), so it wrote
+    /// nothing there.
     fn assert_untouched(&self, point: &str) {
         assert!(!self.guard.audit().tripped(), "{point}: the boundary was reached");
         assert_eq!(self.guard.audit().refused(point), 0, "{point}: the boundary refused nothing");
@@ -494,6 +495,196 @@ fn p3bf2_a_stream_frame_is_written_while_the_guard_allows() {
     assert!(bed.guard.audit().passed("stream-frame-intake") >= 1);
 }
 
+/// Issue #85 (P05-F04): a frame the drain takes off the queue after the collection
+/// window has closed is kept, not dropped, and the orderly stop stores every queued
+/// frame once, the refused one first.
+#[test]
+fn p05_f04_a_dequeued_frame_survives_the_window_close() {
+    let (_temporary, bed) = GuardBed::new();
+    let window = crate::fleet_api::egress::test_support::TestWindow::open(60);
+    let endpoint = "ws://127.0.0.1:9/p05-f04/streaming/";
+    let _route = window.route(endpoint);
+    let permit = crate::fleet_api::egress::ask(
+        endpoint,
+        crate::fleet_api::egress::Provider::Legacy,
+        crate::fleet_api::egress::PermitKind::Stream,
+    )
+    .expect("an open window permits the run");
+    bed.guard.window().hold(permit);
+    let (mut core, mut cache) = p3bf2_frame_rig(&bed);
+    let (sender, receiver) = mpsc::channel(8);
+    let mut streams = vec![VehicleStreamRuntime {
+        vehicle_id: core_id(1),
+        power_gate: Arc::new(StreamPowerGate::default()),
+        sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+        events: receiver,
+        _shutdown: None,
+        quiet: None,
+        task: None,
+        held_frame: None,
+    }];
+    let base = current_epoch_millis().expect("clock") - 60_000;
+    let send = |offset: i64, speed: i64| {
+        sender
+            .try_send(StreamEvent::Telemetry {
+                update: Box::new(frame(base + offset, Some("D"), Some(speed), Some(10))),
+                queued_at: Instant::now(),
+            })
+            .expect("queued");
+    };
+    let seam = Arc::new(SupervisedCollectorTestSeam::default());
+    let commits = |offset: i64| commits_of_the_frame(&seam, base + offset);
+    guard_block_on(SUPERVISED_COLLECTOR_TEST_SEAM.scope(Arc::clone(&seam), async {
+        send(0, 30);
+        drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+            .await
+            .expect("the first frame is stored inside the window");
+        assert_eq!(commits(0), 1, "the first frame is stored");
+        send(1_000, 40);
+        send(2_000, 50);
+        window.close();
+        let result =
+            drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+                .await;
+        assert!(
+            matches!(result, Err(CollectorError::CollectionWindowClosed(_))),
+            "{:?}",
+            result.as_ref().err()
+        );
+        assert_eq!((commits(1_000), commits(2_000)), (0, 0), "the closed window wrote nothing");
+        assert!(streams[0].held_frame.is_some(), "the dequeued frame is kept");
+        // The orderly stop writes under the shutdown guard, which keeps the admission
+        // check but not the window's.
+        core.scheduler.guard_writes_with(bed.guard.for_shutdown());
+        let mut budget = DrainBudget::new(Instant::now());
+        budget.guard_writes_with(bed.guard.for_shutdown());
+        let mut pending = StreamDrainResult::default();
+        stop_all_streams_and_store(
+            &bed.store,
+            &mut core.scheduler,
+            &mut streams,
+            &mut cache,
+            &mut pending,
+            &mut budget,
+        )
+        .await
+        .expect("the orderly stop stores the queued frames");
+        assert!(streams.is_empty());
+        assert_eq!(
+            (commits(0), commits(1_000), commits(2_000)),
+            (1, 1, 1),
+            "each frame stored once"
+        );
+    }));
+}
+
+/// Issue #85, review round 2: the final queue collection of an ordinary per-car stop
+/// (`stop_vehicle_streams` from reconciliation, and the single-car
+/// `stop_vehicle_stream`) keeps the frame the closed window refused and the frames
+/// behind it in the runtime, so the shutdown stop stores each of them once.
+#[test]
+fn p05_f04_a_stopped_stream_keeps_its_refused_frames_for_the_shutdown_stop() {
+    for single in [false, true] {
+        let (_temporary, bed) = GuardBed::new();
+        let window = crate::fleet_api::egress::test_support::TestWindow::open(60);
+        // A port of its own: a route is per host and port, and tests run in parallel.
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve a port");
+        let port = reserved.local_addr().expect("address").port();
+        let endpoint = format!("ws://127.0.0.1:{port}/p05-f04-final/streaming/");
+        let _route = window.route(&endpoint);
+        let permit = crate::fleet_api::egress::ask(
+            &endpoint,
+            crate::fleet_api::egress::Provider::Legacy,
+            crate::fleet_api::egress::PermitKind::Stream,
+        )
+        .expect("an open window permits the run");
+        bed.guard.window().hold(permit);
+        let (mut core, mut cache) = p3bf2_frame_rig(&bed);
+        let (sender, receiver) = mpsc::channel(8);
+        // The producer has finished: no task is left to join.
+        let mut streams = vec![VehicleStreamRuntime {
+            vehicle_id: core_id(1),
+            power_gate: Arc::new(StreamPowerGate::default()),
+            sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+            events: receiver,
+            _shutdown: None,
+            quiet: None,
+            task: None,
+            held_frame: None,
+        }];
+        let base = current_epoch_millis().expect("clock") - 60_000;
+        let send = |offset: i64, speed: i64| {
+            sender
+                .try_send(StreamEvent::Telemetry {
+                    update: Box::new(frame(base + offset, Some("D"), Some(speed), Some(10))),
+                    queued_at: Instant::now(),
+                })
+                .expect("queued");
+        };
+        let seam = Arc::new(SupervisedCollectorTestSeam::default());
+        let commits = |offset: i64| commits_of_the_frame(&seam, base + offset);
+        guard_block_on(SUPERVISED_COLLECTOR_TEST_SEAM.scope(Arc::clone(&seam), async {
+            send(0, 30);
+            drain_stream_events_with_cache(&bed.store, &mut core.scheduler, &mut streams, &mut cache)
+                .await
+                .expect("the first frame is stored inside the window");
+            assert_eq!(commits(0), 1, "the first frame is stored");
+            send(1_000, 40);
+            send(2_000, 50);
+            window.close();
+            let mut budget = DrainBudget::new(Instant::now());
+            let mut pending = StreamDrainResult::default();
+            let result = if single {
+                stop_vehicle_stream(
+                    &bed.store,
+                    &mut core.scheduler,
+                    &mut streams,
+                    core_id(1),
+                    &mut cache,
+                )
+                .await
+            } else {
+                stop_vehicle_streams(
+                    &bed.store,
+                    &mut core.scheduler,
+                    &mut streams,
+                    &[core_id(1)],
+                    &mut cache,
+                    &mut pending,
+                    &mut budget,
+                )
+                .await
+            };
+            assert!(
+                matches!(result, Err(CollectorError::CollectionWindowClosed(_))),
+                "single {single}: {:?}",
+                result.as_ref().err()
+            );
+            assert_eq!((commits(1_000), commits(2_000)), (0, 0), "the closed window wrote nothing");
+            assert_eq!(streams.len(), 1, "single {single}: the runtime is kept");
+            assert!(streams[0].held_frame.is_some(), "single {single}: the refused frame is kept");
+            core.scheduler.guard_writes_with(bed.guard.for_shutdown());
+            budget.guard_writes_with(bed.guard.for_shutdown());
+            stop_all_streams_and_store(
+                &bed.store,
+                &mut core.scheduler,
+                &mut streams,
+                &mut cache,
+                &mut pending,
+                &mut budget,
+            )
+            .await
+            .expect("the shutdown stop stores the kept frames");
+            assert!(streams.is_empty());
+            assert_eq!(
+                (commits(0), commits(1_000), commits(2_000)),
+                (1, 1, 1),
+                "single {single}: each frame stored once"
+            );
+        }));
+    }
+}
+
 #[test]
 fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() {
     // The drain boundaries used to look at the fence only; now the admission counts.
@@ -524,11 +715,9 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
     let (mut core, _cache) = p3bf2_frame_rig(&second);
     second.deny_the_admission();
     let mut cache = HashMap::new();
-    let result = store_queued_stream_frames(
-        &second.store,
-        &mut core.scheduler,
-        core_id(1),
-        vec![StreamEvent::Telemetry {
+    let (sender, receiver) = mpsc::channel(1);
+    sender
+        .try_send(StreamEvent::Telemetry {
             update: Box::new(frame(
                 current_epoch_millis().expect("clock") - 60_000,
                 Some("P"),
@@ -536,7 +725,22 @@ fn p3bf2_a_frame_is_refused_when_the_admission_is_gone_and_the_fence_is_clear() 
                 Some(0),
             )),
             queued_at: Instant::now(),
-        }],
+        })
+        .expect("queued");
+    let mut stream = VehicleStreamRuntime {
+        vehicle_id: core_id(1),
+        power_gate: Arc::new(StreamPowerGate::default()),
+        sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+        events: receiver,
+        _shutdown: None,
+        quiet: None,
+        task: None,
+        held_frame: None,
+    };
+    let result = store_queued_stream_frames(
+        &second.store,
+        &mut core.scheduler,
+        &mut stream,
         &mut cache,
         Some(&second.guard),
     );
@@ -1217,13 +1421,17 @@ fn p3bf2_resident_legacy(point: &'static str) {
             Some(&bed.guard),
         )
         .await;
-        // M09-T19 ruling 1: the action is refused before its receipt, so the
-        // fence is never reached and nothing is written.
-        assert!(
-            matches!(result, Err(ResidentActionExecutionError::CommandsNotOffered)),
-            "{point}: {result:?}"
-        );
-        bed.assert_untouched(point);
+        match point {
+            "resident-begin" => assert!(
+                matches!(result, Err(ResidentActionExecutionError::Authentication)),
+                "{point}: {result:?}"
+            ),
+            _ => assert!(
+                matches!(result, Err(ResidentActionExecutionError::CompletionRefused)),
+                "{point}: {result:?}"
+            ),
+        }
+        bed.assert_held(point);
     });
 }
 
@@ -2290,16 +2498,14 @@ async fn p3bf2_owner_resident(
     (receipts, answer, tripped)
 }
 
-/// M09-T19 ruling 1: the running Owner loop's socket refuses the action
-/// before its receipt, fenced or not; the run's guard is never reached.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn p3bf2_the_owner_loop_hands_its_guard_to_the_resident_socket() {
-    for fenced in [false, true] {
-        let (receipts, answer, tripped) = p3bf2_owner_resident(fenced).await;
-        assert!(!tripped, "refused before the receipt's guard");
-        assert_eq!(receipts, 0, "no audit receipt: {answer:?}");
-        assert!(matches!(answer, Err(ResidentVehicleActionError::CommandsNotOffered)), "{answer:?}");
-    }
+    let (control, _, _) = p3bf2_owner_resident(false).await;
+    assert!(control > 0, "unfenced, the action writes its audit receipt");
+    let (receipts, answer, tripped) = p3bf2_owner_resident(true).await;
+    assert!(tripped, "the socket consults the run's guard at the receipt");
+    assert_eq!(receipts, 0, "no audit receipt after the fence: {answer:?}");
+    assert!(answer.is_err(), "the action is refused: {answer:?}");
 }
 
 async fn p3bf2_fleet_resident(

@@ -403,12 +403,37 @@ impl HubStore {
         {
             return Err(StoreError::LineageCatalogConflict);
         }
+        if plan.mutations.iter().any(|mutation| {
+            mutation.revision < plan.from_revision || mutation.revision > plan.to_revision
+        }) {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        let delta = Self::project_sync_mutations(
+            &plan.mutations,
+            binding,
+            SequenceRange {
+                from_exclusive: plan.anchor_sequence,
+                to_inclusive: plan.head_sequence,
+            },
+            plan.anchor_digest,
+        )?;
+        if delta.is_empty() {
+            return Err(StoreError::LineageCompactionUnavailable);
+        }
+        Ok(delta)
+    }
+
+    /// Project the durable payloads in the batch, even if a later mutation
+    /// already changed or removed the corresponding materialised row.
+    fn project_sync_mutations(
+        mutations: &[SyncMutation],
+        binding: ProjectionBinding,
+        sequence: SequenceRange,
+        parent_digest: Sha256Digest,
+    ) -> Result<ProjectionDelta, StoreError> {
         let mut final_mutations = HashMap::<(String, i64), SyncMutation>::new();
-        for mutation in &plan.mutations {
-            if mutation.vehicle_id != plan.vehicle_id
-                || mutation.revision < plan.from_revision
-                || mutation.revision > plan.to_revision
-            {
+        for mutation in mutations {
+            if mutation.vehicle_id != binding.vehicle_id {
                 return Err(StoreError::LineageCatalogConflict);
             }
             let key = (mutation.entity.clone(), mutation.entity_id);
@@ -452,11 +477,8 @@ impl HubStore {
         }
         let mut delta = ProjectionDelta {
             binding,
-            sequence: SequenceRange {
-                from_exclusive: plan.anchor_sequence,
-                to_inclusive: plan.head_sequence,
-            },
-            parent_digest: plan.anchor_digest,
+            sequence,
+            parent_digest,
             cars: Vec::new(),
             car_settings: Vec::new(),
             drives: Vec::new(),
@@ -536,9 +558,6 @@ impl HubStore {
                 }
             }
         }
-        if delta.is_empty() {
-            return Err(StoreError::LineageCompactionUnavailable);
-        }
         Ok(delta)
     }
 
@@ -549,153 +568,16 @@ impl HubStore {
         sequence: SequenceRange,
         parent_digest: Sha256Digest,
     ) -> Result<ProjectionDelta, StoreError> {
-        let connection = self.open()?;
-        projection_delta_for_mutations_in(
-            &connection,
+        if claim.vehicle_id != binding.vehicle_id {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        Self::project_sync_mutations(
             &claim.mutations,
             binding,
             sequence,
             parent_digest,
         )
     }
-}
-
-/// The typed delta that publishes `mutations`, reading their rows through
-/// `connection` (a publication transaction may read rows it wrote itself).
-fn projection_delta_for_mutations_in(
-    connection: &Connection,
-    mutations: &[SyncMutation],
-    binding: ProjectionBinding,
-    sequence: SequenceRange,
-    parent_digest: Sha256Digest,
-) -> Result<ProjectionDelta, StoreError> {
-    let mut final_mutations = HashMap::<(String, i64), SyncMutation>::new();
-    for mutation in mutations {
-        final_mutations.insert(
-            (mutation.entity.clone(), mutation.entity_id),
-            mutation.clone(),
-        );
-    }
-    let mut ordered = final_mutations.into_values().collect::<Vec<_>>();
-    ordered.sort_by_key(|mutation| {
-        (
-            mutation.revision,
-            mutation.entity.clone(),
-            mutation.entity_id,
-        )
-    });
-    let has_car_upsert = ordered
-        .iter()
-        .any(|mutation| mutation.entity == "car" && mutation.operation == "upsert");
-    let mut delta = ProjectionDelta {
-        binding,
-        sequence,
-        parent_digest,
-        cars: Vec::new(),
-        car_settings: Vec::new(),
-        drives: Vec::new(),
-        positions: Vec::new(),
-        charges: Vec::new(),
-        charge_samples: Vec::new(),
-        states: Vec::new(),
-        updates: Vec::new(),
-        tombstones: Vec::new(),
-    };
-    for mutation in ordered {
-        let entity = parse_sync_entity(&mutation.entity).ok_or_else(|| {
-            StoreError::SyncMutation(format!("unknown entity {}", mutation.entity))
-        })?;
-        if mutation.operation == "tombstone" {
-            delta.tombstones.push(ProjectionTombstone {
-                entity,
-                id: mutation.entity_id,
-                car_id: mutation.car_id,
-            });
-            continue;
-        }
-        if mutation.operation != "upsert" {
-            return Err(StoreError::SyncMutation(
-                "invalid mutation operation".into(),
-            ));
-        }
-        match entity {
-            ProjectionDeltaEntity::Car => {
-                delta.cars.push(load_projection_json(
-                    connection,
-                    "materialised_cars",
-                    "car_json",
-                    "car_id",
-                    &mutation,
-                )?);
-            }
-            ProjectionDeltaEntity::CarSetting => {
-                if has_car_upsert {
-                    continue;
-                }
-                let car: ProjectionCar = load_projection_json(
-                    connection,
-                    "materialised_cars",
-                    "car_json",
-                    "car_id",
-                    &mutation,
-                )?;
-                delta.car_settings.push(ProjectionCarSettingsPatch {
-                    car_id: mutation.entity_id,
-                    settings: car.settings,
-                });
-            }
-            ProjectionDeltaEntity::Drive => delta.drives.push(load_projection_json(
-                connection,
-                "materialised_drives",
-                "drive_json",
-                "drive_id",
-                &mutation,
-            )?),
-            ProjectionDeltaEntity::Position => delta.positions.push(load_projection_json(
-                connection,
-                "materialised_positions",
-                "position_json",
-                "position_id",
-                &mutation,
-            )?),
-            ProjectionDeltaEntity::Charge => delta.charges.push(load_projection_json(
-                connection,
-                "materialised_charges",
-                "charge_json",
-                "charge_id",
-                &mutation,
-            )?),
-            ProjectionDeltaEntity::ChargeSample => {
-                delta.charge_samples.push(load_projection_json(
-                    connection,
-                    "materialised_charge_samples",
-                    "sample_json",
-                    "sample_id",
-                    &mutation,
-                )?);
-            }
-            ProjectionDeltaEntity::State => delta.states.push(load_projection_json(
-                connection,
-                "materialised_states",
-                "state_json",
-                "state_id",
-                &mutation,
-            )?),
-            ProjectionDeltaEntity::Update => delta.updates.push(load_projection_json(
-                connection,
-                "materialised_updates",
-                "update_json",
-                "update_id",
-                &mutation,
-            )?),
-            ProjectionDeltaEntity::Geofence | ProjectionDeltaEntity::Address => {
-                return Err(StoreError::SyncMutation(
-                    "entity has no typed projection row".into(),
-                ));
-            }
-        }
-    }
-    Ok(delta)
 }
 
 impl HubStore {

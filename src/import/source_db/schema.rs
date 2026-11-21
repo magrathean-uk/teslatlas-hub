@@ -8,13 +8,15 @@
 //! validate their rows with this module, and only then use the fixed paginated
 //! projections below.
 //!
-//! The contract is pinned to the source database v4.4.0 tag revision
-//! `42d187daadd0104fc9c4509785df47a26705845a` (107 migrations, newest
-//! `20261014120000`). It adds two migrations to the earlier v4.2.0 set; the
-//! only change to the relations and enums read here is the rename of the
-//! `range` enum to `preferred_range` with the same labels in the same order
-//! (`docs/releases/source-schema-compatibility.md`). Database evidence proves
-//! only the v4.4-compatible schema, not the running app version.
+//! The contract is pinned to the source database v4.5.0 tag revision
+//! `83652a688ef4ff2118572e9f48c49807e348453f` (108 migrations, newest
+//! `20261102130000`). It adds one migration to the v4.4.0 set; that migration
+//! creates the `terrain_elevation_queue` table, which the importer does not
+//! read, and changes none of the relations and enums read here
+//! (`docs/releases/source-schema-compatibility.md`). v4.5.0 also backfills
+//! elevation on ended drives and updates their ascent and descent, so a drive
+//! row can change after the Hub imported it. Database evidence proves only the
+//! v4.5-compatible schema, not the running app version.
 //! A source must match that migration high-water mark and complete ordered set.
 //! A newer migration, or a database reconstructed with a different migration
 //! history, is rejected until its schema delta has been reviewed.
@@ -22,16 +24,20 @@
 use sha2::{Digest, Sha256};
 
 /// First source database migration version this adapter supports (the
-/// v4.4-compatible set). The adapter admits exactly one reviewed set, so an
-/// older v4.2-compatible source (newest migration `20260808090000`) is refused
+/// v4.5-compatible set). The adapter admits exactly one reviewed set, so an
+/// older v4.4-compatible source (newest migration `20261014120000`) is refused
 /// as a legacy migration.
-pub const MIN_SUPPORTED_MIGRATION: i64 = 20_261_014_120_000;
+pub const MIN_SUPPORTED_MIGRATION: i64 = 20_261_102_130_000;
 
-/// Last migration in the pinned v4.4.0 source tree.
+/// Last migration in the pinned v4.5.0 source tree.
 pub const MAX_VALIDATED_MIGRATION: i64 = MIN_SUPPORTED_MIGRATION;
 
-/// Immutable v4.4.0 source revision written by new imports.
-pub const SOURCE_DB_V4_SOURCE_REVISION: &str = "42d187daadd0104fc9c4509785df47a26705845a";
+/// Immutable v4.5.0 source revision written by new imports.
+pub const SOURCE_DB_V4_SOURCE_REVISION: &str = "83652a688ef4ff2118572e9f48c49807e348453f";
+
+/// Immutable v4.4.0 revision retained to verify artefacts published before
+/// the v4.5.0 pin.
+pub const SOURCE_DB_V4_4_SOURCE_REVISION: &str = "42d187daadd0104fc9c4509785df47a26705845a";
 
 /// Immutable v4.2.0 revision retained as legacy beta provenance.
 pub const SOURCE_DB_V4_2_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843f6d401c76a";
@@ -40,13 +46,13 @@ pub const SOURCE_DB_V4_2_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843
 pub const SOURCE_DB_V4_1_1_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
 
 /// Number of migrations in the pinned source revision.
-pub const SOURCE_DB_V4_MIGRATION_COUNT: usize = 107;
+pub const SOURCE_DB_V4_MIGRATION_COUNT: usize = 108;
 
 /// SHA-256 of the sorted, newline-delimited 14-digit migration versions in
 /// the pinned source revision. The exact list, not only its high-water mark, is
 /// part of the read-only source admission contract.
 pub const SOURCE_DB_V4_MIGRATION_SET_SHA256: &str =
-    "c497f904ef7426ea2468f7ed13044d6f74fe34e0c3e14e5c3360eea0ed35edea";
+    "65c5af7596b2a550cccc03203be2825ef1ce892154e1dc2ed573ad0cbb9db3da";
 
 /// One reviewed source migration set: the immutable source revision together
 /// with the hash, count and newest version of its exact migration list.
@@ -88,13 +94,28 @@ impl ReviewedSourceSet {
     }
 }
 
-/// The v4.4.0 set: the only set source admission accepts.
+/// The v4.5.0 set: the only set source admission accepts.
 pub const CURRENT_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
     source_revision: SOURCE_DB_V4_SOURCE_REVISION,
-    release: "4.4.0",
+    release: "4.5.0",
     migration_set_sha256: SOURCE_DB_V4_MIGRATION_SET_SHA256,
     migration_count: SOURCE_DB_V4_MIGRATION_COUNT,
     newest_migration: MAX_VALIDATED_MIGRATION,
+};
+
+/// Migration-set hash of the v4.4.0 revision (107 migrations, newest
+/// `20261014120000`).
+pub const SOURCE_DB_V4_4_MIGRATION_SET_SHA256: &str =
+    "c497f904ef7426ea2468f7ed13044d6f74fe34e0c3e14e5c3360eea0ed35edea";
+
+/// The v4.4.0 set, retained to verify artefacts published before the v4.5.0
+/// pin.
+pub const V4_4_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
+    source_revision: SOURCE_DB_V4_4_SOURCE_REVISION,
+    release: "4.4.0",
+    migration_set_sha256: SOURCE_DB_V4_4_MIGRATION_SET_SHA256,
+    migration_count: 107,
+    newest_migration: 20_261_014_120_000,
 };
 
 /// Migration-set hash shared by the v4.1.1 and v4.2.0 revisions (105
@@ -121,8 +142,9 @@ pub const V4_1_1_REVIEWED_SOURCE_SET: ReviewedSourceSet = ReviewedSourceSet {
 };
 
 /// Every reviewed set, newest first.
-pub const REVIEWED_SOURCE_SETS: [ReviewedSourceSet; 3] = [
+pub const REVIEWED_SOURCE_SETS: [ReviewedSourceSet; 4] = [
     CURRENT_REVIEWED_SOURCE_SET,
+    V4_4_REVIEWED_SOURCE_SET,
     V4_2_REVIEWED_SOURCE_SET,
     V4_1_1_REVIEWED_SOURCE_SET,
 ];
@@ -147,7 +169,8 @@ pub fn is_supported_source_db_revision(revision: &str) -> bool {
 pub const READ_ONLY_SESSION_SQL: [&str; 3] = [
     "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
     "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
-    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '5s'",
+    // Like pg_dump, fail if row-level security would hide part of the source.
+    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '5s'; SET LOCAL row_security = off",
 ];
 
 /// Read the installed Ecto migration high-water mark from the exact source

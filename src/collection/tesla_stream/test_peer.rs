@@ -53,12 +53,12 @@ pub(super) const TAG: &str = "4242";
 pub(super) const T0: i64 = 1_760_000_000_000;
 /// Spec notation W: the wall clock the tests read unless stated.
 pub(super) const W: i64 = T0 + 5_000;
-/// Row V1 of the spec: elevation 25, est_lat 10.5, est_lng 20.25, est_range 230.5,
-/// heading 182, odometer 12345.6, power 15, range 241.25, shift_state D, soc 80,
-/// speed 30.
-pub(super) const V1: &str = "25,10.5,20.25,230.5,182,12345.6,15,241.25,D,80,30";
+/// Row V1 of the spec, in the documented column order: speed 30, odometer 12345.6,
+/// soc 80, elevation 25, est_heading not reported, est_lat 10.5, est_lng 20.25,
+/// power 15, shift_state D, range 241.25, est_range 230.5, heading 182.
+pub(super) const V1: &str = "30,12345.6,80,25,,10.5,20.25,15,D,241.25,230.5,182";
 /// Row PK of the spec: a parked frame.
-pub(super) const PK: &str = "25,10.5,20.25,230.5,182,12345.6,0,241.25,P,80,0";
+pub(super) const PK: &str = "0,12345.6,80,25,,10.5,20.25,0,P,241.25,230.5,182";
 
 /// `U(t, row)` of the spec: one `data:update` frame for the session's tag.
 pub(super) fn u(time: impl std::fmt::Display, row: &str) -> String {
@@ -1081,6 +1081,7 @@ impl Rig {
     pub(super) fn start(self) -> Running {
         let (events_tx, events) = mpsc::channel(self.capacity);
         let (shutdown, shutdown_rx) = oneshot::channel();
+        let (quiet, quiet_rx) = oneshot::channel();
         let hooked = Arc::new(StdMutex::new(Vec::new()));
         let hook_events = Arc::clone(&hooked);
         let hook_log = self.log.clone();
@@ -1135,10 +1136,11 @@ impl Rig {
                 }
                 hook_events.lock().expect("hook lock").push(event);
             }));
-        let task = tokio::spawn(supervisor.run(shutdown_rx));
+        let task = tokio::spawn(supervisor.run_with_quiet_stop(shutdown_rx, Some(quiet_rx)));
         Running {
             events,
             shutdown: Some(shutdown),
+            quiet: Some(quiet),
             task: Some(task),
             hooked,
             clock: self.clock,
@@ -1152,6 +1154,7 @@ impl Rig {
 pub(super) struct Running {
     pub(super) events: mpsc::Receiver<StreamEvent>,
     shutdown: Option<oneshot::Sender<()>>,
+    quiet: Option<oneshot::Sender<()>>,
     pub(super) task: Option<JoinHandle<Result<(), StreamSupervisorError>>>,
     /// Every admission hook event, in order.
     pub(super) hooked: Arc<StdMutex<Vec<AdmissionEvent>>>,
@@ -1178,6 +1181,13 @@ impl Running {
     pub(super) fn signal_shutdown(&mut self) {
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
+        }
+    }
+
+    /// Sends the quiet stop (#86).
+    pub(super) fn signal_quiet_stop(&mut self) {
+        if let Some(quiet) = self.quiet.take() {
+            let _ = quiet.send(());
         }
     }
 

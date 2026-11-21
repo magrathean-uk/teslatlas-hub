@@ -427,18 +427,30 @@ fn apply_lifecycle_steps(
     observation: &Observation<'_>,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
-    // Step 3: vehicle facts.
+    // Step 3: vehicle facts. The metadata (name, firmware and configuration)
+    // is read from the vehicle group, so it is merged only when that group is
+    // not older than the one the stored metadata came from: an older-ordered
+    // reply kept for a newer charge or drive group still carries a stale
+    // vehicle group (P06-F07, R2-F1). An equal time is Tesla re-serving the
+    // same group, which merges as before.
     if let Some(newer) = observation.parsed.car_metadata.as_ref() {
-        state
-            .car_metadata
-            .get_or_insert_with(ProjectionCarPatch::default)
-            .merge_newer(newer);
+        let t_vehicle = observation.parsed.vehicle_timestamp_ms;
+        let watermark = state
+            .last_car_metadata_fact_ms
+            .or(state.last_vehicle_timestamp_ms);
+        if watermark.is_none_or(|watermark| t_vehicle >= watermark) {
+            state
+                .car_metadata
+                .get_or_insert_with(ProjectionCarPatch::default)
+                .merge_newer(newer);
+            state.last_car_metadata_fact_ms = watermark.max(Some(t_vehicle));
+        }
     }
     apply_service_mode(state, observation);
     apply_version_facts(state, observation, delta)?;
 
     // Step 4: closes, drive then charge.
-    drive_close_step(state, observation, delta)?;
+    let closed_drive_odometer_untrusted = drive_close_step(state, observation, delta)?;
     charge_close_step(state, observation, delta)?;
     // R27: offline closes nothing by itself. The flag on an open drive is
     // informational only; the gap rules judge the drive on the next evidence.
@@ -462,6 +474,14 @@ fn apply_lifecycle_steps(
     // Step 8: standalone position, parked snapshot.
     standalone_position_step(state, observation, delta)?;
     parked_snapshot_step(state, observation);
+    // A drive that closed with an untrusted odometer does not hand its
+    // closing reading to the next drive as a lead. The next observation can
+    // establish a fresh parked odometer normally.
+    if closed_drive_odometer_untrusted
+        && let Some(snapshot) = state.parked_snapshot.as_mut().filter(|value| value.after_drive)
+    {
+        snapshot.odometer_km = None;
+    }
 
     // Step 9: phase and state interval.
     let phase = derive_phase(state, observation);
@@ -1341,7 +1361,7 @@ mod stream_fixture_tests {
 
     fn sample(id: i64, timestamp_ms: i64, odometer: f64, shift_state: &str) -> LifecycleSample {
         let frame = format!(
-            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},25,51.5,-0.1,210,180,{odometer},120,200,{shift_state},80,{speed}"}}"#,
+            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},{speed},{odometer},80,25,,51.5,-0.1,120,{shift_state},200,210,180"}}"#,
             speed = if shift_state == "P" { 0 } else { 10 },
         );
         let update = parse_data_update(&frame).unwrap();
@@ -1432,7 +1452,7 @@ mod stream_fixture_tests {
 
     fn stream_sample(id: i64, timestamp_ms: i64, speed: i64, shift_state: &str) -> LifecycleSample {
         let frame = format!(
-            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},25,51.5,-0.1,210,180,100.0,120,200,{shift_state},80,{speed}"}}"#,
+            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},{speed},100.0,80,25,,51.5,-0.1,120,{shift_state},200,210,180"}}"#,
         );
         let update = parse_data_update(&frame).unwrap();
         LifecycleSample {
