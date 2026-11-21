@@ -657,3 +657,24 @@ fn design_later_98_offer_byte_budgets_cap_each_device_and_the_store() {
     // The shipped budgets are 1 GiB per device and 4 GiB per store.
     assert_eq!((MAX_LEASED_BYTES_PER_DEVICE, MAX_LEASED_BYTES_PER_STORE), (1 << 30, 4 << 30));
 }
+
+#[test]
+fn design_later_98_observed_expiry_survives_a_clock_moved_back_and_a_restart() {
+    let fixture = rotated(1);
+    let digest = fixture.delta_digests[0];
+    let inside = fixture.now_ms + 10;
+    assert!(leased(&fixture, fixture.device, digest, inside));
+    // The lease is seen expired once...
+    assert!(!leased(&fixture, fixture.device, digest, fixture.now_ms + RETENTION));
+    // ...so a clock moved back into the window does not revive it.
+    assert!(!leased(&fixture, fixture.device, digest, inside));
+    let reopened = HubStore::initialize(fixture._temporary.path().join("store")).expect("restart");
+    assert!(
+        reopened
+            .offered_pack_for_digest_at(fixture.device, digest, inside)
+            .expect("lease lookup")
+            .is_none()
+    );
+    // The device's other leases are untouched.
+    assert!(leased(&fixture, fixture.device, fixture.offered.manifest.chunks[0].sha256, inside));
+}

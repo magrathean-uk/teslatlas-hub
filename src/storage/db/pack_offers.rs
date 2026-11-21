@@ -372,7 +372,10 @@ impl HubStore {
 
     /// The object a live lease of `device_id` names, for the pack route once
     /// every current lookup has missed. `None` for an unknown, unoffered,
-    /// expired, revoked, ungranted or other-generation digest alike.
+    /// expired, revoked, ungranted or other-generation digest alike. An
+    /// expiry this lookup observes is persisted by deleting the expired rows,
+    /// so a wall clock moved back cannot revive the lease (issue #98 review
+    /// finding 8).
     pub(crate) fn offered_pack_for_digest_at(
         &self,
         device_id: Uuid,
@@ -395,6 +398,7 @@ impl HubStore {
             .optional()
             .map_err(StoreError::Query)?;
         let Some((kind, bytes)) = row else {
+            self.forget_observed_expired_offers(device_id, digest, now_ms)?;
             return Ok(None);
         };
         let kind = PackOfferKind::from_sql(&kind).ok_or(StoreError::PhysicalV3AdmissionConflict)?;
@@ -410,6 +414,36 @@ impl HubStore {
             },
             kind,
         )))
+    }
+}
+
+impl HubStore {
+    fn forget_observed_expired_offers(
+        &self,
+        device_id: Uuid,
+        digest: Sha256Digest,
+        now_ms: i64,
+    ) -> Result<(), StoreError> {
+        let (device, digest) = (device_id.to_string(), digest.to_string());
+        let expired: bool = self
+            .open_read_only_connection()?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM device_pack_offers
+                  WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3)",
+                params![device, digest, now_ms],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        if expired {
+            self.open()?
+                .execute(
+                    "DELETE FROM device_pack_offers
+                      WHERE device_id = ?1 AND sha256 = ?2 AND expires_at_ms <= ?3",
+                    params![device, digest, now_ms],
+                )
+                .map_err(StoreError::Query)?;
+        }
+        Ok(())
     }
 }
 
