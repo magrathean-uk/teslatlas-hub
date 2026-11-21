@@ -157,9 +157,11 @@ impl StorageCensusClass {
 /// A pack referenced by more than one class is counted once, in the first
 /// class of this order. The current heads are the served physical heads and
 /// the lineage head; the import bases are each vehicle's kept import stage
-/// and its source sessions, which every hand-back republishes from. A stage
-/// copy left in the kept stages' staging folder by an interrupted hand-back
-/// or keep is an orphan.
+/// and its source sessions, which every hand-back republishes from, decided by
+/// the validated kept records alone. A kept file no record names (a stage copy
+/// or archive generation left by an interrupted hand-back, keep or conversion,
+/// an orphan vehicle's files) is an orphan; one whose ownership is unclear is
+/// refused and held.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, PartialEq, Eq)]
 pub struct StorageCensus {
     pub current_heads: StorageCensusClass,
@@ -167,6 +169,9 @@ pub struct StorageCensus {
     pub retained_prior_heads: StorageCensusClass,
     pub deltas: StorageCensusClass,
     pub prepared_maps: StorageCensusClass,
+    /// Kept files held back because their ownership is unclear: links,
+    /// damaged or unattributable records, an archive of the wrong size.
+    pub refused: StorageCensusClass,
     pub orphans: StorageCensusClass,
     pub total: StorageCensusClass,
 }
@@ -188,6 +193,8 @@ enum PackStorageClass {
     RetainedPriorHead,
     Delta,
     PreparedMap,
+    /// A kept file no deletion may touch: a link, a damaged record's file.
+    Refused,
 }
 
 /// A pack-tree file, held by the opened directory that holds it and its
@@ -349,53 +356,165 @@ fn pack_storage_files(
 /// (the importer's `PHYSICAL_KEPT_DIRECTORY`).
 const KEPT_STAGES_DIRECTORY: &str = "physical-kept";
 
-/// The kept import stages (`.staging/<vehicle>.sqlite`) and their source
-/// sessions (`<vehicle>.source.json`). A file named for a vehicle of this
-/// store is an import base and needed; any other stage file with a
-/// content-free UUID name is a copy no record names, which only a run that
-/// holds the publication gate writes, so it is an orphan once the gate is
-/// held. Files of any other shape are not counted.
+/// One entry of the kept directory or its staging folder, as an opened
+/// directory sees it without following links.
+struct KeptTreeEntry {
+    name: String,
+    bytes: u64,
+    regular: bool,
+    links: u64,
+}
+
+fn kept_tree_entries(
+    directory: &std::os::fd::OwnedFd,
+    path: &Path,
+) -> Result<Vec<KeptTreeEntry>, StoreError> {
+    let inspect = |source: Errno| StoreError::InspectCatalogPack {
+        path: path.to_path_buf(),
+        source: source.into(),
+    };
+    let mut entries = Vec::new();
+    for entry in Dir::read_from(directory).map_err(inspect)? {
+        let entry = entry.map_err(inspect)?;
+        let Ok(name) = std::str::from_utf8(entry.file_name().to_bytes()) else {
+            continue;
+        };
+        if name == "." || name == ".." {
+            continue;
+        }
+        let stat = match statat(directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(Errno::NOENT) => continue,
+            Err(source) => return Err(inspect(source)),
+        };
+        let regular = FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile;
+        entries.push(KeptTreeEntry {
+            name: name.to_owned(),
+            bytes: if regular { u64::try_from(stat.st_size).unwrap_or(0) } else { 0 },
+            regular,
+            links: u64::from(stat.st_nlink),
+        });
+    }
+    Ok(entries)
+}
+
+/// The shape of a kept file name; the uuids are the vehicle and, for the
+/// archive shapes, the generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeptShape {
+    /// `.staging/<vehicle>.sqlite`: a legacy raw stage, or an unnamed
+    /// candidate or working copy.
+    Stage(Uuid),
+    /// `<vehicle>.source.json`: a legacy source.
+    LegacySource(Uuid),
+    Archive(Uuid, Uuid),
+    Source(Uuid, Uuid),
+    /// A generation's partial archive or temporary source, never named.
+    Partial(Uuid),
+}
+
+fn kept_uuid(text: &str) -> Option<Uuid> {
+    (text.len() == 36).then(|| Uuid::parse_str(text).ok()).flatten()
+}
+
+fn kept_shape(name: &str, staging: bool) -> Option<KeptShape> {
+    if staging {
+        return Some(KeptShape::Stage(kept_uuid(name.strip_suffix(".sqlite")?)?));
+    }
+    let vehicle = kept_uuid(name.get(..36)?)?;
+    let rest = name.get(36..)?.strip_prefix('.')?;
+    if rest == "source.json" {
+        return Some(KeptShape::LegacySource(vehicle));
+    }
+    let generation = kept_uuid(rest.get(..36)?)?;
+    match rest.get(36..)? {
+        ".kept" => Some(KeptShape::Archive(vehicle, generation)),
+        ".source.json" => Some(KeptShape::Source(vehicle, generation)),
+        ".kept.partial" => Some(KeptShape::Partial(vehicle)),
+        tail => tail
+            .strip_prefix(".source.")
+            .and_then(|temporary| temporary.strip_suffix(".tmp"))
+            .and_then(kept_uuid)
+            .map(|_| KeptShape::Partial(vehicle)),
+    }
+}
+
+/// The kept archives, legacy raw stages and source sessions, decided by the
+/// catalogue's validated `physical_v3_kept` records and nothing else (DEC-250):
+/// not by the vehicles table and not by a name. A file the vehicle's record
+/// names (its current archive generation and source, or the legacy pair of a
+/// record without an archive) is an import base and needed. A file of a
+/// recognised shape that no record names (an orphan vehicle, a vehicle whose
+/// record is gone, an old generation, a partial, a stray stage copy) is an
+/// orphan, which only a run that holds the publication gate removes. A file
+/// is held and reported as refused, never removed, when it is a link or
+/// not a regular file, has more than one hard link, belongs to a record that
+/// does not read back or whose archive size differs from the file, or when
+/// any record cannot be attributed to a vehicle. Other shapes are not counted.
 fn kept_stage_files(
     connection: &Connection,
     root: &std::os::fd::OwnedFd,
     packs_dir: &Path,
 ) -> Result<Vec<PackStorageFile>, StoreError> {
-    let vehicles = connection
-        .prepare("SELECT vehicle_id FROM vehicles")
-        .map_err(StoreError::Query)?
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(StoreError::Query)?
-        .collect::<Result<HashSet<_>, _>>()
-        .map_err(StoreError::Query)?;
     let mut files = Vec::new();
     let kept_path = packs_dir.join(KEPT_STAGES_DIRECTORY);
     let Some(kept) = open_pack_tree_directory(Some(root), KEPT_STAGES_DIRECTORY, &kept_path)?
     else {
         return Ok(files);
     };
+    let references = physical_v3_kept_references_in(connection)?;
     let staging_path = kept_path.join(".staging");
     let directories = [
         open_pack_tree_directory(Some(&kept), ".staging", &staging_path)?
-            .map(|directory| (directory, staging_path, ".sqlite")),
-        Some((kept, kept_path, ".source.json")),
+            .map(|directory| (directory, staging_path, true)),
+        Some((kept, kept_path, false)),
     ];
-    for (directory, path, suffix) in directories.into_iter().flatten() {
-        for (name, bytes) in pack_tree_regular_files(&directory, &path)? {
-            let Some(stem) = name
-                .strip_suffix(suffix)
-                .filter(|stem| stem.len() == 36 && Uuid::parse_str(stem).is_ok())
-                .map(str::to_owned)
-            else {
+    for (directory, path, staging) in directories.into_iter().flatten() {
+        for entry in kept_tree_entries(&directory, &path)? {
+            let Some(shape) = kept_shape(&entry.name, staging) else {
                 continue;
             };
-            let base = vehicles.contains(&stem);
+            let (vehicle, named_by) = match shape {
+                KeptShape::Stage(vehicle) | KeptShape::LegacySource(vehicle) => (vehicle, None),
+                KeptShape::Archive(vehicle, generation) | KeptShape::Source(vehicle, generation) => {
+                    (vehicle, Some(generation))
+                }
+                KeptShape::Partial(vehicle) => (vehicle, None),
+            };
+            let record = references.records.get(&vehicle);
+            let (class, needed) = if !entry.regular
+                || entry.links != 1
+                || references.unattributable
+                || matches!(record, Some(None))
+            {
+                (Some(PackStorageClass::Refused), true)
+            } else if let Some(Some(record)) = record {
+                let archive = record.archive.as_ref();
+                let named = match shape {
+                    KeptShape::Stage(_) | KeptShape::LegacySource(_) => archive.is_none(),
+                    KeptShape::Archive(..) | KeptShape::Source(..) => {
+                        archive.is_some_and(|archive| Some(archive.generation) == named_by)
+                    }
+                    KeptShape::Partial(_) => false,
+                };
+                let wrong_size = named
+                    && matches!(shape, KeptShape::Archive(..))
+                    && archive.is_some_and(|archive| archive.bytes != entry.bytes);
+                match (named, wrong_size) {
+                    (true, true) => (Some(PackStorageClass::Refused), true),
+                    (true, false) => (Some(PackStorageClass::ImportBase), true),
+                    (false, _) => (None, false),
+                }
+            } else {
+                (None, false)
+            };
             files.push(PackStorageFile {
                 directory: directory.clone(),
-                path: path.join(&name),
-                name,
-                bytes,
-                class: base.then_some(PackStorageClass::ImportBase),
-                needed: base,
+                path: path.join(&entry.name),
+                name: entry.name,
+                bytes: entry.bytes,
+                class,
+                needed,
             });
         }
     }
@@ -412,6 +531,7 @@ fn storage_census_of(files: &[PackStorageFile]) -> StorageCensus {
             Some(PackStorageClass::RetainedPriorHead) => &mut census.retained_prior_heads,
             Some(PackStorageClass::Delta) => &mut census.deltas,
             Some(PackStorageClass::PreparedMap) => &mut census.prepared_maps,
+            Some(PackStorageClass::Refused) => &mut census.refused,
             None => &mut census.orphans,
         };
         class.add(file.bytes, reclaimable);
@@ -453,7 +573,9 @@ impl HubStore {
         let (mut reclaimed_files, mut reclaimed_bytes) = (0_u64, 0_u64);
         for file in files.iter().filter(|file| !file.needed) {
             let bytes = match statat(&*file.directory, file.name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
-                Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile => {
+                Ok(stat)
+                    if FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile
+                        && stat.st_nlink == 1 => {
                     u64::try_from(stat.st_size).unwrap_or(0)
                 }
                 Ok(_) | Err(Errno::NOENT) => continue,

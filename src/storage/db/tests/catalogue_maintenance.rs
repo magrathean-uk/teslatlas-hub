@@ -129,6 +129,16 @@ fn write_kept_stages(
     std::fs::write(&source, vec![2; KEPT_SOURCE_BYTES as usize]).expect("kept source");
     std::fs::write(&stray, vec![3; STRAY_COPY_BYTES as usize]).expect("stray copy");
     std::fs::write(staging.join("other-shape.txt"), b"not counted").expect("other file");
+    // The legacy record that names the pair.
+    let digest = "ab".repeat(32);
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    store
+        .record_physical_v3_kept(
+            &gate,
+            vehicle_id,
+            Some(&PhysicalV3Kept { stage: digest.clone(), source: digest, archive: None }),
+        )
+        .expect("kept record");
     (vec![stage, source], stray)
 }
 
@@ -439,5 +449,213 @@ fn storage_census_and_reclaim_refuse_a_linked_pack_directory_and_leave_outside_f
         assert!(store.storage_census_at(fixture.now_ms).is_err(), "{linked}");
         assert!(store.reclaim_storage_at(fixture.now_ms).is_err(), "{linked}");
         assert!(outside_files.iter().all(|path| path.exists()), "{linked}");
+    }
+}
+
+const BASE_BYTES: usize = 1 << 20;
+
+fn kept_record(archive: Option<(Uuid, u64)>) -> PhysicalV3Kept {
+    let digest = "cd".repeat(32);
+    PhysicalV3Kept {
+        stage: digest.clone(),
+        source: digest.clone(),
+        archive: archive.map(|(generation, bytes)| PhysicalV3KeptArchive {
+            generation,
+            format: 1,
+            digest,
+            bytes,
+            decoded_bytes: bytes * 10,
+        }),
+    }
+}
+
+fn put_kept_record(store: &HubStore, vehicle_id: Uuid, record: &PhysicalV3Kept) {
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    store
+        .record_physical_v3_kept(&gate, vehicle_id, Some(record))
+        .expect("kept record");
+}
+
+fn kept_dir(store: &HubStore) -> std::path::PathBuf {
+    let kept = store.packs_dir().join("physical-kept");
+    std::fs::create_dir_all(kept.join(".staging")).expect("kept directory");
+    kept
+}
+
+fn kept_write(path: &std::path::Path, bytes: usize) {
+    std::fs::write(path, vec![7; bytes]).expect("kept file");
+}
+
+#[test]
+fn storage_reclaim_decides_kept_ownership_from_references_not_vehicles() {
+    let (_temporary, store) = try_test_store().expect("store");
+    let kept = kept_dir(&store);
+    let (live, orphan, unreferenced) =
+        (Uuid::from_u128(0x71), Uuid::from_u128(0x72), Uuid::from_u128(0x73));
+    let (generation, old_generation) = (Uuid::from_u128(0x81), Uuid::from_u128(0x82));
+    // `unreferenced` has no kept record whatever the vehicles table says.
+    put_kept_record(&store, live, &kept_record(Some((generation, BASE_BYTES as u64))));
+    let named = [
+        kept.join(format!("{live}.{generation}.kept")),
+        kept.join(format!("{live}.{generation}.source.json")),
+    ];
+    kept_write(&named[0], BASE_BYTES);
+    kept_write(&named[1], 100);
+    let freed = [
+        kept.join(format!("{live}.{old_generation}.kept")),
+        kept.join(format!("{live}.{old_generation}.source.json")),
+        kept.join(format!("{live}.{old_generation}.kept.partial")),
+        kept.join(format!("{live}.{old_generation}.source.{}.tmp", Uuid::from_u128(0x90))),
+        kept.join(format!("{orphan}.{generation}.kept")),
+        kept.join(format!("{unreferenced}.source.json")),
+        kept.join(".staging").join(format!("{orphan}.sqlite")),
+        kept.join(".staging").join(format!("{unreferenced}.sqlite")),
+        // A stale legacy stage beside an archive record.
+        kept.join(".staging").join(format!("{live}.sqlite")),
+    ];
+    for path in &freed {
+        kept_write(path, BASE_BYTES / 4);
+    }
+    let freed_bytes = (BASE_BYTES / 4 * freed.len()) as u64;
+    let named_bytes = BASE_BYTES as u64 + 100;
+
+    let census = store.storage_census_at(1_000).expect("census");
+    assert_eq!(census.import_bases.files, 2);
+    assert_eq!(census.import_bases.bytes, named_bytes);
+    assert_eq!(census.orphans.files, freed.len() as u64);
+    assert_eq!(census.orphans.reclaimable_bytes, freed_bytes);
+    assert_eq!(census.refused, StorageCensusClass::default());
+
+    let report = store.reclaim_storage_at(1_000).expect("reclaim");
+    assert_eq!(report.reclaimed_files, freed.len() as u64);
+    assert_eq!(report.reclaimed_bytes, freed_bytes);
+    assert_eq!(report.after.total.bytes, named_bytes);
+    assert!(freed.iter().all(|path| !path.exists()));
+    assert!(named.iter().all(|path| path.is_file()));
+    let again = store.reclaim_storage_at(1_000).expect("second reclaim");
+    assert_eq!((again.reclaimed_files, again.reclaimed_bytes), (0, 0));
+    assert_eq!(again.after, report.after);
+}
+
+#[test]
+fn storage_reclaim_frees_exactly_the_orphans_bytes_of_two_equal_bases() {
+    let (_temporary, store) = try_test_store().expect("store");
+    let kept = kept_dir(&store);
+    let (live, orphan) = (Uuid::from_u128(0x71), Uuid::from_u128(0x72));
+    put_kept_record(&store, live, &kept_record(None));
+    kept_write(&kept.join(".staging").join(format!("{live}.sqlite")), BASE_BYTES);
+    kept_write(&kept.join(".staging").join(format!("{orphan}.sqlite")), BASE_BYTES);
+    let before = store.storage_census_at(1_000).expect("census").total.bytes;
+    let report = store.reclaim_storage_at(1_000).expect("reclaim");
+    assert_eq!(report.reclaimed_bytes, BASE_BYTES as u64);
+    assert_eq!(report.after.total.bytes, before - BASE_BYTES as u64);
+    assert!(kept.join(".staging").join(format!("{live}.sqlite")).is_file());
+}
+
+#[test]
+fn storage_reclaim_refuses_links_damaged_records_and_a_wrong_sized_archive() {
+    let (_temporary, store) = try_test_store().expect("store");
+    let kept = kept_dir(&store);
+    let outside = tempfile::tempdir().expect("outside");
+    let target = outside.path().join("target");
+    kept_write(&target, 64);
+    let (good, damaged, hard) =
+        (Uuid::from_u128(0x71), Uuid::from_u128(0x72), Uuid::from_u128(0x73));
+    let generation = Uuid::from_u128(0x81);
+    // A wrong-sized archive of a valid record, a damaged record's files, a
+    // symlink and a hard link of an unowned name.
+    put_kept_record(&store, good, &kept_record(Some((generation, 5))));
+    let archive = kept.join(format!("{good}.{generation}.kept"));
+    kept_write(&archive, 99);
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO hub_metadata(key, value) VALUES (?1, 'not json')",
+            params![format!("physical_v3_kept:{damaged}")],
+        )
+        .expect("damaged record");
+    let damaged_file = kept.join(format!("{damaged}.source.json"));
+    kept_write(&damaged_file, 40);
+    let symlink = kept.join(".staging").join(format!("{}.sqlite", Uuid::from_u128(0x74)));
+    std::os::unix::fs::symlink(&target, &symlink).expect("symlink");
+    let first = kept.join(format!("{hard}.source.json"));
+    kept_write(&first, 30);
+    let second = outside.path().join("second-name");
+    std::fs::hard_link(&first, &second).expect("hard link");
+
+    let census = store.storage_census_at(1_000).expect("census");
+    assert_eq!(census.refused.files, 4);
+    assert_eq!(census.total.reclaimable_bytes, 0);
+    let report = store.reclaim_storage_at(1_000).expect("reclaim");
+    assert_eq!((report.reclaimed_files, report.reclaimed_bytes), (0, 0));
+    for path in [&archive, &damaged_file, &first, &second, &target] {
+        assert!(path.is_file(), "{path:?}");
+    }
+    assert!(std::fs::symlink_metadata(&symlink).is_ok());
+}
+
+#[test]
+fn storage_reclaim_holds_every_kept_file_when_a_record_names_no_vehicle() {
+    let (_temporary, store) = try_test_store().expect("store");
+    let kept = kept_dir(&store);
+    let stray = kept.join(".staging").join(format!("{}.sqlite", Uuid::from_u128(0x72)));
+    kept_write(&stray, 500);
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO hub_metadata(key, value) VALUES ('physical_v3_kept:not-a-vehicle', '{}')",
+            [],
+        )
+        .expect("unknown record");
+    let report = store.reclaim_storage_at(1_000).expect("reclaim");
+    assert_eq!(report.reclaimed_bytes, 0);
+    assert_eq!(report.after.refused.files, 1);
+    assert!(stray.is_file());
+}
+
+#[test]
+fn storage_reclaim_refuses_a_differently_cased_conflicting_kept_key() {
+    for (case, archive) in [("archive", true), ("legacy", false)] {
+        let (_temporary, store) = try_test_store().expect("store");
+        let kept = kept_dir(&store);
+        let live = Uuid::from_u128(0xabcdefab_cdef_4abc_8def_abcdefabcdef);
+        let generation = Uuid::from_u128(1);
+        let rival = Uuid::from_u128(2);
+        let live_record = kept_record(archive.then_some((generation, BASE_BYTES as u64)));
+        put_kept_record(&store, live, &live_record);
+        let paths: Vec<_> = if archive {
+            vec![
+                kept.join(format!("{live}.{generation}.kept")),
+                kept.join(format!("{live}.{generation}.source.json")),
+            ]
+        } else {
+            vec![
+                kept.join(format!("{live}.source.json")),
+                kept.join(".staging").join(format!("{live}.sqlite")),
+            ]
+        };
+        for path in &paths {
+            kept_write(path, BASE_BYTES);
+        }
+        let alias = kept_record(Some((rival, BASE_BYTES as u64)));
+        store
+            .open()
+            .expect("catalogue")
+            .execute(
+                "INSERT INTO hub_metadata(key, value) VALUES (?1, ?2)",
+                [
+                    format!("physical_v3_kept:{}", live.to_string().to_uppercase()),
+                    serde_json::to_string(&alias).expect("record"),
+                ],
+            )
+            .expect("alias record");
+        let report = store.reclaim_storage_at(1_000).expect("reclaim");
+        assert_eq!(report.reclaimed_bytes, 0, "{case}");
+        assert!(report.after.refused.files >= 1, "{case}");
+        for path in &paths {
+            assert!(path.is_file(), "{case}: {}", path.display());
+        }
     }
 }
