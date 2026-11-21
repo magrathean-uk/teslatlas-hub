@@ -222,6 +222,7 @@ struct StreamedMembers {
     catalogue: BackupMember,
     packs: u64,
     noops: u64,
+    kept: u64,
 }
 
 /// The members a restore checks its staged tree against.
@@ -242,6 +243,13 @@ impl RestoredMembers<'_> {
             Self::Streamed(streamed) => streamed.noops > 0,
         }
     }
+
+    fn has_kept(self) -> bool {
+        match self {
+            Self::Listed(members) => members.iter().any(|member| kept_member_filename(&member.path).is_some()),
+            Self::Streamed(streamed) => streamed.kept > 0,
+        }
+    }
 }
 
 /// The kind of one member, by its canonical path.
@@ -250,6 +258,7 @@ enum MemberKind {
     Catalogue,
     Noop,
     Pack,
+    Kept,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -639,6 +648,9 @@ pub fn restore_data_backup(
             .any(|member| schema_22_noop_member_filename(&member.path).is_some())
         {
             create_private_directory(&staging.path.join("packs").join("noop"))?;
+        }
+        if RestoredMembers::Listed(&manifest.members).has_kept() {
+            create_private_directory(&staging.path.join("packs").join("physical-kept"))?;
         }
         for member in &manifest.members {
             let relative = member
@@ -1064,8 +1076,9 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
         PRIVATE_DIRECTORY_MODE,
         "protecting backup SHA-256 pack directory",
     )?;
+    let has_kept = !expected_kept_files(payload)?.is_empty();
     if expected_noops.is_empty() {
-        require_directory_entries(&packs, ["sha256"], "backup packs directory")?;
+        require_packs_entries(payload, false, has_kept, "backup packs directory")?;
     } else {
         require_real_directory(&noop_directory, "backup schema 2.2 no-op directory")?;
         set_mode(
@@ -1073,7 +1086,7 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
             PRIVATE_DIRECTORY_MODE,
             "protecting backup schema 2.2 no-op directory",
         )?;
-        require_directory_entries(&packs, ["noop", "sha256"], "backup packs directory")?;
+        require_packs_entries(payload, true, has_kept, "backup packs directory")?;
         for name in expected_noops.keys() {
             let path = noop_directory.join(name);
             let metadata = require_regular_file(&path, "backup schema 2.2 no-op")?;
@@ -1090,6 +1103,7 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
         }
         validate_schema_22_noop_directory(payload, &expected_noops)?;
     }
+    protect_kept_directory(payload)?;
 
     let catalogue = payload.join("hub.sqlite");
     require_regular_file(&catalogue, "backup catalogue")?;
@@ -1327,6 +1341,10 @@ fn inventory_payload(payload: &Path) -> Result<Vec<BackupMember>, DataRecoveryEr
             return Err(invalid("backup contains too many members"));
         }
     }
+    members.extend(inventory_kept_members(payload)?);
+    if members.len() > LISTED_FORMAT_MAX_MEMBERS {
+        return Err(invalid("backup contains too many members"));
+    }
     members.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(members)
 }
@@ -1488,6 +1506,9 @@ fn validate_member(member: &BackupMember) -> Result<MemberKind, DataRecoveryErro
         }
         return Ok(MemberKind::Noop);
     }
+    if kept_member_filename(&member.path).is_some() {
+        return Ok(MemberKind::Kept);
+    }
     let filename = member
         .path
         .strip_prefix(&format!("{PACK_DIRECTORY}/"))
@@ -1606,19 +1627,14 @@ fn validate_backup_tree(
         return streamed_directory::validate_streamed_directory_payload(&data, manifest);
     }
     let expected_noops = current_schema_22_noop_pairs(&data)?;
-    if expected_noops.is_empty() {
-        require_directory_entries(
-            &data.join("packs"),
-            ["sha256"],
-            "data-backup packs directory",
-        )?;
-    } else {
-        require_directory_entries(
-            &data.join("packs"),
-            ["noop", "sha256"],
-            "data-backup packs directory",
-        )?;
-    }
+    let expected_kept = expected_kept_files(&data)?;
+    require_packs_entries(
+        &data,
+        !expected_noops.is_empty(),
+        !expected_kept.is_empty(),
+        "data-backup packs directory",
+    )?;
+    validate_listed_kept_members(&data, &manifest.members, &expected_kept)?;
 
     let expected_packs: BTreeSet<String> = manifest
         .members
@@ -1679,18 +1695,22 @@ fn validate_restored_data_tree(
 ) -> Result<(), DataRecoveryError> {
     require_directory_entries(root, ["hub.sqlite", "packs"], "restored data root")?;
     let expected_noops = current_schema_22_noop_pairs(root)?;
-    if expected_noops.is_empty() {
-        require_directory_entries(&root.join("packs"), ["sha256"], "restored packs directory")?;
-    } else {
-        require_directory_entries(
-            &root.join("packs"),
-            ["noop", "sha256"],
-            "restored packs directory",
-        )?;
-    }
+    let expected_kept = expected_kept_files(root)?;
+    require_packs_entries(
+        root,
+        !expected_noops.is_empty(),
+        !expected_kept.is_empty(),
+        "restored packs directory",
+    )?;
     let members = match members {
         RestoredMembers::Listed(members) => members,
         RestoredMembers::Streamed(streamed) => {
+            if expected_kept.len() as u64 != streamed.kept {
+                return Err(invalid(
+                    "restored kept archive members do not match the catalogue",
+                ));
+            }
+            validate_kept_directory(root, &expected_kept)?;
             return validate_streamed_data_tree(
                 root,
                 streamed,
@@ -1699,6 +1719,7 @@ fn validate_restored_data_tree(
             );
         }
     };
+    validate_listed_kept_members(root, members, &expected_kept)?;
     let expected_packs: BTreeSet<String> = members
         .iter()
         .filter_map(|member| {
@@ -1936,6 +1957,7 @@ fn sync_payload(payload: &Path, members: &[BackupMember]) -> Result<(), DataReco
     {
         sync_directory(&payload.join("packs").join("noop"))?;
     }
+    sync_kept_directory(payload, RestoredMembers::Listed(members).has_kept())?;
     sync_directory(&payload.join("packs"))?;
     sync_directory(payload)
 }
@@ -1961,6 +1983,7 @@ fn sync_restored_data(root: &Path, members: RestoredMembers<'_>) -> Result<(), D
     if members.has_noops() {
         sync_directory(&root.join("packs").join("noop"))?;
     }
+    sync_kept_directory(root, members.has_kept())?;
     sync_directory(&root.join("packs"))?;
     sync_directory(root)
 }
@@ -2551,6 +2574,7 @@ mod cursor_reissue;
 mod directory_entries;
 mod encrypted_backup;
 mod encrypted_scratch;
+mod kept_archive;
 mod recovery_password;
 mod streamed_directory;
 
@@ -2558,6 +2582,12 @@ use directory_entries::{
     create_private_directory, is_ignorable_finder_file, permission_mode, read_directory,
     require_directory_entries, require_directory_entry_set, require_real_directory,
     require_regular_file, set_mode,
+};
+
+use kept_archive::{
+    expected_kept_files, inventory_kept_members, kept_member_filename, protect_kept_directory,
+    require_packs_entries, sync_kept_directory, validate_kept_directory,
+    validate_listed_kept_members,
 };
 
 pub use archive_crypto::generate_recovery_password;

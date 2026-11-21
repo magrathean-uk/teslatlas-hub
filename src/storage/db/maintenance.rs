@@ -543,6 +543,26 @@ impl HubStore {
                 )
                 .ok_or(StoreError::BackupCapacityOverflow)?;
         }
+        // Each kept-archive file the catalogue names (DEC-250): the archive
+        // at its recorded size, the source sessions at their size now. The
+        // publication gate holds their writers off.
+        for file in physical_v3_kept_files_in(&connection)? {
+            let bytes = match file.bytes {
+                Some(bytes) => bytes,
+                None => {
+                    let path = self.packs_dir.join(PHYSICAL_V3_KEPT_DIRECTORY).join(&file.name);
+                    fs::symlink_metadata(&path)
+                        .map_err(|source| StoreError::InspectCatalogPack { path, source })?
+                        .len()
+                }
+            };
+            members = members
+                .checked_add(1)
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+            total = total
+                .checked_add(bytes)
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+        }
         let manifest_rows = connection
             .prepare(
                 "SELECT manifest_json FROM sync_manifests
@@ -701,12 +721,58 @@ impl HubStore {
                 return Err(StoreError::BackupPackDigestMismatch { path: backup });
             }
         }
+        self.backup_kept_archives(destination, &copied_catalogue)?;
         self.backup_current_schema_22_noops(
             destination,
             &catalogue,
             &copied_catalogue,
             publication_gate,
         )?;
+        Ok(())
+    }
+
+    /// Copy every kept-archive file the copied catalogue names (DEC-250)
+    /// into `<destination>/packs/physical-kept` (0700, files 0600), each
+    /// checked against its record: the archive's length and digest, the
+    /// source sessions' digest. The caller holds the publication gate, so
+    /// no writer replaces or removes them meanwhile. Without archive records
+    /// the directory is not made.
+    fn backup_kept_archives(
+        &self,
+        destination: &Path,
+        copied_catalogue: &Connection,
+    ) -> Result<(), StoreError> {
+        let files = physical_v3_kept_files_in(copied_catalogue)?;
+        if files.is_empty() {
+            return Ok(());
+        }
+        let kept = destination.join("packs").join(PHYSICAL_V3_KEPT_DIRECTORY);
+        fs::create_dir(&kept)
+            .and_then(|()| fs::set_permissions(&kept, fs::Permissions::from_mode(0o700)))
+            .map_err(StoreError::CreateBackupDirectory)?;
+        for file in files {
+            let source = self.packs_dir.join(PHYSICAL_V3_KEPT_DIRECTORY).join(&file.name);
+            let backup = kept.join(&file.name);
+            let copy_error = |source_error| StoreError::CopyBackupPack {
+                source_path: source.clone(),
+                destination: backup.clone(),
+                source_error,
+            };
+            let copied = fs::copy(&source, &backup).map_err(copy_error)?;
+            fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).map_err(copy_error)?;
+            if let Some(expected) = file.bytes
+                && copied != expected
+            {
+                return Err(StoreError::BackupPackSizeMismatch {
+                    path: source,
+                    expected,
+                    actual: copied,
+                });
+            }
+            if sha256_file_hex(&backup)? != file.sha256 {
+                return Err(StoreError::BackupPackDigestMismatch { path: backup });
+            }
+        }
         Ok(())
     }
 

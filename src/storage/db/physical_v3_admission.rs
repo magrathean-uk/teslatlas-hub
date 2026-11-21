@@ -1048,12 +1048,10 @@ impl HubStore {
         Ok(true)
     }
 
-    /// Every kept archive the catalogue references, by vehicle (backup
-    /// selection, DEC-250). A record that does not read back is refused.
-    pub(crate) fn physical_v3_kept_archives(
-        &self,
-    ) -> Result<Vec<(Uuid, PhysicalV3KeptArchive)>, StoreError> {
-        physical_v3_kept_archives_in(&self.open_read_only_connection()?)
+    /// Every kept-archive file the catalogue references (backup selection,
+    /// DEC-250). A record that does not read back is refused.
+    pub(crate) fn physical_v3_kept_files(&self) -> Result<Vec<PhysicalV3KeptFile>, StoreError> {
+        physical_v3_kept_files_in(&self.open_read_only_connection()?)
     }
 
     /// The import seam planned at a handback from the kept source sessions
@@ -1712,11 +1710,28 @@ fn physical_v3_seam_coverage_key(vehicle_id: Uuid) -> String {
     format!("physical_v3_seam_coverage:{vehicle_id}")
 }
 
-/// Every kept archive `connection`'s catalogue references, by vehicle
-/// (DEC-250). A record that does not read back is refused.
-pub(crate) fn physical_v3_kept_archives_in(
+/// The directory under the packs directory that holds the kept archives
+/// (the importer's `PHYSICAL_KEPT_DIRECTORY`).
+pub(crate) const PHYSICAL_V3_KEPT_DIRECTORY: &str = "physical-kept";
+
+/// One file a kept-archive record names (DEC-250): its name in the kept
+/// directory, its recorded size when the record has one (the archive; the
+/// source sessions record only a digest) and its SHA-256 as lowercase hex.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PhysicalV3KeptFile {
+    pub(crate) name: String,
+    pub(crate) bytes: Option<u64>,
+    pub(crate) sha256: String,
+}
+
+/// Every file the kept-archive records of `connection`'s catalogue name, in
+/// name order: per record with an archive, `<vehicle>.<generation>.kept` and
+/// `<vehicle>.<generation>.source.json`. Records without an archive (legacy
+/// raw bases) name nothing a backup carries. A record that does not read
+/// back, or whose digest is not canonical SHA-256 hex, is refused.
+pub(crate) fn physical_v3_kept_files_in(
     connection: &Connection,
-) -> Result<Vec<(Uuid, PhysicalV3KeptArchive)>, StoreError> {
+) -> Result<Vec<PhysicalV3KeptFile>, StoreError> {
     let mut statement = connection
         .prepare(
             "SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key",
@@ -1727,7 +1742,13 @@ pub(crate) fn physical_v3_kept_archives_in(
         .map_err(StoreError::Query)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(StoreError::Query)?;
-    let mut archives = Vec::new();
+    let canonical = |digest: &str| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let mut files = Vec::new();
     for (key, value) in rows {
         let vehicle_id = key
             .strip_prefix("physical_v3_kept:")
@@ -1735,11 +1756,25 @@ pub(crate) fn physical_v3_kept_archives_in(
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
         let kept: PhysicalV3Kept =
             serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
-        if let Some(archive) = kept.archive {
-            archives.push((vehicle_id, archive));
+        let Some(archive) = kept.archive else {
+            continue;
+        };
+        if !canonical(&archive.digest) || !canonical(&kept.source) {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
         }
+        files.push(PhysicalV3KeptFile {
+            name: format!("{vehicle_id}.{}.kept", archive.generation),
+            bytes: Some(archive.bytes),
+            sha256: archive.digest,
+        });
+        files.push(PhysicalV3KeptFile {
+            name: format!("{vehicle_id}.{}.source.json", archive.generation),
+            bytes: None,
+            sha256: kept.source,
+        });
     }
-    Ok(archives)
+    files.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(files)
 }
 
 /// The `hub_metadata` key of the stage and source kept for the vehicle's

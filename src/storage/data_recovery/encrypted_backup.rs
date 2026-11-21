@@ -134,6 +134,7 @@ use super::{
     seal_host_authority, staging_required_bytes, vacuum_sealed_catalogue, validate_manifest,
     validate_member, validate_restored_data_tree, validate_schema_22_noop_bytes, VolumeFile,
 };
+use super::kept_archive::{KeptBody, kept_member_filename, live_kept_totals, open_kept_bodies};
 use rusqlite::{
     Connection, MAIN_DB, OpenFlags, TransactionBehavior,
     backup::{Backup, StepResult},
@@ -1102,10 +1103,12 @@ fn canonical_archive_name(manifest: &BackupManifest) -> Result<String, DataRecov
 }
 
 /// What the publication gate protects: the catalogue copy, the no-op bodies
-/// it selects, and the pins on the packs (with their count and bytes).
+/// it selects, the kept-archive files it names (opened under the gate), and
+/// the pins on the packs (with their count and bytes).
 struct Snapshot<'a> {
     catalogue: CatalogueCopy,
     noops: Vec<NoopBody>,
+    kept: Vec<KeptBody>,
     packs: PackPlan,
     pins: PackPins<'a>,
 }
@@ -1127,6 +1130,7 @@ fn take_snapshot(
         None => CatalogueCopy::Memory(copy_catalogue_into_memory(store)?),
     };
     let noops = plan_noops(store, catalogue.connection())?;
+    let kept = open_kept_bodies(store, catalogue.connection())?;
     let (pins, packs) = PackPins::take(store, admitted_pin_rows)?;
     hook("catalogue_copied", store.database_path())?;
     // The gate goes as soon as the catalogue is copied and the packs pinned.
@@ -1134,6 +1138,7 @@ fn take_snapshot(
     Ok(Snapshot {
         catalogue,
         noops,
+        kept,
         packs,
         pins,
     })
@@ -1227,9 +1232,13 @@ fn measure_space_needs(
     // as an archive with the catalogue as it is now (REV-CX-M06-T10
     // finding 2).
     let (live_packs, live_pack_bytes) = count_live_packs(store)?;
+    let (live_kept, live_kept_bytes) = live_kept_totals(store)?;
     let destination_bytes = staging_required_bytes(archive_bytes_bound(
-        live_packs.saturating_add(1),
-        checked_capacity_add(live_pack_bytes, catalogue_bytes)?,
+        live_packs.saturating_add(live_kept).saturating_add(1),
+        checked_capacity_add(
+            checked_capacity_add(live_pack_bytes, live_kept_bytes)?,
+            catalogue_bytes,
+        )?,
         MANIFEST_ESTIMATE_BYTES,
         request.chunk_bytes,
     )?)?;
@@ -1336,6 +1345,7 @@ pub fn create_encrypted_backup(
     let Snapshot {
         catalogue,
         noops,
+        kept,
         packs,
         mut pins,
     } = take_snapshot(store, scratch, live_packs)?;
@@ -1355,14 +1365,18 @@ pub fn create_encrypted_backup(
         };
         hook("catalogue_sealed", &destination)?;
         let noop_count = u64::try_from(noops.len()).map_err(|_| DataRecoveryError::CapacityOverflow)?;
+        let kept_count = u64::try_from(kept.len()).map_err(|_| DataRecoveryError::CapacityOverflow)?;
         let member_count = packs
             .count
             .checked_add(noop_count)
+            .and_then(|count| count.checked_add(kept_count))
             .and_then(|count| count.checked_add(1))
             .ok_or(DataRecoveryError::CapacityOverflow)?;
         let payload_bytes = noops
             .iter()
-            .try_fold(catalogue.member.size, |total, noop| total.checked_add(noop.member.size))
+            .map(|noop| &noop.member)
+            .chain(kept.iter().map(|body| &body.member))
+            .try_fold(catalogue.member.size, |total, member| total.checked_add(member.size))
             .and_then(|total| total.checked_add(packs.bytes))
             .ok_or(DataRecoveryError::CapacityOverflow)?;
         let created_at_ms = current_epoch_ms()?;
@@ -1407,6 +1421,7 @@ pub fn create_encrypted_backup(
             &manifest_bytes,
             catalogue,
             &noops,
+            &kept,
             (member_count, payload_bytes),
             &mut pins,
         )?;
@@ -1537,7 +1552,8 @@ impl Streamed {
 }
 
 /// Stream the bundle in path order: the manifest, the catalogue, the no-op
-/// bodies, then the pinned packs a page at a time. The written count and
+/// bodies, the kept-archive files from their held descriptors, then the
+/// pinned packs a page at a time. The written count and
 /// bytes must equal the manifest's declared ones before the trailer goes.
 #[allow(clippy::too_many_arguments)]
 fn write_partial(
@@ -1549,6 +1565,7 @@ fn write_partial(
     manifest_bytes: &[u8],
     catalogue: SealedCatalogue,
     noops: &[NoopBody],
+    kept: &[KeptBody],
     (declared_count, declared_bytes): (u64, u64),
     pins: &mut PackPins<'_>,
 ) -> Result<(u64, [u8; 32]), DataRecoveryError> {
@@ -1613,6 +1630,16 @@ fn write_partial(
             cancel,
         )?;
         streamed.add(&noop.member)?;
+    }
+
+    for body in kept {
+        cancelled(cancel)?;
+        pins.renew_if_due()?;
+        hook("record", partial)?;
+        // The descriptor was opened under the gate: a superseded file is
+        // only unlinked, and a changed one fails the digest check here.
+        stream_member(&mut writer, &body.member, &body.file, &mut buffer, cancel)?;
+        streamed.add(&body.member)?;
     }
 
     let pack_directory = store.packs_dir().join("sha256");
@@ -1941,10 +1968,15 @@ fn stream_listed_members(
         .iter()
         .filter(|member| schema_22_noop_member_filename(&member.path).is_some())
         .count() as u64;
+    let kept = members
+        .iter()
+        .filter(|member| kept_member_filename(&member.path).is_some())
+        .count() as u64;
     Ok(StreamedMembers {
         catalogue,
-        packs: members.len() as u64 - 1 - noops,
+        packs: members.len() as u64 - 1 - noops - kept,
         noops,
+        kept,
     })
 }
 
@@ -1968,7 +2000,7 @@ fn stream_streamed_members(
     let mut buffer = vec![0_u8; STREAM_BUFFER_BYTES];
     let mut previous: Option<String> = None;
     let mut catalogue: Option<BackupMember> = None;
-    let (mut count, mut bytes, mut packs, mut noops) = (0_u64, 0_u64, 0_u64, 0_u64);
+    let (mut count, mut bytes, mut packs, mut noops, mut kept) = (0_u64, 0_u64, 0_u64, 0_u64, 0_u64);
     loop {
         cancelled(cancel)?;
         let mut tag = [0_u8; 1];
@@ -2009,6 +2041,7 @@ fn stream_streamed_members(
             MemberKind::Catalogue => catalogue = Some(member.clone()),
             MemberKind::Noop => noops += 1,
             MemberKind::Pack => packs += 1,
+            MemberKind::Kept => kept += 1,
         }
         let sink = sink_for(&member)?;
         read_member_body(&mut opened.reader, &member, sink, &mut buffer, cancel)?;
@@ -2025,6 +2058,7 @@ fn stream_streamed_members(
         catalogue,
         packs,
         noops,
+        kept,
     })
 }
 
