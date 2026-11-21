@@ -1863,13 +1863,14 @@ async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -
     {
         return denied.into_public_api_response();
     }
+    let scope = state.vehicle_scope(&device);
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
         hub_sync_v1::BootstrapSelection::Selected => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, false).await;
+            return hub_sync_v1::bootstrap_manifest(&state, scope, vehicle_id, false).await;
         }
         hub_sync_v1::BootstrapSelection::Selected14 => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, true).await;
+            return hub_sync_v1::bootstrap_manifest(&state, scope, vehicle_id, true).await;
         }
         hub_sync_v1::BootstrapSelection::Unsupported => {
             return hub_sync_v1::unavailable_bootstrap_manifest();
@@ -2234,7 +2235,17 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                         delta_pack = true;
                         (pack, true)
                     }
-                    Ok(None) => {
+                    Ok(None) => 'current: {
+                        // Issues #98/#109: a digest offered to this device
+                        // stays fetchable for its lease after a rotation.
+                        match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
+                            Ok(Some((pack, delta))) => {
+                                delta_pack = delta;
+                                break 'current (pack, true);
+                            }
+                            Ok(None) => {}
+                            Err(response) => return response,
+                        }
                         let Some(cursor_key) = state.cursor_key.as_deref() else {
                             return prepared_pack_without_cursor_key(&state.store, digest, scope);
                         };

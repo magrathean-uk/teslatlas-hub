@@ -57,6 +57,9 @@ mod fleet_listener;
 #[path = "tests/hub_sync.rs"]
 mod hub_sync;
 
+#[path = "tests/pack_offers.rs"]
+mod pack_offers;
+
 #[path = "tests/receiver.rs"]
 mod receiver;
 

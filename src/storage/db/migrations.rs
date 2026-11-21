@@ -42,7 +42,8 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     let version = schema_version(connection)?;
     if version == SCHEMA_VERSION {
         backup_pack_pins_table(connection)?;
-        drive_elevation_coverage_table(connection)
+        drive_elevation_coverage_table(connection)?;
+        device_pack_offers_table(connection)
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }

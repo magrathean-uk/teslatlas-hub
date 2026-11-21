@@ -339,6 +339,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
                 "credential_refresh_attempts",
                 "credential_refresh_fences",
                 "credential_sign_ins",
+                "device_pack_offers",
                 "drive_edit_protection",
                 "drive_elevation_coverage",
                 "drive_repair_batches",
@@ -352,7 +353,7 @@ fn m1_t3_floor_fixture_rows_survive_to_head() {
             && added_tables.iter().all(|table| {
                 after[*table].len() == usize::from(*table == "credential_format_state")
             }),
-        "assertion failed: {test}: only the seven C10 tables, the two empty backup live-state tables (M06-T07, M06-T02), the two empty v80 seam tables (M03-T11) and the seven empty drive repair tables (M03-T26) are added, with one state row and no converted credentials"
+        "assertion failed: {test}: only the seven C10 tables, the two empty backup live-state tables (M06-T07, M06-T02), the two empty v80 seam tables (M03-T11) and the seven empty drive repair tables (M03-T26) and the empty offer lease table (#98) are added, with one state row and no converted credentials"
     );
     let state: (
         i64,

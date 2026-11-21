@@ -233,6 +233,7 @@ fn has_exact_single_header(headers: &HeaderMap, name: &str, expected: &[u8]) -> 
 
 pub(super) async fn bootstrap_manifest(
     state: &AppState,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     physical_only: bool,
 ) -> Response {
@@ -245,6 +246,12 @@ pub(super) async fn bootstrap_manifest(
         .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
     {
         Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => {
+            let generation = admission.manifest.generation;
+            if let Err(response) =
+                record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
+            {
+                return response;
+            }
             return signed_control_response(
                 StatusCode::OK,
                 &Manifest22Payload {
@@ -332,6 +339,7 @@ pub(super) async fn changes_since(
     let Some(vehicle_id) = path_vehicle_id(request.uri()) else {
         return vehicle_not_available();
     };
+    let scope = state.vehicle_scope(&device);
     match require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active) {
         Ok(()) => {}
         Err(VehicleAccessDenied::NotFound) => return vehicle_not_available(),
@@ -361,7 +369,7 @@ pub(super) async fn changes_since(
         .unwrap_or(false)
     {
         return match parse_physical_changes_since_request(&raw) {
-            Ok(request) => serve_physical_changes_since_14(&state, vehicle_id, request),
+            Ok(request) => serve_physical_changes_since_14(&state, scope, vehicle_id, request),
             Err(error) => request_error_response(error),
         };
     }
@@ -403,10 +411,12 @@ pub(super) async fn changes_since(
 
     if request.base_manifest_schema == "2.1" {
         state
-            .sync_control_response(move |state| serve_changes_since(&state, vehicle_id, request))
+            .sync_control_response(move |state| {
+                serve_changes_since(&state, scope, vehicle_id, request)
+            })
             .await
     } else {
-        serve_changes_since(&state, vehicle_id, request)
+        serve_changes_since(&state, scope, vehicle_id, request)
     }
 }
 
@@ -553,6 +563,7 @@ fn bounded_control_json_bytes(
 
 fn serve_changes_since(
     state: &AppState,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     request: ChangesSinceRequest,
 ) -> Response {
@@ -561,7 +572,7 @@ fn serve_changes_since(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     if request.base_manifest_schema == "2.2" {
-        return serve_physical_changes_since(state, vehicle_id, request, signing);
+        return serve_physical_changes_since(state, scope, vehicle_id, request, signing);
     }
     if request.base_manifest_schema != "2.1" {
         return schema_range_unsupported();
@@ -626,7 +637,7 @@ fn serve_changes_since(
         receipt,
     ) {
         Ok(true) if base_pack.is_none() => {
-            retired_21_checkpoint_physical_rebase(state, vehicle_id, &lineage, request, signing)
+            retired_21_checkpoint_physical_rebase(state, scope, vehicle_id, &lineage, request, signing)
         }
         Ok(false) if base_pack.is_none() => schema_range_unsupported(),
         Ok(true) => {
@@ -677,6 +688,7 @@ fn serve_changes_since(
 /// public the answer is a retryable 503.
 fn retired_21_checkpoint_physical_rebase(
     state: &AppState,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     lineage: &LineageManifestV2,
     request: ChangesSinceRequest,
@@ -710,6 +722,12 @@ fn retired_21_checkpoint_physical_rebase(
         tracing::error!(%vehicle_id, "physical checkpoint does not bind the active lineage");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
+    let generation = admission.manifest.generation;
+    if let Err(response) =
+        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
+    {
+        return response;
+    }
     let replacement_receipt = admission.receipt_id.clone();
     signed_control_response(
         StatusCode::CONFLICT,
@@ -740,6 +758,7 @@ fn retired_21_checkpoint_physical_rebase(
 
 fn serve_physical_changes_since(
     state: &AppState,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     request: ChangesSinceRequest,
     signing: &ManifestSigning,
@@ -801,6 +820,12 @@ fn serve_physical_changes_since(
         tracing::error!(%vehicle_id, "retained physical checkpoint does not bind active replacement");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
+    let generation = admission.manifest.generation;
+    if let Err(response) =
+        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
+    {
+        return response;
+    }
     let replacement_receipt = admission.receipt_id.clone();
     signed_control_response(
         StatusCode::CONFLICT,
@@ -831,6 +856,7 @@ fn serve_physical_changes_since(
 
 fn serve_physical_changes_since_14(
     state: &AppState,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     request: PhysicalChangesSinceRequest,
 ) -> Response {
@@ -939,6 +965,16 @@ fn serve_physical_changes_since_14(
             Ok(Some((stored_base_sha, stored_target_sha, receipt_json)))
                 if stored_base_sha == base_sha && stored_target_sha == target_sha =>
             {
+                let Some(offers) = delta_offers(&receipt_json) else {
+                    tracing::error!(%vehicle_id, "stored physical delta receipt names no packs");
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                let generation = admission.manifest.generation;
+                if let Err(response) =
+                    record_pack_offers(state, scope, vehicle_id, generation, offers)
+                {
+                    return response;
+                }
                 development_sync_event(
                     crate::runtime::development_event_log::Outcome::ChangedSet,
                     base.head_sequence,
@@ -973,6 +1009,12 @@ fn serve_physical_changes_since_14(
         "sequence":base.head_sequence,
         "schema_version":"2.2",
     });
+    let generation = admission.manifest.generation;
+    if let Err(response) =
+        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
+    {
+        return response;
+    }
     let mut retry = request.clone();
     retry.base_manifest_id = admission.snapshot_id.to_string();
     retry.base_receipt_id = admission.receipt_id.clone();
@@ -1063,6 +1105,80 @@ fn wire_chunk(pack: &crate::protocol::TransportPack) -> WireChunk {
         chunk_index: pack.ordinal,
         pack: wire_pack(pack),
     }
+}
+
+/// Issues #98/#109: commit the device's offer leases for the packs a signed
+/// response is about to name, before the body leaves. A refused lease is a
+/// retryable 503 with no body; an unrestricted (loopback owner) scope has no
+/// device to lease to.
+pub(super) fn record_pack_offers(
+    state: &AppState,
+    scope: VehicleScope,
+    vehicle_id: Uuid,
+    generation: u64,
+    offers: impl IntoIterator<Item = (Sha256Digest, crate::db::PackOfferKind)>,
+) -> Result<(), Response> {
+    let VehicleScope::Device(device_id) = scope else {
+        return Ok(());
+    };
+    let offers = offers
+        .into_iter()
+        .map(|(digest, kind)| crate::db::PackOffer { digest, kind })
+        .collect::<Vec<_>>();
+    let now_ms = current_epoch_ms().map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    state
+        .store
+        .record_pack_offers_at(device_id, vehicle_id, generation, &offers, now_ms)
+        .map_err(|error| {
+            tracing::warn!(%error, %vehicle_id, "cannot lease the offered packs");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })
+}
+
+/// The object a live offer lease of this device names (issues #98/#109), and
+/// whether it is a changed-set pack. An unrestricted scope holds no leases.
+pub(super) fn offered_pack(
+    state: &AppState,
+    scope: VehicleScope,
+    digest: Sha256Digest,
+    now_ms: i64,
+) -> Result<Option<(crate::db::StoredPack, bool)>, Response> {
+    let VehicleScope::Device(device_id) = scope else {
+        return Ok(None);
+    };
+    match state.store.offered_pack_for_digest_at(device_id, digest, now_ms) {
+        Ok(found) => Ok(found.map(|(pack, kind)| (pack, kind == crate::db::PackOfferKind::Delta))),
+        Err(error) => {
+            tracing::error!(%error, %digest, "cannot load an offered pack lease");
+            Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+        }
+    }
+}
+
+/// The chunks of a full physical head, as offers.
+fn physical_offers(
+    admission: &crate::db::PendingPhysicalV3Admission,
+) -> impl Iterator<Item = (Sha256Digest, crate::db::PackOfferKind)> + '_ {
+    admission
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| (chunk.sha256, crate::db::PackOfferKind::Physical))
+}
+
+/// The packs a stored signed changed-set receipt names, as offers. `None`
+/// when the receipt does not name them in the 1.4 shape.
+fn delta_offers(receipt_json: &[u8]) -> Option<Vec<(Sha256Digest, crate::db::PackOfferKind)>> {
+    let receipt: serde_json::Value = serde_json::from_slice(receipt_json).ok()?;
+    receipt
+        .get("chunks")?
+        .as_array()?
+        .iter()
+        .map(|chunk| {
+            let digest = chunk.get("pack")?.get("sha256")?.as_str()?.parse().ok()?;
+            Some((digest, crate::db::PackOfferKind::Delta))
+        })
+        .collect()
 }
 
 fn signed_control_response(
