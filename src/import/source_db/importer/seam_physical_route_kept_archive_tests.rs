@@ -554,3 +554,46 @@ fn backup_refuses_when_the_legacy_conversion_fails() {
         .collect();
     assert_eq!(names.len(), 1, "no archive pair was left behind");
 }
+
+/// A catalogue that refuses the record swap after the new pair is written
+/// leaves no unnamed generation, the legacy pair and record intact, and the
+/// same file set after repeated failed backups.
+#[test]
+fn backup_conversion_refused_at_the_swap_leaves_no_unnamed_generation() {
+    let (fixture, _root, _env) = planned_then_refused(true);
+    make_legacy(&fixture);
+    let vehicle = fixture.binding.vehicle_id;
+    let record = kept_record(&fixture);
+    let Fixture { _temporary: _keep, store, gate, .. } = fixture;
+    drop(gate);
+    store
+        .open()
+        .expect("catalogue")
+        .execute_batch(
+            "CREATE TRIGGER refuse_kept_swap BEFORE UPDATE ON hub_metadata
+             WHEN old.key LIKE '%kept%' BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+        .expect("refusal trigger");
+    let listing = || -> Vec<String> {
+        let mut names = Vec::new();
+        for directory in [physical_kept_dir(&store), physical_kept_dir(&store).join(".staging")] {
+            for entry in std::fs::read_dir(directory).expect("directory").flatten() {
+                if entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                    names.push(entry.file_name().to_string_lossy().into_owned());
+                }
+            }
+        }
+        names.sort();
+        names
+    };
+    let before = listing();
+    let outside = crate::private_tempdir().expect("backup root");
+    for attempt in 0..2 {
+        let backup = outside.path().join(format!("backup-{attempt}"));
+        crate::data_recovery::create_data_backup(&store, &backup)
+            .expect_err("the refused swap refuses the backup");
+        assert!(!backup.exists(), "nothing is published");
+        assert_eq!(store.physical_v3_kept(vehicle).expect("record"), Some(record.clone()));
+        assert_eq!(listing(), before, "attempt {attempt} left a generation");
+    }
+}

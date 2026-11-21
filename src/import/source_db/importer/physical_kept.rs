@@ -354,31 +354,47 @@ fn try_convert_legacy_kept(
     source: &[u8],
 ) -> Result<(), String> {
     let vehicle_id = binding.vehicle_id;
-    let (archive, logical) = write_kept_pair(store, binding, legacy, source)?;
-    let replaced = logical == kept.stage
-        && store
-            .swap_physical_v3_kept(
-                publication_gate,
-                vehicle_id,
-                Some(kept),
-                Some(&crate::db::PhysicalV3Kept {
-                    stage: kept.stage.clone(),
-                    source: kept.source.clone(),
-                    archive: Some(archive),
-                }),
-                false,
-            )
+    // Files an earlier refused attempt left go before this one writes more.
+    remove_unnamed_kept_files(store, vehicle_id);
+    let converted = (|| -> Result<(), String> {
+        let (archive, logical) = write_kept_pair(store, binding, legacy, source)?;
+        let replaced = logical == kept.stage
+            && store
+                .swap_physical_v3_kept(
+                    publication_gate,
+                    vehicle_id,
+                    Some(kept),
+                    Some(&crate::db::PhysicalV3Kept {
+                        stage: kept.stage.clone(),
+                        source: kept.source.clone(),
+                        archive: Some(archive),
+                    }),
+                    false,
+                )
+                .map_err(|error| error.to_string())?;
+        if !replaced {
+            return Err("the kept record changed or the archive's rows differ".into());
+        }
+        kept_crash_point("swap");
+        let now = store
+            .physical_v3_kept(vehicle_id)
             .map_err(|error| error.to_string())?;
-    if !replaced {
-        remove_superseded_kept_files(store, vehicle_id, Some(kept));
-        return Err("the kept record changed or the archive's rows differ".into());
+        remove_superseded_kept_files(store, vehicle_id, now.as_ref());
+        Ok(())
+    })();
+    if converted.is_err() {
+        remove_unnamed_kept_files(store, vehicle_id);
     }
-    kept_crash_point("swap");
-    let now = store
-        .physical_v3_kept(vehicle_id)
-        .map_err(|error| error.to_string())?;
-    remove_superseded_kept_files(store, vehicle_id, now.as_ref());
-    Ok(())
+    converted
+}
+
+/// Removes the vehicle's kept files the surviving catalogue record does not
+/// name, under the held gate. A record that cannot be reread, or is gone,
+/// keeps every file.
+fn remove_unnamed_kept_files(store: &HubStore, vehicle_id: Uuid) {
+    if let Ok(Some(record)) = store.physical_v3_kept(vehicle_id) {
+        remove_superseded_kept_files(store, vehicle_id, Some(&record));
+    }
 }
 
 fn convert_legacy_kept(
