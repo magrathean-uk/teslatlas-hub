@@ -174,6 +174,82 @@ fn physical_v3_import_revision_serves_in(
     }
 }
 
+/// The files a pending import publication still needs (issue #60): by
+/// vehicle and capture generation (after adoption the archive and source
+/// sessions keep that generation in the kept directory), and the vehicles
+/// whose intent does not read back, every capture and kept file of which is
+/// held. An intent row that names no vehicle holds every file.
+#[derive(Debug, Default)]
+pub(crate) struct ImportPublicationHolds {
+    generations: std::collections::BTreeSet<(Uuid, Uuid)>,
+    vehicles: std::collections::BTreeSet<Uuid>,
+    all: bool,
+}
+
+impl ImportPublicationHolds {
+    /// Whether every file of `vehicle_id` is held.
+    pub(crate) fn holds_vehicle(&self, vehicle_id: Uuid) -> bool {
+        self.all || self.vehicles.contains(&vehicle_id)
+    }
+
+    /// Whether the files of capture `generation` of `vehicle_id` are held.
+    pub(crate) fn holds(&self, vehicle_id: Uuid, generation: Uuid) -> bool {
+        self.holds_vehicle(vehicle_id) || self.generations.contains(&(vehicle_id, generation))
+    }
+
+    /// Whether any publication of `vehicle_id` is pending.
+    pub(crate) fn pending(&self, vehicle_id: Uuid) -> bool {
+        self.holds_vehicle(vehicle_id)
+            || self.generations.iter().any(|(vehicle, _)| *vehicle == vehicle_id)
+    }
+
+    fn hold(&mut self, vehicle_id: Uuid, intent: &ImportPublicationIntent) {
+        match &intent.kept.archive {
+            Some(archive) => {
+                self.generations.insert((vehicle_id, archive.generation));
+            }
+            None => {
+                self.vehicles.insert(vehicle_id);
+            }
+        }
+    }
+}
+
+/// What every pending import publication of `connection`'s catalogue holds.
+pub(crate) fn import_publication_holds_in(
+    connection: &Connection,
+) -> Result<ImportPublicationHolds, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'import_publication_intent:%' \
+             ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let mut holds = ImportPublicationHolds::default();
+    for (key, value) in rows {
+        let Some(vehicle_id) = key
+            .strip_prefix(IMPORT_PUBLICATION_INTENT_PREFIX)
+            .filter(|id| id.len() == 36)
+            .and_then(|id| id.parse::<Uuid>().ok())
+        else {
+            holds.all = true;
+            continue;
+        };
+        match serde_json::from_str::<ImportPublicationIntent>(&value) {
+            Ok(intent) => holds.hold(vehicle_id, &intent),
+            Err(_) => {
+                holds.vehicles.insert(vehicle_id);
+            }
+        }
+    }
+    Ok(holds)
+}
+
 /// Refuses a new backup while an import's publication is pending (issue #60):
 /// an intent its commit made current, or one that does not read back, names
 /// a capture under `packs/import-publication` that no backup carries, so a
@@ -217,6 +293,11 @@ impl HubStore {
         &self,
     ) -> Result<Vec<(Uuid, Option<ImportPublicationIntent>)>, StoreError> {
         import_publication_intents_in(&self.open_read_only_connection()?)
+    }
+
+    /// What every pending import publication holds back from the sweeps.
+    pub(crate) fn import_publication_holds(&self) -> Result<ImportPublicationHolds, StoreError> {
+        import_publication_holds_in(&self.open_read_only_connection()?)
     }
 
     /// The vehicle's recorded intent, if any; one that does not read back

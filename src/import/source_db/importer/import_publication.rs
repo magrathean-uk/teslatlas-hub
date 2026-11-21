@@ -132,26 +132,47 @@ fn capture_file_owner(name: &str) -> Option<(Uuid, Uuid)> {
     Some((vehicle, generation))
 }
 
-/// Removes the capture files no recorded intent names (an interrupted
-/// capture, or one whose intent was resolved). The caller holds the gate.
+/// Removes the capture files no pending publication holds (an interrupted
+/// capture, or one whose intent was resolved), then what an interrupted
+/// capture left in the capture staging folder. The caller holds the gate.
 fn sweep_import_publication_files(store: &HubStore) {
-    let Ok(intents) = store.import_publication_intents() else {
+    let Ok(holds) = store.import_publication_holds() else {
         return;
     };
-    let named: std::collections::BTreeSet<(Uuid, Uuid)> = intents
-        .iter()
-        .filter_map(|(vehicle_id, intent)| {
-            let generation = intent.as_ref()?.kept.archive.as_ref()?.generation;
-            Some((*vehicle_id, generation))
-        })
-        .collect();
-    let unreadable: std::collections::BTreeSet<Uuid> = intents
-        .iter()
-        .filter(|(_, intent)| intent.is_none())
-        .map(|(vehicle_id, _)| *vehicle_id)
-        .collect();
     let directory = import_publication_dir(store);
-    let Ok(entries) = std::fs::read_dir(&directory) else {
+    if let Ok(entries) = std::fs::read_dir(&directory) {
+        let mut removed = false;
+        for entry in entries.flatten() {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Some((vehicle_id, generation)) = capture_file_owner(&name) else {
+                continue;
+            };
+            if holds.holds(vehicle_id, generation) {
+                continue;
+            }
+            if entry.file_type().is_ok_and(|kind| kind.is_file())
+                && std::fs::remove_file(entry.path()).is_ok()
+            {
+                removed = true;
+            }
+        }
+        if removed {
+            let _ = sync_directory(&directory);
+        }
+    }
+    sweep_capture_staging(&directory.join(".staging"));
+}
+
+/// Removes the compacted candidates (`<uuid>.sqlite` and SQLite's side
+/// files) an interrupted capture left in the capture staging folder, which
+/// no intent ever names. A capture writes its candidate only while it holds
+/// the publication gate and removes it before the capture returns, and every
+/// sweep runs under that gate, so no live run's candidate is found here.
+/// Other names are left.
+fn sweep_capture_staging(staging: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(staging) else {
         return;
     };
     let mut removed = false;
@@ -159,20 +180,22 @@ fn sweep_import_publication_files(store: &HubStore) {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        let Some((vehicle_id, generation)) = capture_file_owner(&name) else {
-            continue;
-        };
-        if named.contains(&(vehicle_id, generation)) || unreadable.contains(&vehicle_id) {
-            continue;
-        }
-        if entry.file_type().is_ok_and(|kind| kind.is_file())
+        let database = ["-journal", "-wal", "-shm"]
+            .iter()
+            .find_map(|side| name.strip_suffix(side))
+            .unwrap_or(&name);
+        let candidate = database
+            .strip_suffix(".sqlite")
+            .is_some_and(|id| id.len() == 36 && Uuid::parse_str(id).is_ok());
+        if candidate
+            && entry.file_type().is_ok_and(|kind| kind.is_file())
             && std::fs::remove_file(entry.path()).is_ok()
         {
             removed = true;
         }
     }
     if removed {
-        let _ = sync_directory(&directory);
+        let _ = sync_directory(staging);
     }
 }
 
@@ -292,6 +315,7 @@ fn adopt_import_publication_capture(
         }
         sync_directory(&to)?;
         sync_directory(&from)?;
+        import_publication_crash_point("moved");
     }
     if !store
         .adopt_import_publication_kept(
@@ -344,8 +368,11 @@ fn publish_import_physical(
 }
 
 /// The physical half of a committed import's publication in its own run:
-/// the capture is adopted (a failure forgets the kept base, as a failed keep
-/// did), then the head is published from the stage the import holds.
+/// the capture is adopted, then the head is published from the stage the
+/// import holds. A failed adoption leaves the intent and the capture where
+/// they are, wherever the files were moved to, and the publication
+/// unresolved: the next start, window close or import adopts it again
+/// before it resolves the publication.
 fn finish_import_physical(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -361,13 +388,10 @@ fn finish_import_physical(
             tracing::warn!(
                 %vehicle_id,
                 %reason,
-                "the import's capture was not kept; a handback leaves the 1.4 head refused \
-                 until the next import"
+                "the import's capture was not kept; the 1.4 head stays refused until the \
+                 publication is finished from the capture"
             );
-            if let Err(reason) = forget_physical_kept(store, publication_gate, vehicle_id) {
-                tracing::warn!(%vehicle_id, %reason, "the failed keep's record was not forgotten");
-            }
-            None
+            return Err(SourceDbImportError::PublicationAdoption { vehicle_id, reason });
         }
     };
     match stage {

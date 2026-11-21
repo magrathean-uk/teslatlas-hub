@@ -421,3 +421,213 @@ fn design_later_60_backup_waits_for_a_pending_import_publication() {
     });
     created.expect("the backup goes ahead once the publication finished");
 }
+
+/// Runs `finish_import_physical` for `intent` until the simulated crash at
+/// `point`.
+fn finish_until_crash(
+    fixture: &Fixture,
+    intent: &crate::db::ImportPublicationIntent,
+    stage: crate::source_db_stage::OwnedSourceDbStage,
+    point: &'static str,
+) {
+    IMPORT_PUBLICATION_CRASH_AT.with(|at| at.set(Some(point)));
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        finish_import_physical(
+            &fixture.store,
+            &fixture.cursor_key,
+            &fixture.gate,
+            intent,
+            Some(stage),
+            None,
+        )
+    }));
+    assert!(crashed.is_err(), "the run ended at {point}");
+}
+
+/// The capture's archive and source sessions in the kept directory.
+fn kept_capture_paths(
+    fixture: &Fixture,
+    intent: &crate::db::ImportPublicationIntent,
+) -> [std::path::PathBuf; 2] {
+    let vehicle = fixture.binding.vehicle_id;
+    let generation = intent.kept.archive.as_ref().expect("archive").generation;
+    let kept = physical_kept_dir(&fixture.store);
+    [
+        kept.join(kept_archive_name(vehicle, generation)),
+        kept.join(kept_generation_source_name(vehicle, generation)),
+    ]
+}
+
+/// Review finding 2: the run ends after its capture was moved into the kept
+/// directory but before the kept swap names it. Neither `storage-census
+/// --reclaim` nor the kept-base pruning a hand-back or a conversion runs may
+/// unlink it: the pending intent holds it, and the restart finishes the
+/// publication from it.
+#[test]
+fn design_later_60_reclaim_and_kept_sweeps_hold_a_capture_moved_before_its_swap() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    publish_physical(&fixture, history_stage(root.path(), "base", &base_history()), None)
+        .expect("base head")
+        .expect("served base");
+    let (intent, stage, _) =
+        commit_captured_import(&fixture, root.path(), "successor", &successor_history(), T + 3 * HOUR);
+    finish_until_crash(&fixture, &intent, stage, "moved");
+    let moved = kept_capture_paths(&fixture, &intent);
+    assert!(moved.iter().all(|path| path.is_file()), "both files were moved");
+    assert_eq!(fixture.store.physical_v3_kept(fixture.binding.vehicle_id).expect("kept"), None);
+
+    let (fixture, reclaimed) = with_gate_released(fixture, |store| store.reclaim_storage());
+    let report = reclaimed.expect("reclaim");
+    assert!(report.before.import_bases.files >= 2, "{report:?}");
+    forget_physical_kept(&fixture.store, &fixture.gate, fixture.binding.vehicle_id)
+        .expect("kept-base pruning");
+    remove_superseded_kept_files(&fixture.store, fixture.binding.vehicle_id, None);
+    assert!(moved.iter().all(|path| path.is_file()), "the held capture survived every sweep");
+
+    let outcomes = resume(&fixture);
+    assert!(
+        matches!(outcomes.as_slice(), [(_, ImportPublicationOutcome::Finished(Some(_)))]),
+        "{outcomes:?}"
+    );
+    assert_routes_agree(&fixture, "after the restart");
+}
+
+/// Review finding 5: a first import ends after its capture became the kept
+/// base but before any physical head exists, and the restart's publication
+/// is refused for a reason that passes (here its schema-2.2 facts are
+/// briefly out of reach). The hand-back after it must not prune the kept
+/// base the pending intent needs; once the reason passes, the next restart
+/// finishes the publication.
+#[test]
+fn design_later_60_handback_keeps_the_adopted_capture_of_a_pending_first_head() {
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    let vehicle = fixture.binding.vehicle_id;
+    let (intent, stage, _) =
+        commit_captured_import(&fixture, root.path(), "first", &successor_history(), T + 3 * HOUR);
+    finish_until_crash(&fixture, &intent, stage, "adopted");
+    assert_eq!(
+        fixture.store.physical_v3_kept(vehicle).expect("kept").as_ref(),
+        Some(&intent.kept),
+        "the capture is the kept base"
+    );
+    assert_eq!(fixture.store.physical_v3_current_head_served(vehicle).expect("head"), None);
+
+    let generation = intent.kept.archive.as_ref().expect("archive").generation;
+    let updates = import_publication_dir(&fixture.store)
+        .join(import_publication_updates_name(vehicle, generation));
+    let aside = root.path().join("updates-aside.json");
+    std::fs::rename(&updates, &aside).expect("facts out of reach");
+    let outcomes =
+        publish_physical_after_handback(&fixture.store, &fixture.cursor_key, &fixture.gate)
+            .expect("handback");
+    assert!(
+        matches!(outcomes.as_slice(), [(id, HandbackPhysicalOutcome::Withheld(_))] if *id == vehicle),
+        "{outcomes:?}"
+    );
+    assert!(
+        kept_capture_paths(&fixture, &intent).iter().all(|path| path.is_file()),
+        "the hand-back kept the pending capture"
+    );
+    assert_eq!(
+        fixture.store.physical_v3_kept(vehicle).expect("kept").as_ref(),
+        Some(&intent.kept)
+    );
+
+    std::fs::rename(&aside, &updates).expect("facts back");
+    let outcomes = resume(&fixture);
+    assert!(
+        matches!(outcomes.as_slice(), [(_, ImportPublicationOutcome::Finished(Some(_)))]),
+        "{outcomes:?}"
+    );
+    assert_routes_agree(&fixture, "after the restart");
+}
+
+/// Review finding 6: the archive is moved but moving the source sessions
+/// fails. The run reports the failure, not a publication: the intent and
+/// both capture files stay, the older head stays refused, and the restart
+/// adopts the capture again and finishes the publication.
+#[test]
+fn design_later_60_failed_adoption_keeps_the_capture_and_reports_no_publication() {
+    use std::os::unix::fs::DirBuilderExt;
+    let fixture = fixture();
+    let root = crate::private_tempdir().expect("stage root");
+    let vehicle = fixture.binding.vehicle_id;
+    publish_physical(&fixture, history_stage(root.path(), "base", &base_history()), None)
+        .expect("base head")
+        .expect("served base");
+    let (intent, stage, seam) =
+        commit_captured_import(&fixture, root.path(), "successor", &successor_history(), T + 3 * HOUR);
+    let [archive, source] = kept_capture_paths(&fixture, &intent);
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(&source)
+        .expect("a directory in the way of the source sessions");
+
+    let error = finish_import_physical(
+        &fixture.store,
+        &fixture.cursor_key,
+        &fixture.gate,
+        &intent,
+        Some(stage),
+        Some(&seam),
+    )
+    .expect_err("a failed adoption is not a publication");
+    assert!(
+        matches!(&error, SourceDbImportError::PublicationAdoption { vehicle_id, .. } if *vehicle_id == vehicle),
+        "{error}"
+    );
+    assert!(archive.is_file(), "the moved archive stays");
+    let generation = intent.kept.archive.as_ref().expect("archive").generation;
+    assert!(
+        import_publication_dir(&fixture.store)
+            .join(kept_generation_source_name(vehicle, generation))
+            .is_file(),
+        "the unmoved source sessions stay"
+    );
+    assert_eq!(
+        fixture.store.import_publication_intent(vehicle).expect("intent"),
+        Some(intent.clone())
+    );
+    let env = paired(&fixture);
+    assert_eq!(
+        PhysicalClient::bootstrap(&env, &fixture).err(),
+        Some(axum::http::StatusCode::NOT_ACCEPTABLE),
+        "the older head stays refused"
+    );
+
+    std::fs::remove_dir(&source).expect("the obstacle goes");
+    let outcomes = resume(&fixture);
+    assert!(
+        matches!(outcomes.as_slice(), [(_, ImportPublicationOutcome::Finished(Some(_)))]),
+        "{outcomes:?}"
+    );
+    assert_routes_agree(&fixture, "after the restart");
+}
+
+/// Review finding 3 (P3): a run killed while compacting its capture leaves a
+/// raw candidate in the capture staging folder that no intent names. The
+/// next sweep under the gate removes the candidate and its SQLite side
+/// files, and leaves any other name.
+#[test]
+fn design_later_60_interrupted_capture_candidate_is_swept() {
+    let fixture = fixture();
+    let staging = import_publication_dir(&fixture.store).join(".staging");
+    std::fs::create_dir_all(&staging).expect("capture staging");
+    let candidate = format!("{}.sqlite", Uuid::new_v4());
+    for name in [candidate.clone(), format!("{candidate}-journal")] {
+        std::fs::write(staging.join(name), b"raw stage").expect("candidate");
+    }
+    std::fs::write(staging.join("notes.txt"), b"other").expect("other name");
+
+    assert!(resume(&fixture).is_empty());
+    let mut left: Vec<String> = std::fs::read_dir(&staging)
+        .expect("staging")
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .collect();
+    left.sort();
+    assert_eq!(left, vec!["notes.txt".to_owned()]);
+}

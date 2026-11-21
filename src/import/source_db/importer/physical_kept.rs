@@ -251,12 +251,20 @@ fn kept_file(vehicle_id: Uuid, name: &str) -> Option<KeptFile> {
 /// Removes the vehicle's kept files the record `kept` does not name (an
 /// interrupted keep or conversion, or the superseded pair), under the
 /// publication gate the caller holds. Only regular files of the kept shapes
-/// go; anything else is left.
+/// go; anything else is left. A capture a pending import publication names
+/// is never removed, wherever its adoption left it (issue #60); when the
+/// pending publications cannot be read, nothing is removed.
 fn remove_superseded_kept_files(
     store: &HubStore,
     vehicle_id: Uuid,
     kept: Option<&crate::db::PhysicalV3Kept>,
 ) {
+    let Ok(holds) = store.import_publication_holds() else {
+        return;
+    };
+    if holds.holds_vehicle(vehicle_id) {
+        return;
+    }
     let current = kept.map(|kept| kept.archive.as_ref().map(|archive| archive.generation));
     let mut removed = false;
     let directory = physical_kept_dir(store);
@@ -275,7 +283,13 @@ fn remove_superseded_kept_files(
                 }
                 _ => false,
             };
+            let held = matches!(
+                file,
+                KeptFile::Archive(generation) | KeptFile::Source(generation)
+                    if holds.holds(vehicle_id, generation)
+            );
             if !named
+                && !held
                 && entry.file_type().is_ok_and(|kind| kind.is_file())
                 && std::fs::remove_file(entry.path()).is_ok()
             {
@@ -574,6 +588,15 @@ fn publish_vehicle_after_handback(
     let Some(kept) = store.physical_v3_kept(vehicle_id)? else {
         return Ok(HandbackPhysicalOutcome::Pruned);
     };
+    // Issue #60: while an import's publication is pending its capture may
+    // already be the kept base, and the restart that finishes it needs every
+    // file, so nothing is pruned or planned until it is resolved.
+    if store.import_publication_holds()?.pending(vehicle_id) {
+        return Ok(HandbackPhysicalOutcome::Withheld(
+            "an import's publication is pending; the next start or window close finishes it"
+                .into(),
+        ));
+    }
     if store.collection_coverage_unreconciled()? {
         return Ok(HandbackPhysicalOutcome::Withheld(
             "a window's handback has not reached the store's coverage yet".into(),

@@ -2824,6 +2824,10 @@ pub enum SourceDbImportError {
         "the import's publication capture for vehicle {vehicle_id} could not be written, so nothing was committed; retry the selected-car import: {reason}"
     )]
     PublicationCapture { vehicle_id: Uuid, reason: String },
+    #[error(
+        "history committed for vehicle {vehicle_id}, but the import's capture could not be kept as its replay base, so phone sync stays refused until the Hub finishes the publication from the capture at its next start, window close or import: {reason}"
+    )]
+    PublicationAdoption { vehicle_id: Uuid, reason: String },
     #[error(transparent)]
     Reader(#[from] crate::source_db_reader::SourceDbReaderError),
     #[error(transparent)]
@@ -2898,6 +2902,7 @@ mod n1_src_import_source_db_importer_rs_display_tests {
                 SourceDbImportError::Schema22PostCommit { .. } => (),
                 SourceDbImportError::Schema22Preparation(..) => (),
                 SourceDbImportError::PublicationCapture { .. } => (),
+                SourceDbImportError::PublicationAdoption { .. } => (),
                 SourceDbImportError::Reader(..) => (),
                 SourceDbImportError::Direct(..) => (),
                 SourceDbImportError::Stage(..) => (),
@@ -2952,6 +2957,10 @@ mod n1_src_import_source_db_importer_rs_display_tests {
         check_source_db_import_error(SourceDbImportError::PublicationCapture {
             vehicle_id: example(),
             reason: "the capture directory is full".to_owned(),
+        });
+        check_source_db_import_error(SourceDbImportError::PublicationAdoption {
+            vehicle_id: example(),
+            reason: "the capture file is missing".to_owned(),
         });
         check_source_db_import_error(SourceDbImportError::Reader(example()));
         check_source_db_import_error(SourceDbImportError::Direct(example()));

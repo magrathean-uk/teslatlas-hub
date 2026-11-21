@@ -451,6 +451,9 @@ fn kept_shape(name: &str, staging: bool) -> Option<KeptShape> {
 /// not a regular file, has more than one hard link, belongs to a record that
 /// does not read back or whose archive size differs from the file, or when
 /// any record cannot be attributed to a vehicle. Other shapes are not counted.
+/// A pending import publication's capture, moved here before its kept swap,
+/// is an import base too (issue #60); every kept file of a vehicle whose
+/// intent does not read back is refused and held.
 fn kept_stage_files(
     connection: &Connection,
     root: &std::os::fd::OwnedFd,
@@ -463,6 +466,7 @@ fn kept_stage_files(
         return Ok(files);
     };
     let references = physical_v3_kept_references_in(connection)?;
+    let holds = import_publication_holds_in(connection)?;
     let staging_path = kept_path.join(".staging");
     let directories = [
         open_pack_tree_directory(Some(&kept), ".staging", &staging_path)?
@@ -488,6 +492,10 @@ fn kept_stage_files(
                 || matches!(record, Some(None))
             {
                 (Some(PackStorageClass::Refused), true)
+            } else if holds.holds_vehicle(vehicle) {
+                (Some(PackStorageClass::Refused), true)
+            } else if named_by.is_some_and(|generation| holds.holds(vehicle, generation)) {
+                (Some(PackStorageClass::ImportBase), true)
             } else if let Some(Some(record)) = record {
                 let archive = record.archive.as_ref();
                 let named = match shape {
