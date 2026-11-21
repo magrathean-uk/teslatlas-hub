@@ -323,9 +323,16 @@ pub(crate) fn frozen_physical_bases_in(
         )
         .map_err(StoreError::Query)?
         .query_map(params![FROZEN_PHYSICAL_BASE_MEMBER_PREFIX], |row| {
-            // The value is read as bytes: a TEXT value that is not UTF-8 is
-            // a damaged record (keyed below), not a query failure.
-            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            // The value is read as raw bytes whatever its storage class: a
+            // TEXT value that is not UTF-8 (or a BLOB or NULL) is a damaged
+            // record (keyed below), not a query failure.
+            let value = match row.get_ref(1)? {
+                rusqlite::types::ValueRef::Text(bytes) | rusqlite::types::ValueRef::Blob(bytes) => {
+                    bytes.to_vec()
+                }
+                _ => Vec::new(),
+            };
+            Ok((row.get::<_, String>(0)?, value))
         })
         .map_err(StoreError::Query)?
         .collect::<Result<Vec<_>, _>>()
