@@ -108,37 +108,45 @@ impl PackOfferKind {
         }
     }
 
-    /// The catalogue rows that may name an offered digest of this kind for
-    /// one vehicle (`?1` digest, `?2` vehicle, `?3` now). A physical chunk may
-    /// already be retained when a rotation races the response.
+    /// The catalogue rows of the selected head that may name an offered
+    /// digest of this kind (`?1` digest, `?2` vehicle, `?3` the head's
+    /// receipt): a chunk of that head, a pack of the changed set into it, or
+    /// a prepared month built from it.
     fn catalogued_sql(self) -> &'static str {
         match self {
             Self::Physical => {
                 "SELECT pack.compressed_bytes FROM pending_physical_v3_packs AS pack
                    JOIN pending_physical_v3_admissions AS head
                      ON head.snapshot_id = pack.snapshot_id
-                  WHERE pack.sha256 = ?1 AND head.vehicle_id = ?2
-                 UNION ALL
-                 SELECT pack.compressed_bytes FROM retained_physical_v3_packs AS pack
-                   JOIN retained_physical_v3_admissions AS head
-                     ON head.receipt_id = pack.receipt_id
-                  WHERE pack.sha256 = ?1 AND head.vehicle_id = ?2 AND head.expires_at_ms > ?3
-                 LIMIT 1"
+                  WHERE pack.sha256 = ?1 AND head.vehicle_id = ?2 AND head.receipt_id = ?3
+                  LIMIT 1"
             }
             Self::Delta => {
                 "SELECT pack.compressed_bytes FROM physical_v3_delta_packs AS pack
                    JOIN physical_v3_delta_transitions AS delta
                      ON delta.target_receipt_id = pack.target_receipt_id
-                  WHERE pack.sha256 = ?1 AND delta.vehicle_id = ?2 AND ?3 >= 0
+                  WHERE pack.sha256 = ?1 AND delta.vehicle_id = ?2
+                    AND delta.target_receipt_id = ?3
                   LIMIT 1"
             }
             Self::Prepared => {
                 "SELECT compressed_bytes FROM prepared_map_months
-                  WHERE pack_sha256 = ?1 AND vehicle_id = ?2 AND ?3 >= 0
+                  WHERE pack_sha256 = ?1 AND vehicle_id = ?2 AND input_receipt_id = ?3
                   LIMIT 1"
             }
         }
     }
+}
+
+/// Whether an offer was recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PackOfferRecord {
+    /// The leases are committed.
+    Recorded,
+    /// The selected head is no longer the vehicle's served head (a rotation,
+    /// a generation change or an issue #60 import revision committed since it
+    /// was selected): nothing was recorded, and the caller selects again.
+    HeadMoved,
 }
 
 /// One digest a control response is about to offer.
@@ -150,28 +158,30 @@ pub(crate) struct PackOffer {
 
 impl HubStore {
     /// Commit a lease for each offered digest before the signed response that
-    /// names them is returned. Refused (and nothing recorded) when the device
-    /// is revoked or ungranted, the generation moved, a digest is no longer
-    /// catalogued for the vehicle, or the lease caps are reached. Re-offering
-    /// a digest while it is current keeps the later expiry; an old digest is
-    /// never offered again, so its deadline cannot roll forward.
+    /// names them is returned. `head_receipt_id` is the head the response was
+    /// selected from; the write binds the offer to it: if it is no longer the
+    /// vehicle's public head under the source's generation and the issue #60
+    /// import revision, nothing is recorded and the answer is `HeadMoved`.
+    /// Refused (and nothing recorded) when the device is revoked or
+    /// ungranted, a digest is not catalogued for that head, or the lease caps
+    /// are reached. Re-offering a digest while it is current keeps the later
+    /// expiry; an old digest is never offered again, so its deadline cannot
+    /// roll forward. Already issued leases are never touched here.
     pub(crate) fn record_pack_offers_at(
         &self,
         device_id: Uuid,
         vehicle_id: Uuid,
-        generation: u64,
+        head_receipt_id: &str,
         offers: &[PackOffer],
         now_ms: i64,
-    ) -> Result<(), StoreError> {
+    ) -> Result<PackOfferRecord, StoreError> {
         if offers.is_empty() {
-            return Ok(());
+            return Ok(PackOfferRecord::Recorded);
         }
         let expires_at_ms = now_ms
             .checked_add(RETIRED_LINEAGE_PACK_RETENTION_MS)
             .filter(|expires| now_ms >= 0 && *expires <= 9_007_199_254_740_991)
             .ok_or(StoreError::PhysicalV3RetentionInvalid)?;
-        let generation =
-            i64::try_from(generation).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
         let device = device_id.to_string();
         let vehicle = vehicle_id.to_string();
         let mut connection = self.open()?;
@@ -182,22 +192,44 @@ impl HubStore {
             &transaction,
             now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS),
         )?;
+        // The selected head must still be the served head, read inside this
+        // write so no rotation or import revision can commit in between.
+        let head: Option<(String, i64)> = transaction
+            .query_row(
+                "SELECT head.snapshot_id, source.generation
+                   FROM pending_physical_v3_admissions AS head
+                   JOIN vehicles AS vehicle ON vehicle.vehicle_id = head.vehicle_id
+                   JOIN sources AS source ON source.source_id = vehicle.source_id
+                  WHERE head.vehicle_id = ?1 AND head.receipt_id = ?2
+                    AND head.serve_state = 'public_first' AND vehicle.retired_at_ms IS NULL
+                    AND json_extract(CAST(head.manifest_json AS TEXT), '$.generation')
+                        = source.generation",
+                params![vehicle, head_receipt_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let head = head.and_then(|(snapshot, generation)| {
+            let snapshot = snapshot.parse::<Uuid>().ok()?;
+            physical_v3_import_revision_serves_in(&transaction, vehicle_id, snapshot)
+                .then_some(generation)
+        });
+        let Some(generation) = head else {
+            tracing::info!(%vehicle_id, "pack offer refused: the selected head is no longer served");
+            return Ok(PackOfferRecord::HeadMoved);
+        };
         let bound: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM paired_devices AS device
                                 WHERE device.device_id = ?1 AND device.revoked_at_ms IS NULL)
                     AND EXISTS(SELECT 1 FROM device_vehicle_grants
-                                WHERE device_id = ?1 AND vehicle_id = ?2)
-                    AND EXISTS(SELECT 1 FROM vehicles AS vehicle
-                                 JOIN sources AS source ON source.source_id = vehicle.source_id
-                                WHERE vehicle.vehicle_id = ?2 AND vehicle.retired_at_ms IS NULL
-                                  AND source.generation = ?3)",
-                params![device, vehicle, generation],
+                                WHERE device_id = ?1 AND vehicle_id = ?2)",
+                params![device, vehicle],
                 |row| row.get(0),
             )
             .map_err(StoreError::Query)?;
         if !bound {
-            tracing::info!(%vehicle_id, "pack offer refused: the device, grant or generation moved");
+            tracing::info!(%vehicle_id, "pack offer refused: the device or its grant moved");
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
         for offer in offers {
@@ -205,7 +237,7 @@ impl HubStore {
             let bytes: Option<i64> = transaction
                 .query_row(
                     offer.kind.catalogued_sql(),
-                    params![digest, vehicle, now_ms],
+                    params![digest, vehicle, head_receipt_id],
                     |row| row.get(0),
                 )
                 .optional()
@@ -254,7 +286,8 @@ impl HubStore {
             tracing::warn!(%vehicle_id, "pack offer refused: the offer lease cap is reached");
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
-        transaction.commit().map_err(StoreError::Query)
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(PackOfferRecord::Recorded)
     }
 
     /// The object a live lease of `device_id` names, for the pack route once

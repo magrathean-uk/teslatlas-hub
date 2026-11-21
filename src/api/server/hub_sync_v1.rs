@@ -241,36 +241,50 @@ pub(super) async fn bootstrap_manifest(
         tracing::error!(%vehicle_id, "manifest signing key is unavailable");
         return unavailable_bootstrap_manifest();
     };
-    match state
-        .store
-        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
-    {
-        Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => {
-            let generation = admission.manifest.generation;
-            if let Err(response) =
-                record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
-            {
-                return response;
-            }
-            return signed_control_response(
-                StatusCode::OK,
-                &Manifest22Payload {
-                    manifest_id: admission.snapshot_id.to_string(),
-                    receipt_id: admission.receipt_id,
+    // A head that moves between selection and the offer write is selected
+    // again once (issue #98 review); a second move is the retryable 503.
+    let mut reselected = false;
+    loop {
+        match state
+            .store
+            .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+        {
+            Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => {
+                match record_pack_offers(
+                    state,
+                    scope,
                     vehicle_id,
-                    kind: "snapshot",
-                    schema_version: "2.2",
-                    sequence: admission.head_sequence,
-                    chunks: admission.manifest.chunks.iter().map(wire_chunk).collect(),
-                },
-                signing,
-            );
-        }
-        Ok(Some(_)) => return unavailable_bootstrap_manifest(),
-        Ok(None) => {}
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load admitted physical bootstrap");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    &admission.receipt_id,
+                    physical_offers(&admission),
+                ) {
+                    Ok(true) => {}
+                    Ok(false) if !reselected => {
+                        reselected = true;
+                        continue;
+                    }
+                    Ok(false) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                    Err(response) => return response,
+                }
+                return signed_control_response(
+                    StatusCode::OK,
+                    &Manifest22Payload {
+                        manifest_id: admission.snapshot_id.to_string(),
+                        receipt_id: admission.receipt_id,
+                        vehicle_id,
+                        kind: "snapshot",
+                        schema_version: "2.2",
+                        sequence: admission.head_sequence,
+                        chunks: admission.manifest.chunks.iter().map(wire_chunk).collect(),
+                    },
+                    signing,
+                );
+            }
+            Ok(Some(_)) => return unavailable_bootstrap_manifest(),
+            Ok(None) => break,
+            Err(error) => {
+                tracing::error!(%error, %vehicle_id, "cannot load admitted physical bootstrap");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
         }
     }
     if physical_only {
@@ -722,10 +736,13 @@ fn retired_21_checkpoint_physical_rebase(
         tracing::error!(%vehicle_id, "physical checkpoint does not bind the active lineage");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    let generation = admission.manifest.generation;
-    if let Err(response) =
-        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
-    {
+    if let Err(response) = require_pack_offers(
+        state,
+        scope,
+        vehicle_id,
+        &admission.receipt_id,
+        physical_offers(&admission),
+    ) {
         return response;
     }
     let replacement_receipt = admission.receipt_id.clone();
@@ -820,10 +837,13 @@ fn serve_physical_changes_since(
         tracing::error!(%vehicle_id, "retained physical checkpoint does not bind active replacement");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    let generation = admission.manifest.generation;
-    if let Err(response) =
-        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
-    {
+    if let Err(response) = require_pack_offers(
+        state,
+        scope,
+        vehicle_id,
+        &admission.receipt_id,
+        physical_offers(&admission),
+    ) {
         return response;
     }
     let replacement_receipt = admission.receipt_id.clone();
@@ -969,9 +989,8 @@ fn serve_physical_changes_since_14(
                     tracing::error!(%vehicle_id, "stored physical delta receipt names no packs");
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 };
-                let generation = admission.manifest.generation;
                 if let Err(response) =
-                    record_pack_offers(state, scope, vehicle_id, generation, offers)
+                    require_pack_offers(state, scope, vehicle_id, &admission.receipt_id, offers)
                 {
                     return response;
                 }
@@ -1009,10 +1028,13 @@ fn serve_physical_changes_since_14(
         "sequence":base.head_sequence,
         "schema_version":"2.2",
     });
-    let generation = admission.manifest.generation;
-    if let Err(response) =
-        record_pack_offers(state, scope, vehicle_id, generation, physical_offers(&admission))
-    {
+    if let Err(response) = require_pack_offers(
+        state,
+        scope,
+        vehicle_id,
+        &admission.receipt_id,
+        physical_offers(&admission),
+    ) {
         return response;
     }
     let mut retry = request.clone();
@@ -1108,31 +1130,52 @@ fn wire_chunk(pack: &crate::protocol::TransportPack) -> WireChunk {
 }
 
 /// Issues #98/#109: commit the device's offer leases for the packs a signed
-/// response is about to name, before the body leaves. A refused lease is a
-/// retryable 503 with no body; an unrestricted (loopback owner) scope has no
-/// device to lease to.
+/// response selected from head `head_receipt_id` is about to name, before
+/// the body leaves. `Ok(false)` when that head is no longer the served one
+/// (nothing recorded; the caller selects again or refuses). A refused lease
+/// is a retryable 503 with no body; an unrestricted (loopback owner) scope
+/// has no device to lease to.
 pub(super) fn record_pack_offers(
     state: &AppState,
     scope: VehicleScope,
     vehicle_id: Uuid,
-    generation: u64,
+    head_receipt_id: &str,
     offers: impl IntoIterator<Item = (Sha256Digest, crate::db::PackOfferKind)>,
-) -> Result<(), Response> {
+) -> Result<bool, Response> {
     let VehicleScope::Device(device_id) = scope else {
-        return Ok(());
+        return Ok(true);
     };
     let offers = offers
         .into_iter()
         .map(|(digest, kind)| crate::db::PackOffer { digest, kind })
         .collect::<Vec<_>>();
     let now_ms = current_epoch_ms().map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-    state
+    match state
         .store
-        .record_pack_offers_at(device_id, vehicle_id, generation, &offers, now_ms)
-        .map_err(|error| {
+        .record_pack_offers_at(device_id, vehicle_id, head_receipt_id, &offers, now_ms)
+    {
+        Ok(crate::db::PackOfferRecord::Recorded) => Ok(true),
+        Ok(crate::db::PackOfferRecord::HeadMoved) => Ok(false),
+        Err(error) => {
             tracing::warn!(%error, %vehicle_id, "cannot lease the offered packs");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        })
+            Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+        }
+    }
+}
+
+/// [`record_pack_offers`] for a response that is not selected again: a head
+/// that moved since selection is the same retryable 503 as a refused lease.
+fn require_pack_offers(
+    state: &AppState,
+    scope: VehicleScope,
+    vehicle_id: Uuid,
+    head_receipt_id: &str,
+    offers: impl IntoIterator<Item = (Sha256Digest, crate::db::PackOfferKind)>,
+) -> Result<(), Response> {
+    match record_pack_offers(state, scope, vehicle_id, head_receipt_id, offers)? {
+        true => Ok(()),
+        false => Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+    }
 }
 
 /// The object a live offer lease of this device names (issues #98/#109), and
@@ -1156,7 +1199,9 @@ pub(super) fn offered_pack(
 }
 
 /// Issue #109: lease the pack a current signed prepared receipt names to the
-/// device it is about to be returned to, under the current head's generation.
+/// device it is about to be returned to, bound to the head the receipt was
+/// built from (`source.input_receipt_id`); a head that moved since the
+/// receipt was selected is the retryable 503.
 pub(super) fn lease_prepared_receipt(
     state: &AppState,
     device: &PairedDeviceRecord,
@@ -1168,25 +1213,22 @@ pub(super) fn lease_prepared_receipt(
     if !matches!(scope, VehicleScope::Device(_)) {
         return Ok(());
     }
-    let digest = serde_json::from_slice::<serde_json::Value>(receipt)
+    let named = serde_json::from_slice::<serde_json::Value>(receipt)
         .ok()
-        .and_then(|receipt| receipt.get("pack")?.get("sha256")?.as_str()?.parse().ok())
-        .ok_or_else(|| {
-            tracing::error!(%vehicle_id, "a served prepared receipt names no pack digest");
-            unavailable()
-        })?;
-    let generation = match state
-        .store
-        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
-    {
-        Ok(Some(head)) => head.manifest.generation,
-        Ok(None) | Err(_) => return Err(unavailable()),
+        .and_then(|receipt| {
+            let digest: Sha256Digest = receipt.get("pack")?.get("sha256")?.as_str()?.parse().ok()?;
+            let head = receipt.get("source")?.get("input_receipt_id")?.as_str()?.to_owned();
+            Some((digest, head))
+        });
+    let Some((digest, head_receipt_id)) = named else {
+        tracing::error!(%vehicle_id, "a served prepared receipt names no pack digest or head");
+        return Err(unavailable());
     };
-    record_pack_offers(
+    require_pack_offers(
         state,
         scope,
         vehicle_id,
-        generation,
+        &head_receipt_id,
         [(digest, crate::db::PackOfferKind::Prepared)],
     )
 }

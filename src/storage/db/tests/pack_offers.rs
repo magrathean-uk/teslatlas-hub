@@ -99,9 +99,10 @@ fn rotated(rotations: u64) -> Rotated {
             kind: PackOfferKind::Delta,
         }))
         .collect::<Vec<_>>();
-    store
-        .record_pack_offers_at(device, binding.vehicle_id, binding.generation, &offers, now_ms)
+    let recorded = store
+        .record_pack_offers_at(device, binding.vehicle_id, &offered.receipt_id, &offers, now_ms)
         .expect("offer leases");
+    assert_eq!(recorded, PackOfferRecord::Recorded);
     let mut current = offered.clone();
     for rotation in 0..rotations {
         let gate = store.try_acquire_publication_gate().expect("rotation gate");
@@ -255,12 +256,23 @@ fn design_later_98_offer_is_refused_for_an_uncatalogued_digest_or_a_stale_bindin
     let fixture = rotated(1);
     let at = fixture.now_ms + 10;
     let stale_delta = [PackOffer { digest: fixture.delta_digests[0], kind: PackOfferKind::Delta }];
-    // The changed set left the catalogue with the rotation: no new lease.
+    // The changed set into the superseded head: that head moved, no lease.
     assert!(matches!(
         fixture.store.record_pack_offers_at(
             fixture.other_device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation,
+            &fixture.offered.receipt_id,
+            &stale_delta,
+            at,
+        ),
+        Ok(PackOfferRecord::HeadMoved)
+    ));
+    // Bound to the current head, the old changed set is not catalogued.
+    assert!(matches!(
+        fixture.store.record_pack_offers_at(
+            fixture.other_device,
+            fixture.binding.vehicle_id,
+            &fixture.current.receipt_id,
             &stale_delta,
             at,
         ),
@@ -273,23 +285,26 @@ fn design_later_98_offer_is_refused_for_an_uncatalogued_digest_or_a_stale_bindin
         .iter()
         .map(|chunk| PackOffer { digest: chunk.sha256, kind: PackOfferKind::Physical })
         .collect::<Vec<_>>();
+    // A generation change since selection moves the head as well.
+    bump_generation(&fixture, 1);
     assert!(matches!(
         fixture.store.record_pack_offers_at(
             fixture.other_device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation + 1,
+            &fixture.current.receipt_id,
             &current,
             at,
         ),
-        Err(StoreError::PhysicalV3AdmissionConflict)
+        Ok(PackOfferRecord::HeadMoved)
     ));
+    bump_generation(&fixture, -1);
     assert!(!leased(&fixture, fixture.other_device, fixture.delta_digests[0], at));
     fixture
         .store
         .record_pack_offers_at(
             fixture.other_device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation,
+            &fixture.current.receipt_id,
             &current,
             at,
         )
@@ -300,7 +315,7 @@ fn design_later_98_offer_is_refused_for_an_uncatalogued_digest_or_a_stale_bindin
         .record_pack_offers_at(
             fixture.other_device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation,
+            &fixture.current.receipt_id,
             &current,
             at - 5,
         )
@@ -414,7 +429,7 @@ fn design_later_109_prepared_lease_outlives_its_catalogue_row_until_expiry() {
         .record_pack_offers_at(
             fixture.device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation,
+            &fixture.current.receipt_id,
             &[PackOffer { digest, kind: PackOfferKind::Prepared }],
             fixture.now_ms,
         )
@@ -437,7 +452,7 @@ fn design_later_109_prepared_lease_outlives_its_catalogue_row_until_expiry() {
         store.record_pack_offers_at(
             fixture.other_device,
             fixture.binding.vehicle_id,
-            fixture.binding.generation,
+            &fixture.current.receipt_id,
             &[PackOffer { digest, kind: PackOfferKind::Prepared }],
             fixture.now_ms + 10,
         ),
@@ -495,4 +510,55 @@ fn design_later_98_current_delta_lookup_requires_the_source_generation() {
     assert!(!leased(&fixture, fixture.device, digest, fixture.now_ms + 10));
     bump_generation(&fixture, -1);
     assert!(current(&fixture));
+}
+
+#[test]
+fn design_later_98_offer_write_binds_the_selected_head_and_import_revision() {
+    let fixture = rotated(0);
+    let store = &fixture.store;
+    let vehicle_id = fixture.binding.vehicle_id;
+    let head = &fixture.current;
+    let offers = [PackOffer { digest: head.manifest.chunks[0].sha256, kind: PackOfferKind::Physical }];
+    let record = |at: i64| {
+        store
+            .record_pack_offers_at(fixture.other_device, vehicle_id, &head.receipt_id, &offers, at)
+            .expect("offer write")
+    };
+    // An issue #60 import commits a revision with no head after the
+    // selection: the selected head is stale and nothing is leased.
+    let connection = store.open().expect("catalogue");
+    let revision = |head: Option<Uuid>| PhysicalV3ImportRevision {
+        run_id: Uuid::from_u128(0x60),
+        kept: None,
+        head,
+    };
+    put_physical_v3_import_revision_in(&connection, vehicle_id, &revision(None))
+        .expect("import revision");
+    assert_eq!(record(fixture.now_ms + 10), PackOfferRecord::HeadMoved);
+    assert!(!leased(&fixture, fixture.other_device, offers[0].digest, fixture.now_ms + 10));
+    // The revision publishes this head: the same offer is leased.
+    put_physical_v3_import_revision_in(&connection, vehicle_id, &revision(Some(head.snapshot_id)))
+        .expect("published revision");
+    assert_eq!(record(fixture.now_ms + 10), PackOfferRecord::Recorded);
+    assert!(leased(&fixture, fixture.other_device, offers[0].digest, fixture.now_ms + 10));
+    // A rotation after selection: the old head is refused, the issued
+    // lease stays.
+    connection
+        .execute(
+            "DELETE FROM hub_metadata WHERE key = ?1",
+            [physical_v3_import_revision_key(vehicle_id)],
+        )
+        .expect("no import revision");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (_, next) = candidate(fixture._temporary.path(), store, "moved", 1, head.head_sequence + 1);
+    let next = store
+        .rotate_pending_physical_v3_admission_at(&gate, next, fixture.now_ms + 11)
+        .expect("rotation");
+    store
+        .activate_pending_physical_v3_rotation_at(&gate, vehicle_id, &head.receipt_id, fixture.now_ms + 11)
+        .expect("rotation public");
+    drop(gate);
+    assert_ne!(next.receipt_id, head.receipt_id);
+    assert_eq!(record(fixture.now_ms + 12), PackOfferRecord::HeadMoved);
+    assert!(leased(&fixture, fixture.other_device, offers[0].digest, fixture.now_ms + 12));
 }

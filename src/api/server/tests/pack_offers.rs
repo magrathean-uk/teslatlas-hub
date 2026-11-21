@@ -386,7 +386,7 @@ fn leased_rotation() -> LeasedRotation {
         })
         .collect::<Vec<_>>();
     store
-        .record_pack_offers_at(phone.device_id, binding.vehicle_id, binding.generation, &offers, now)
+        .record_pack_offers_at(phone.device_id, binding.vehicle_id, &first.receipt_id, &offers, now)
         .expect("A leased");
     let current = rotate(&store, temp.path(), &key, &first, "b", now + 1);
     LeasedRotation { _temp: temp, store, binding, first, current, phone, now }
