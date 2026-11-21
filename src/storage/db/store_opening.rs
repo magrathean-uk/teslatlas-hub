@@ -532,6 +532,14 @@ impl HubStore {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
 
+    /// Open the catalogue of a Hub that is about to start, before its
+    /// migrations run, to read its installation id. Admits any schema from
+    /// `MIN_STORE_VERSION` to the head (the migration candidates), and still
+    /// refuses a wrong application id, a newer schema and an unreadable file.
+    pub(crate) fn open_migration_candidate_read_only(data_dir: &Path) -> Result<Self, StoreError> {
+        Self::open_read_only_with_mode(data_dir, false, true)
+    }
+
     fn open_read_only_with_mode(
         data_dir: &Path,
         immutable: bool,

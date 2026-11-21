@@ -102,3 +102,5 @@ mod frozen_base;
 
 #[path = "tests/drive_repair.rs"]
 mod drive_repair;
+#[path = "tests/upgrade_start_checks.rs"]
+mod upgrade_start_checks;

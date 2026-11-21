@@ -138,7 +138,7 @@ pub fn check_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
         }
         Err(_) => return Err(SetupMarkerError::CatalogueUnreadable),
     }
-    let found = crate::db::HubStore::open_read_only(data_dir)
+    let found = crate::db::HubStore::open_migration_candidate_read_only(data_dir)
         .and_then(|store| store.installation_id())
         .map_err(|_| SetupMarkerError::CatalogueUnreadable)?;
     if found != recorded {
@@ -171,7 +171,7 @@ fn check_unmarked_catalogue(data_dir: &Path) -> Result<(), SetupMarkerError> {
         Ok(metadata) if metadata.file_type().is_file() && metadata.len() > 0 => {}
         _ => return lost,
     }
-    let set_up = crate::db::HubStore::open_read_only(data_dir).and_then(|store| {
+    let set_up = crate::db::HubStore::open_migration_candidate_read_only(data_dir).and_then(|store| {
         let held = !store.configured_tesla_vehicles()?.is_empty()
             || !store.published_vehicles()?.is_empty()
             || store
