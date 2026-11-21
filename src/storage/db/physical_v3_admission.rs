@@ -721,6 +721,17 @@ impl HubStore {
         snapshot_id: Uuid,
     ) -> Result<bool, StoreError> {
         let connection = self.open_read_only_connection()?;
+        self.physical_v3_admission_served_in(&connection, vehicle_id, snapshot_id)
+    }
+
+    /// [`Self::physical_v3_admission_served`] on a connection the caller
+    /// holds, so a transaction can apply it to the state it writes in.
+    fn physical_v3_admission_served_in(
+        &self,
+        connection: &Connection,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<bool, StoreError> {
         let vehicle_key = vehicle_id.to_string();
         // Issue #60: once an import with a publication intent commits, only
         // the head published for that import revision is served.

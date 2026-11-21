@@ -507,3 +507,68 @@ fn frozen_base_key_with_a_damaged_separator_still_owns_its_packs() {
         assert!(backup.join("data").join("packs").join("sha256").join(&name).is_file(), "{name}");
     }
 }
+
+/// Closes one more window with coverage of every vehicle, which changes the
+/// closed-coverage digest the planned head was bound to.
+fn close_window(store: &HubStore, seq: i64) {
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO collection_coverage(seq, grant_digest, opened_at_ms, closed_at_ms,
+                                             gaps_json, vehicle_ends_json, sealed)
+             VALUES(?1, 'grant', ?2, ?3, '[]', NULL, 'handback')",
+            params![seq, seq * 10_000, seq * 10_000 + 5_000],
+        )
+        .expect("closed window");
+}
+
+/// A head planned with the closed coverage the store holds now: served.
+fn planned_head(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    gate: &PublicationGate,
+) -> PendingPhysicalV3Admission {
+    close_window(store, 1);
+    let head = store
+        .stage_pending_physical_v3_admission(gate, candidate(temporary, store, "h", 2, 1))
+        .expect("head");
+    store
+        .record_physical_v3_seam_planned(gate, head.vehicle_id, head.snapshot_id)
+        .expect("planned with the coverage");
+    assert!(store.physical_v3_admission_served(head.vehicle_id, head.snapshot_id).expect("served"));
+    head
+}
+
+#[test]
+fn frozen_base_freeze_refuses_coverage_that_closes_between_scan_and_insert() {
+    let (temporary, store) = try_test_store().expect("store");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let head = planned_head(temporary.path(), &store, &gate);
+    let store_for_hook = store.clone();
+    FREEZE_AFTER_SCAN.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || close_window(&store_for_hook, 2)));
+    });
+    assert!(matches!(
+        store.freeze_physical_v3_base(&gate, head.vehicle_id, 1),
+        Err(FrozenPhysicalBaseRefusal::NotServed(_))
+    ));
+    assert_eq!(frozen_value(&store, head.vehicle_id), None);
+    assert!(!store.physical_v3_admission_served(head.vehicle_id, head.snapshot_id).expect("served"));
+}
+
+#[test]
+fn frozen_base_retry_is_answered_only_while_the_head_is_served() {
+    let (temporary, store) = try_test_store().expect("store");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let head = planned_head(temporary.path(), &store, &gate);
+    let base = store.freeze_physical_v3_base(&gate, head.vehicle_id, 1).expect("freeze");
+    assert_eq!(store.freeze_physical_v3_base(&gate, head.vehicle_id, 2).expect("retry"), base);
+    close_window(&store, 2);
+    assert!(matches!(
+        store.freeze_physical_v3_base(&gate, head.vehicle_id, 3),
+        Err(FrozenPhysicalBaseRefusal::NotServed(_))
+    ));
+    // The record itself is unchanged.
+    assert_eq!(store.frozen_physical_v3_base(head.vehicle_id).expect("read"), Some(base));
+}

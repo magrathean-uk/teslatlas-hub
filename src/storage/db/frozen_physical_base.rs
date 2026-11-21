@@ -20,6 +20,14 @@ const FROZEN_PHYSICAL_BASE_FORMAT: u32 = 1;
 /// source import.
 pub(crate) const FROZEN_PHYSICAL_BASE_PROVENANCE_RULE: &str = "hub-id-range/v1";
 
+#[cfg(test)]
+std::thread_local! {
+    /// A test's hook that runs between the pack scan and the final
+    /// transaction of a freeze, where another writer can change the store.
+    pub(crate) static FREEZE_AFTER_SCAN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 fn frozen_physical_base_key(vehicle_id: Uuid) -> String {
     format!("{FROZEN_PHYSICAL_BASE_PREFIX}{vehicle_id}")
 }
@@ -361,6 +369,10 @@ impl HubStore {
             if existing.snapshot_id == admission.snapshot_id
                 && existing.receipt_id == admission.receipt_id
             {
+                // A retry is answered only while the head is still served.
+                if !self.physical_v3_admission_served(vehicle_id, admission.snapshot_id)? {
+                    return Err(FrozenPhysicalBaseRefusal::NotServed(vehicle_id));
+                }
                 return Ok(existing);
             }
             return Err(FrozenPhysicalBaseRefusal::AlreadyFrozen {
@@ -383,6 +395,12 @@ impl HubStore {
         };
         let scan = frozen_physical_base_scan(&self.packs_dir, &admission.manifest, &binding)
             .map_err(|error| unverified(error.to_string()))?;
+        #[cfg(test)]
+        FREEZE_AFTER_SCAN.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
         let import_run = {
             let connection = self.open_read_only_connection()?;
             physical_v3_import_revision_in(&connection, vehicle_id)
@@ -449,6 +467,12 @@ impl HubStore {
         }
         if frozen_physical_base_in(&transaction, vehicle_id)?.is_some() {
             return Err(FrozenPhysicalBaseRefusal::HeadMoved(vehicle_id));
+        }
+        // The scan above ran outside this transaction; the window controller
+        // writes closed coverage without the publication gate, so the head
+        // must still be served in the state this insert commits with.
+        if !self.physical_v3_admission_served_in(&transaction, vehicle_id, admission.snapshot_id)? {
+            return Err(FrozenPhysicalBaseRefusal::NotServed(vehicle_id));
         }
         transaction
             .execute(
