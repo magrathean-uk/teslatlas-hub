@@ -692,3 +692,69 @@ fn frozen_base_census_json_has_no_frozen_class_until_a_record_exists() {
     assert_eq!(census.frozen_bases, Some(StorageCensusClass::default()));
     assert!(keys(&census).contains(&"frozen_bases".to_owned()));
 }
+
+#[test]
+fn frozen_base_one_digit_change_after_preflight_refuses_the_encrypted_backup() {
+    use crate::data_recovery::{
+        EncryptedBackupRequest, TestHookAction, TestKdfParams, clear_test_hook,
+        create_encrypted_backup, set_test_hook, verify_encrypted_backup,
+    };
+    use std::os::unix::fs::PermissionsExt;
+    const PASSWORD: &str = "correct horse battery staple";
+    let fixture = frozen_fixture();
+    let store = &fixture.store;
+    let key = format!("physical_v3_frozen_base:{}", fixture.base.vehicle_id);
+    let mut flipped = fixture.base.clone();
+    let last = flipped.logical.pop().expect("digit");
+    flipped.logical.push(if last == '0' { '1' } else { '0' });
+    let damaged = serde_json::to_string(&flipped).expect("value");
+    let destination = fixture._temporary.path().join("encrypted-destination");
+    std::fs::create_dir(&destination).expect("destination");
+    std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o700)).expect("private");
+    let request = || {
+        let mut request = EncryptedBackupRequest::new(&destination, PASSWORD);
+        request.kdf = TestKdfParams { memory_kib: 64, passes: 1, lanes: 1 };
+        request.chunk_bytes = 4096;
+        request
+    };
+    // Preflight has passed when "space_measured" fires; the snapshot is next.
+    let database = store.database_path().to_path_buf();
+    let (damage_key, damage_value) = (key.clone(), damaged.clone());
+    set_test_hook(move |stage, _| {
+        if stage == "space_measured" {
+            rusqlite::Connection::open(&database)
+                .and_then(|connection| {
+                    connection.execute(
+                        "UPDATE hub_metadata SET value = ?2 WHERE key = ?1",
+                        params![damage_key, damage_value],
+                    )
+                })
+                .expect("damage after preflight");
+        }
+        TestHookAction::Continue
+    });
+    let result = create_encrypted_backup(store, &request());
+    clear_test_hook();
+    let error = result.expect_err("a damaged record in the copy refuses the backup");
+    assert!(
+        matches!(
+            error,
+            crate::data_recovery::DataRecoveryError::Store(StoreError::FrozenPhysicalBaseInvalid { .. })
+        ),
+        "{error:?}"
+    );
+    let published = std::fs::read_dir(&destination)
+        .expect("destination")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tlbk"))
+        .count();
+    assert_eq!(published, 0, "nothing was published");
+    // Whole again, the same request succeeds and verifies.
+    put_metadata(store, &key, &frozen_value_from(&fixture.base));
+    let report = create_encrypted_backup(store, &request()).expect("whole backup");
+    verify_encrypted_backup(&report.path, PASSWORD).expect("verifies");
+}
+
+fn frozen_value_from(base: &FrozenPhysicalBase) -> String {
+    serde_json::to_string(base).expect("value")
+}

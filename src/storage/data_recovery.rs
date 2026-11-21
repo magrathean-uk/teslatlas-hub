@@ -2595,6 +2595,10 @@ pub use recovery_password::{
     RECOVERY_PASSWORD_MAX_BYTES, read_recovery_password, recovery_password_from,
 };
 pub(crate) use encrypted_backup::live_backup_pack_pins;
+#[cfg(test)]
+pub(crate) use archive_crypto::KdfParams as TestKdfParams;
+#[cfg(test)]
+pub(crate) use encrypted_backup::test_hooks::{Action as TestHookAction, clear_hook as clear_test_hook, set_hook as set_test_hook};
 pub use encrypted_backup::{
     EncryptedBackupReport, EncryptedBackupRequest, EncryptedBackupSpaceNeeds,
     create_encrypted_backup, encrypted_backup_space_needs, restore_encrypted_backup,

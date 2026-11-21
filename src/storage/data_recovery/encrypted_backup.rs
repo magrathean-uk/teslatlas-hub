@@ -134,6 +134,7 @@ use super::{
     seal_host_authority, staging_required_bytes, vacuum_sealed_catalogue, validate_manifest,
     validate_member, validate_restored_data_tree, validate_schema_22_noop_bytes, VolumeFile,
 };
+use crate::db::frozen_physical_bases_in;
 use super::kept_archive::{KeptBody, kept_member_filename, live_kept_totals, open_kept_bodies};
 use rusqlite::{
     Connection, MAIN_DB, OpenFlags, TransactionBehavior,
@@ -1129,6 +1130,9 @@ fn take_snapshot(
         }
         None => CatalogueCopy::Memory(copy_catalogue_into_memory(store)?),
     };
+    // Preflight read the live catalogue; the copy is what gets sealed, so a
+    // frozen record changed in between must refuse here, not at restore.
+    frozen_physical_bases_in(catalogue.connection())?;
     let noops = plan_noops(store, catalogue.connection())?;
     let kept = open_kept_bodies(store, catalogue.connection())?;
     let (pins, packs) = PackPins::take(store, admitted_pin_rows)?;
