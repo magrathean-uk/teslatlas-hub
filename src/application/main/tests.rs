@@ -2934,18 +2934,18 @@ mod lan_tls_setup {
     }
 
     #[test]
-    fn serving_check_waits_between_one_and_150_seconds() {
+    fn serving_check_waits_between_one_and_300_seconds() {
         let parse = |wait: &str| {
             super::super::Cli::try_parse_from(["tesatlas-hub", "serving-check", "--wait-seconds", wait])
         };
-        for wait in ["1", "45", "150"] {
+        for wait in ["1", "45", "300"] {
             let cli = parse(wait).expect("accepted wait");
             assert!(matches!(
                 cli.command,
                 super::super::Command::ServingCheck { wait_seconds } if wait_seconds.to_string() == wait
             ));
         }
-        for wait in ["0", "151", "-1"] {
+        for wait in ["0", "301", "-1"] {
             assert!(parse(wait).is_err(), "{wait}");
         }
         let default = super::super::Cli::try_parse_from(["tesatlas-hub", "serving-check"]).expect("default");

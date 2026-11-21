@@ -921,7 +921,7 @@ const SERVING_STABLE_OBSERVATIONS: usize = 3;
 const SERVING_POLL: Duration = Duration::from_millis(200);
 #[cfg(any(test, target_os = "macos"))]
 /// The longest `serving-check --wait-seconds` accepts.
-const SERVING_MAX_WAIT_SECONDS: u64 = 150;
+const SERVING_MAX_WAIT_SECONDS: u64 = 300;
 
 #[cfg(any(test, target_os = "macos"))]
 /// The running process of a `launchctl print` answer: `state = running` and a

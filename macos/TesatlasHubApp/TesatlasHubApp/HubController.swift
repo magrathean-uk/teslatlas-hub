@@ -1468,7 +1468,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
         if arguments.contains("source-check") { return 5 * 60 }
         if arguments.contains("setup") { return 5 * 60 }
         if arguments.contains("control") { return 45 }
-        if arguments.contains("serving-check") { return 75 }
+        if arguments.contains("serving-check") { return HubController.servingCheckTimeout(for: arguments) }
         if arguments.contains("status") || arguments.contains("preflight") { return 30 }
         return HubProcessExecutor.defaultTimeout
     }
@@ -4475,7 +4475,21 @@ final class HubController {
         }
     }
 
-    static func servingCheckArguments(configPath: URL, waitSeconds: Int = 45) -> [String] {
+    /// After a start the service may first upgrade its catalogue, which took 105 s at one
+    /// install: the wait is long enough for that, and the app shows it is still starting.
+    static let servingCheckStartWaitSeconds = 300
+
+    /// A start's serving check outlasts its own wait by a margin for the process.
+    static func servingCheckTimeout(for arguments: [String]) -> TimeInterval {
+        let margin: TimeInterval = 30
+        guard let flag = arguments.firstIndex(of: "--wait-seconds"),
+              arguments.indices.contains(flag + 1),
+              let wait = TimeInterval(arguments[flag + 1]) else { return 75 }
+        return wait + margin
+    }
+
+    static func servingCheckArguments(configPath: URL,
+                                      waitSeconds: Int = servingCheckStartWaitSeconds) -> [String] {
         ["--config", configPath.path, "serving-check", "--wait-seconds", String(waitSeconds)]
     }
 

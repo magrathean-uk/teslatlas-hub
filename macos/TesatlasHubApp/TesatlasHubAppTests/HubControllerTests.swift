@@ -4471,8 +4471,20 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(controller.hasPendingImportRecovery, "retired after the confirmed restart")
         XCTAssertFalse(controller.hasPendingMigrationHandover, "a signed-in Hub writes no handover gate")
         let serving = try XCTUnwrap(runner.arguments.last)
-        XCTAssertEqual(Array(serving.suffix(3)), ["serving-check", "--wait-seconds", "45"])
+        XCTAssertEqual(Array(serving.suffix(3)), ["serving-check", "--wait-seconds", "300"])
         XCTAssertTrue(controller.lifecycleCapabilities.isIdle)
+    }
+
+    func testServingCheckWaitsLongEnoughForAnUpgradeAfterAStartButProbesBriefly() {
+        let config = URL(fileURLWithPath: "/h/Tesatlas Hub/config.toml")
+        XCTAssertEqual(HubController.servingCheckArguments(configPath: config),
+                       ["--config", config.path, "serving-check", "--wait-seconds", "300"])
+        XCTAssertEqual(Array(HubController.servingCheckArguments(configPath: config, waitSeconds: 5).suffix(2)),
+                       ["--wait-seconds", "5"])
+        // The process is allowed to outlast its own wait.
+        let start = HubController.servingCheckArguments(configPath: config)
+        XCTAssertGreaterThan(EmbeddedHubCommandRunner.timeout(for: start), 300)
+        XCTAssertEqual(EmbeddedHubCommandRunner.timeout(for: ["serving-check"]), 75)
     }
 
     func testImportAfterWindowsFailureRestartsTheHubAndReportsBothFailures() throws {
