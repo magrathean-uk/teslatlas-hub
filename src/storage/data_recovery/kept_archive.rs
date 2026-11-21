@@ -8,13 +8,17 @@
 //! members `data/packs/physical-kept/<vehicle>.<generation>.kept` and
 //! `.source.json`; every restore places them and requires the restored
 //! directory to be exactly those files, private, at the recorded size and
-//! digest. Records without an archive (legacy raw bases) name nothing a backup
-//! carries: a restored legacy record withholds the vehicle's head until its
-//! next import. Without archive records the directory is absent, so older
+//! digest. A new backup of a store that still holds a legacy raw base (a
+//! record without an archive) is refused until a changed hand-back converts
+//! it; an older backup that holds one still restores, and its vehicle's head
+//! is withheld until its next import. Without archive records the directory is absent, so older
 //! backups restore unchanged.
 
 use super::*;
-use crate::db::{PHYSICAL_V3_KEPT_DIRECTORY, PhysicalV3KeptFile, physical_v3_kept_files_in};
+use crate::db::{
+    PHYSICAL_V3_KEPT_DIRECTORY, PhysicalV3KeptFile, physical_v3_kept_files_in,
+    require_no_legacy_kept_base_in,
+};
 
 /// The member directory of the kept-archive files.
 pub(super) const KEPT_ARCHIVE_DIRECTORY: &str = "data/packs/physical-kept";
@@ -247,6 +251,7 @@ pub(super) fn open_kept_bodies(
     store: &HubStore,
     catalogue: &Connection,
 ) -> Result<Vec<KeptBody>, DataRecoveryError> {
+    require_no_legacy_kept_base_in(catalogue)?;
     let directory = store.packs_dir().join(PHYSICAL_V3_KEPT_DIRECTORY);
     let mut bodies = Vec::new();
     for (name, file) in expected_kept_files_in(catalogue)? {

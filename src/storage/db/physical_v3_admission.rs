@@ -1727,7 +1727,8 @@ pub(crate) struct PhysicalV3KeptFile {
 /// Every file the kept-archive records of `connection`'s catalogue name, in
 /// name order: per record with an archive, `<vehicle>.<generation>.kept` and
 /// `<vehicle>.<generation>.source.json`. Records without an archive (legacy
-/// raw bases) name nothing a backup carries. A record that does not read
+/// raw bases) name nothing here; a new backup refuses them first
+/// (`require_no_legacy_kept_base_in`), a restored older one keeps its record. A record that does not read
 /// back, or whose digest is not canonical SHA-256 hex, is refused.
 pub(crate) fn physical_v3_kept_files_in(
     connection: &Connection,
@@ -1775,6 +1776,37 @@ pub(crate) fn physical_v3_kept_files_in(
     }
     files.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(files)
+}
+
+/// Refuses a new backup while any kept record of `connection`'s catalogue is
+/// a legacy raw base (no archive). That base is two files (the raw stage and
+/// its source sessions) whose recorded digest is the stage's logical one, so
+/// a backup cannot authenticate them as members; carrying a backup without
+/// them would silently lose the vehicle's replay base. Restoring an older
+/// backup that holds such a record is unaffected.
+pub(crate) fn require_no_legacy_kept_base_in(connection: &Connection) -> Result<(), StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value FROM hub_metadata WHERE key LIKE 'physical_v3_kept:%' ORDER BY key",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    for (key, value) in rows {
+        let vehicle_id = key
+            .strip_prefix("physical_v3_kept:")
+            .and_then(|id| id.parse::<Uuid>().ok())
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let kept: PhysicalV3Kept =
+            serde_json::from_str(&value).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        if kept.archive.is_none() {
+            return Err(StoreError::BackupLegacyKeptBase(vehicle_id));
+        }
+    }
+    Ok(())
 }
 
 /// The `hub_metadata` key of the stage and source kept for the vehicle's

@@ -106,6 +106,11 @@ pub enum StoreError {
     CreateBackupDirectory(std::io::Error),
     #[error("Hub backup copy-byte calculation overflowed")]
     BackupCapacityOverflow,
+    #[error(
+        "a new Hub backup cannot carry the unconverted legacy replay base of vehicle {0}; \
+         the next changed hand-back converts it to a kept archive"
+    )]
+    BackupLegacyKeptBase(Uuid),
     #[error("cannot copy Hub backup pack from {source_path} to {destination}: {source_error}")]
     CopyBackupPack {
         source_path: PathBuf,
@@ -637,6 +642,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::BackupDestinationIsLiveDatabase => (),
                 StoreError::CreateBackupDirectory(..) => (),
                 StoreError::BackupCapacityOverflow => (),
+                StoreError::BackupLegacyKeptBase(..) => (),
                 StoreError::CopyBackupPack { .. } => (),
                 StoreError::BackupPackSizeMismatch { .. } => (),
                 StoreError::OpenBackupPack(..) => (),
@@ -872,6 +878,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::BackupDestinationIsLiveDatabase);
         check_store_error(StoreError::CreateBackupDirectory(example()));
         check_store_error(StoreError::BackupCapacityOverflow);
+        check_store_error(StoreError::BackupLegacyKeptBase(Uuid::nil()));
         check_store_error(StoreError::CopyBackupPack {
             source_path: example(),
             destination: example(),

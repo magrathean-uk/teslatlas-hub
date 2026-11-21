@@ -1658,10 +1658,22 @@ fn restore_refuses_a_kept_archive_member_that_differs() {
     assert!(verify_data_backup(&backup).is_err(), "an unnamed kept file is refused");
 }
 
+/// A live unconverted legacy replay base (a kept record without an archive)
+/// is not silently dropped: a new backup is refused in the directory and the
+/// encrypted format, leaving nothing behind, and carries the base again once
+/// the record is forgotten; a store without kept records backs up and
+/// restores as before.
 #[test]
-fn restore_without_kept_archive_records_is_unchanged() {
+fn backup_refuses_a_live_unconverted_legacy_replay_base() {
     let (temporary, store) = create_fixture();
-    // A legacy record names a raw base and no archive: nothing is carried.
+    let plain = temporary.path().join("no-kept-records");
+    create_data_backup(&store, &plain).expect("create backup");
+    assert!(!plain.join(DATA_DIRECTORY).join("packs").join("physical-kept").exists());
+    verify_data_backup(&plain).expect("verify backup");
+    let restored = temporary.path().join("no-kept-records-restored");
+    restore_data_backup(&plain, &restored).expect("restore backup");
+    assert!(!restored.join("packs").join("physical-kept").exists());
+
     let vehicle_id = Uuid::new_v4();
     let kept_directory = store.packs_dir().join("physical-kept");
     fs::create_dir_all(kept_directory.join(".staging")).expect("legacy staging");
@@ -1682,33 +1694,21 @@ fn restore_without_kept_archive_records_is_unchanged() {
     );
     drop(gate);
 
-    let backup = temporary.path().join("no-kept-archive");
-    create_data_backup(&store, &backup).expect("create backup");
-    assert!(!backup.join(DATA_DIRECTORY).join("packs").join("physical-kept").exists());
-    let manifest: BackupManifest =
-        parse_canonical_json(&fs::read(backup.join(MANIFEST_NAME)).expect("manifest bytes"))
-            .expect("manifest");
-    assert!(
-        manifest
-            .members
-            .iter()
-            .all(|member| !member.path.starts_with("data/packs/physical-kept"))
-    );
-    verify_data_backup(&backup).expect("verify backup");
-    let restored = temporary.path().join("no-kept-archive-restored");
-    restore_data_backup(&backup, &restored).expect("restore backup");
-    assert!(!restored.join("packs").join("physical-kept").exists());
-    let restored_store = HubStore::open_immutable_read_only(&restored).expect("restored store");
-    assert_eq!(
-        restored_store.physical_v3_kept(vehicle_id).expect("legacy record"),
-        Some(legacy)
-    );
-
-    // A kept directory in a backup whose catalogue names no archive is refused.
-    let stray = backup.join(DATA_DIRECTORY).join("packs").join("physical-kept");
-    fs::create_dir(&stray).unwrap();
-    fs::set_permissions(&stray, fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(verify_data_backup(&backup).is_err());
+    let refused = temporary.path().join("legacy-refused");
+    let error = create_data_backup(&store, &refused).expect_err("a legacy base is not dropped");
+    assert!(error.to_string().contains(&vehicle_id.to_string()), "{error}");
+    assert!(!refused.exists(), "nothing is published");
+    let destination = temporary.path().join("legacy-encrypted");
+    fs::create_dir(&destination).expect("destination");
+    let request = kept_archive_encrypted_request(&destination);
+    let error = crate::data_recovery::create_encrypted_backup(&store, &request)
+        .expect_err("the encrypted backup refuses it too")
+        .to_string();
+    crate::data_recovery::encrypted_backup::clear_hook();
+    assert!(error.contains(&vehicle_id.to_string()), "{error}");
+    // The base itself is untouched by the refusals.
+    assert!(kept_directory.join(format!("{vehicle_id}.source.json")).exists());
+    assert_eq!(store.physical_v3_kept(vehicle_id).expect("record"), Some(legacy));
 }
 
 #[test]

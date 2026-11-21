@@ -742,6 +742,7 @@ impl HubStore {
         destination: &Path,
         copied_catalogue: &Connection,
     ) -> Result<(), StoreError> {
+        require_no_legacy_kept_base_in(copied_catalogue)?;
         let files = physical_v3_kept_files_in(copied_catalogue)?;
         if files.is_empty() {
             return Ok(());
