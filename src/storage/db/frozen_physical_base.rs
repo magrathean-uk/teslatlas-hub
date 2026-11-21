@@ -15,10 +15,13 @@ const FROZEN_PHYSICAL_BASE_MEMBER_PREFIX: &str = "physical_v3_frozen_base";
 const FROZEN_PHYSICAL_BASE_PREFIX: &str = "physical_v3_frozen_base:";
 /// The record format this build writes and reads.
 const FROZEN_PHYSICAL_BASE_FORMAT: u32 = 1;
-/// The provenance rule of format 1: a row whose id lies in the Hub's own
-/// range (`hub_ids`, schema v80) came from the Hub, every other row from the
-/// source import.
-pub(crate) const FROZEN_PHYSICAL_BASE_PROVENANCE_RULE: &str = "hub-id-range/v1";
+/// The provenance rule of format 1: the five dimension tables are always
+/// source rows, whatever their ids (the importer keeps the source's own ids
+/// there, and a Hub-range id can appear); a row of a history table whose id
+/// lies in the Hub's own range (`hub_ids`, schema v80) came from the Hub,
+/// every other history row from the source import. See
+/// [`frozen_row_is_hub_owned`].
+pub(crate) const FROZEN_PHYSICAL_BASE_PROVENANCE_RULE: &str = "hub-id-range/v2";
 
 #[cfg(test)]
 std::thread_local! {
@@ -26,6 +29,20 @@ std::thread_local! {
     /// transaction of a freeze, where another writer can change the store.
     pub(crate) static FREEZE_AFTER_SCAN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// The five physical tables that hold source-owned dimension rows: the
+/// import preserves their source ids and a publisher never replaces them.
+const FROZEN_DIMENSION_TABLES: [&str; 5] =
+    ["global_settings", "car_settings", "cars", "addresses", "geofences"];
+
+/// Whether a frozen row of `table` with `id` is Hub-owned under
+/// [`FROZEN_PHYSICAL_BASE_PROVENANCE_RULE`]: never for a dimension table, and
+/// for the six history tables exactly when `id` is in the Hub's id range.
+/// The one answer for the freeze scan, the strict reader and later
+/// publishers.
+pub(crate) fn frozen_row_is_hub_owned(table: &str, id: i64) -> bool {
+    !FROZEN_DIMENSION_TABLES.contains(&table) && hub_ids::is_hub_id(id)
 }
 
 fn frozen_physical_base_key(vehicle_id: Uuid) -> String {
@@ -160,7 +177,7 @@ pub(crate) fn frozen_physical_base_scan(
                 hash.update(row.id.to_be_bytes());
                 hash.update(row.digest);
                 if let Some(count) = counts.iter_mut().find(|count| count.0 == row.table) {
-                    if hub_ids::is_hub_id(row.id) {
+                    if frozen_row_is_hub_owned(row.table, row.id) {
                         count.2 += 1;
                     } else {
                         count.1 += 1;
@@ -258,6 +275,10 @@ fn frozen_physical_base_from_row(key: &str, value: &str) -> Result<FrozenPhysica
         || provenance.hub_id_base != hub_ids::HUB_ID_BASE
         || provenance.hub_id_max != hub_ids::HUB_ID_MAX
         || !tables_match
+        || provenance
+            .tables
+            .iter()
+            .any(|entry| FROZEN_DIMENSION_TABLES.contains(&entry.table.as_str()) && entry.hub_rows != 0)
         || counted != Some(base.rows)
         || !kept_canonical
         || provenance.handback_inputs.as_deref().is_some_and(|inputs| inputs.is_empty())

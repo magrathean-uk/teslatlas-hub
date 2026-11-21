@@ -572,3 +572,47 @@ fn frozen_base_retry_is_answered_only_while_the_head_is_served() {
     // The record itself is unchanged.
     assert_eq!(store.frozen_physical_v3_base(head.vehicle_id).expect("read"), Some(base));
 }
+
+#[test]
+fn frozen_base_ownership_is_per_table() {
+    let inside = [hub_ids::HUB_ID_BASE, hub_ids::HUB_ID_MAX];
+    let outside = [0, 1, hub_ids::HUB_ID_BASE - 1, hub_ids::HUB_ID_MAX + 1];
+    let tables = crate::hub_pack::PHYSICAL_TABLES_2_2;
+    assert_eq!(FROZEN_PHYSICAL_BASE_PROVENANCE_RULE, "hub-id-range/v2");
+    for table in tables {
+        let dimension = matches!(
+            table,
+            "global_settings" | "car_settings" | "cars" | "addresses" | "geofences"
+        );
+        for id in inside {
+            // An imported address whose source id lies in the Hub range is
+            // still a source row; a drive in that range is the Hub's.
+            assert_eq!(frozen_row_is_hub_owned(table, id), !dimension, "{table} {id}");
+        }
+        for id in outside {
+            assert!(!frozen_row_is_hub_owned(table, id), "{table} {id}");
+        }
+    }
+    assert!(!frozen_row_is_hub_owned("addresses", hub_ids::HUB_ID_BASE));
+    assert!(frozen_row_is_hub_owned("drives", hub_ids::HUB_ID_BASE));
+}
+
+#[test]
+fn frozen_base_record_claiming_a_hub_dimension_row_is_refused() {
+    let fixture = frozen_fixture();
+    let mut forged = fixture.base.clone();
+    let addresses = forged
+        .provenance
+        .tables
+        .iter_mut()
+        .find(|table| table.table == "addresses")
+        .expect("addresses");
+    addresses.hub_rows += 1;
+    forged.rows += 1;
+    let key = format!("physical_v3_frozen_base:{}", forged.vehicle_id);
+    let value = serde_json::to_string(&forged).expect("value");
+    assert!(matches!(
+        frozen_physical_base_from_row(&key, &value),
+        Err(StoreError::FrozenPhysicalBaseInvalid { .. })
+    ));
+}
