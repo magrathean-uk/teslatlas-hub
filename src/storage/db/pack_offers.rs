@@ -529,6 +529,30 @@ fn pack_offer_rows(
         .collect()
 }
 
+/// The digests only expired or dead offer leases name at `now_ms`: no live
+/// lease and no other reference keeps them. The encrypted backup's file walk
+/// skips them, so an object reclaim has not unlinked yet does not enter a
+/// fresh archive (issue #98 review finding 7). Empty without the lease table.
+pub(crate) fn expired_lease_only_pack_digests(
+    connection: &Connection,
+    now_ms: i64,
+) -> Result<HashSet<String>, StoreError> {
+    if !device_pack_offers_present(connection)? {
+        return Ok(HashSet::new());
+    }
+    let mut leased = connection
+        .prepare("SELECT DISTINCT sha256 FROM device_pack_offers")
+        .map_err(StoreError::Query)?
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(StoreError::Query)?
+        .collect::<Result<HashSet<_>, _>>()
+        .map_err(StoreError::Query)?;
+    for (digest, _, _) in referenced_pack_rows_at(connection, now_ms)? {
+        leased.remove(&digest);
+    }
+    Ok(leased)
+}
+
 /// Remove the leases that expired before `cutoff_ms` or no longer live, with
 /// the other retention rows, after the sweep's file removal.
 fn delete_expired_pack_offers(

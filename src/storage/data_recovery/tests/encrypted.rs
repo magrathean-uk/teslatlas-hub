@@ -1378,3 +1378,43 @@ fn data_recovery_rotation_failure_keeps_the_new_and_the_last_good_generations() 
             .exists()
     );
 }
+
+#[test]
+fn design_later_98_encrypted_backup_leaves_out_an_expired_lease_only_pack() {
+    let rig = rig();
+    let store = &rig.store;
+    let invitation = store
+        .create_pairing("leased phone", now_ms() - 1, i64::MAX)
+        .expect("invitation");
+    let device = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "leased phone", now_ms())
+        .expect("paired device")
+        .device_id;
+    // One object only an expired offer lease names, and one stray object no
+    // row names (the default walk still carries those).
+    let expired = vec![0x98_u8; 100];
+    let expired_digest = Sha256Digest::of_bytes(&expired);
+    fs::write(pack_path(store, expired_digest), &expired).expect("expired lease object");
+    let stray = vec![0x99_u8; 100];
+    let stray_digest = Sha256Digest::of_bytes(&stray);
+    fs::write(pack_path(store, stray_digest), &stray).expect("stray object");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO device_pack_offers(device_id, vehicle_id, sha256, kind, generation,
+                 compressed_bytes, offered_at_ms, expires_at_ms)
+             VALUES (?1, ?2, ?3, 'delta', 1, 100, 1, 2)",
+            rusqlite::params![device.to_string(), Uuid::from_u128(0x98).to_string(), expired_digest.to_string()],
+        )
+        .expect("expired lease");
+    let report = rig.backup();
+    let restored = rig.temporary.path().join("restored");
+    restore_encrypted_backup(&report.path, PASSWORD, &restored).expect("restore");
+    let restored_pack = |digest: Sha256Digest| {
+        restored.join("packs/sha256").join(format!("{digest}.sqlite.zst"))
+    };
+    assert!(!restored_pack(expired_digest).exists());
+    assert!(restored_pack(stray_digest).is_file());
+    assert_eq!(pin_rows(store), 0, "the run released its pins");
+}
