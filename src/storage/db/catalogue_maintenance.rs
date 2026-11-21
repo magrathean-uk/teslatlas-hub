@@ -17,6 +17,17 @@ fn referenced_pack_rows_at(
     connection: &Connection,
     retired_expiry_cutoff_ms: i64,
 ) -> Result<Vec<(String, String, i64)>, StoreError> {
+    referenced_pack_rows_with(connection, retired_expiry_cutoff_ms, true)
+}
+
+/// [`referenced_pack_rows_at`], optionally without the frozen bases. Only
+/// `doctor`'s read-only inventory leaves them out, and only to describe a
+/// store whose frozen record is damaged; no sweep or backup does.
+fn referenced_pack_rows_with(
+    connection: &Connection,
+    retired_expiry_cutoff_ms: i64,
+    with_frozen_bases: bool,
+) -> Result<Vec<(String, String, i64)>, StoreError> {
     let mut rows = {
         let mut statement = connection
             .prepare("SELECT sha256, relative_path, compressed_bytes FROM sync_packs")
@@ -30,7 +41,9 @@ fn referenced_pack_rows_at(
     rows.extend(pending_physical_v3_pack_rows(connection)?);
     // DEC-250: every pack a frozen physical base names, current or not; a
     // record that does not read back refuses the whole set.
-    rows.extend(frozen_physical_base_pack_rows(connection)?);
+    if with_frozen_bases {
+        rows.extend(frozen_physical_base_pack_rows(connection)?);
+    }
     rows.extend(retained_physical_v3_pack_rows(
         connection,
         retired_expiry_cutoff_ms,

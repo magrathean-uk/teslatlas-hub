@@ -274,10 +274,11 @@ pub enum StoreError {
     #[error("physical schema 2.2 admission catalogue is inconsistent")]
     PhysicalV3AdmissionConflict,
     #[error(
-        "a frozen physical base record is damaged, ambiguous or not canonical; nothing it could \
-         name is deleted"
+        "the frozen physical base record {key:?} is damaged, ambiguous or not canonical; nothing \
+         it could name is deleted or copied. There is no in-place repair: restore the Hub's data \
+         from a backup"
     )]
-    FrozenPhysicalBaseInvalid,
+    FrozenPhysicalBaseInvalid { key: String },
     #[error("physical schema 2.2 retention window is invalid")]
     PhysicalV3RetentionInvalid,
     #[error("cannot access import generation: {0}")]
@@ -722,7 +723,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
                 StoreError::PhysicalV3AdmissionInvalid => (),
                 StoreError::PhysicalV3Pack(..) => (),
                 StoreError::PhysicalV3SecondHeadUnsupported(..) => (),
-                StoreError::FrozenPhysicalBaseInvalid => (),
+                StoreError::FrozenPhysicalBaseInvalid { .. } => (),
                 StoreError::PhysicalV3AdmissionConflict => (),
                 StoreError::PhysicalV3RetentionInvalid => (),
                 StoreError::ImportGeneration(..) => (),
@@ -985,7 +986,7 @@ mod n1_src_storage_db_errors_rs_display_tests {
         check_store_error(StoreError::PhysicalV3AdmissionInvalid);
         check_store_error(StoreError::PhysicalV3Pack(example()));
         check_store_error(StoreError::PhysicalV3SecondHeadUnsupported(example()));
-        check_store_error(StoreError::FrozenPhysicalBaseInvalid);
+        check_store_error(StoreError::FrozenPhysicalBaseInvalid { key: String::new() });
         check_store_error(StoreError::PhysicalV3AdmissionConflict);
         check_store_error(StoreError::PhysicalV3RetentionInvalid);
         check_store_error(StoreError::ImportGeneration(example()));

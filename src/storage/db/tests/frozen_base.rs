@@ -416,15 +416,15 @@ fn frozen_base_damaged_record_refuses_every_sweep_and_deletes_nothing() {
 
         assert!(matches!(
             store.reclaim_storage_at(fixture.now_ms),
-            Err(StoreError::FrozenPhysicalBaseInvalid)
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. })
         ));
         assert!(matches!(
             store.storage_census_at(fixture.now_ms),
-            Err(StoreError::FrozenPhysicalBaseInvalid)
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. })
         ));
         assert!(matches!(
             store.repair_at(fixture.now_ms),
-            Err(StoreError::FrozenPhysicalBaseInvalid)
+            Err(StoreError::FrozenPhysicalBaseInvalid { .. })
         ));
         let refused_backup = outside.path().join(format!("refused-backup-{index}"));
         let error = crate::data_recovery::create_data_backup(store, &refused_backup)

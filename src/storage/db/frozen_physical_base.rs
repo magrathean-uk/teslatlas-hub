@@ -225,7 +225,7 @@ fn canonical_sha256_hex(digest: &str) -> bool {
 /// agree with itself (manifest digests, receipt and binding derived again).
 /// Anything else is `FrozenPhysicalBaseInvalid`.
 fn frozen_physical_base_from_row(key: &str, value: &str) -> Result<FrozenPhysicalBase, StoreError> {
-    let invalid = || StoreError::FrozenPhysicalBaseInvalid;
+    let invalid = || StoreError::FrozenPhysicalBaseInvalid { key: key.to_owned() };
     let vehicle_id = key
         .strip_prefix(FROZEN_PHYSICAL_BASE_PREFIX)
         .filter(|id| id.len() == 36)
