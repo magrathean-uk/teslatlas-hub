@@ -1178,6 +1178,22 @@ fn require_pack_offers(
     }
 }
 
+/// The scope a GET control response leases its offers under. Axum answers
+/// HEAD through the GET route and strips the body, so a HEAD request never
+/// receives the signed document that names the packs and leases nothing (the
+/// unrestricted scope has no device to lease to; issue #98 review finding 9).
+pub(super) fn offer_scope(
+    state: &AppState,
+    device: &PairedDeviceRecord,
+    method: &axum::http::Method,
+) -> VehicleScope {
+    if method == axum::http::Method::HEAD {
+        VehicleScope::Unrestricted
+    } else {
+        state.vehicle_scope(device)
+    }
+}
+
 /// The object a live offer lease of this device names (issues #98/#109), and
 /// whether it is a changed-set pack. An unrestricted scope holds no leases.
 pub(super) fn offered_pack(
@@ -1204,12 +1220,11 @@ pub(super) fn offered_pack(
 /// receipt was selected is the retryable 503.
 pub(super) fn lease_prepared_receipt(
     state: &AppState,
-    device: &PairedDeviceRecord,
+    scope: VehicleScope,
     vehicle_id: Uuid,
     receipt: &[u8],
 ) -> Result<(), Response> {
     let unavailable = || StatusCode::SERVICE_UNAVAILABLE.into_response();
-    let scope = state.vehicle_scope(device);
     if !matches!(scope, VehicleScope::Device(_)) {
         return Ok(());
     }

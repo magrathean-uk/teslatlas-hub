@@ -578,3 +578,66 @@ async fn design_later_98_if_range_with_another_validator_gets_the_full_body() {
     assert_eq!(matching.status(), StatusCode::PARTIAL_CONTENT);
     assert_eq!(body(matching).await, full[..10]);
 }
+
+fn lease_rows(store: &HubStore, device: Uuid) -> i64 {
+    store
+        .open()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM device_pack_offers WHERE device_id = ?1",
+            rusqlite::params![device.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[tokio::test]
+async fn design_later_109_head_requests_create_no_lease() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x09; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 1, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    drop(gate);
+    let (artifact_id, _) = prepared_month(&store, &key, &first, now, 0x7a);
+    let phone = pair(&store, "head phone", now);
+    let app = paired_router(store.clone(), &key);
+    let manifest = |method: &str| {
+        Request::builder()
+            .method(method)
+            .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+            .header(header::AUTHORIZATION, format!("Bearer {}", phone.bearer))
+            .header(SYNC_PROFILE_HEADER, hub_sync_v1::HUB_SYNC_PROFILE_14)
+            .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let receipt = |method: &str| {
+        Request::builder()
+            .method(method)
+            .uri(format!(
+                "/v1/vehicles/{}/sync/prepared-artefacts/{artifact_id}",
+                binding.vehicle_id
+            ))
+            .header(header::AUTHORIZATION, format!("Bearer {}", phone.bearer))
+            .body(Body::empty())
+            .unwrap()
+    };
+    for request in [manifest("HEAD"), receipt("HEAD")] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    assert_eq!(lease_rows(&store, phone.device_id), 0);
+    for request in [manifest("GET"), receipt("GET")] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    assert_eq!(
+        lease_rows(&store, phone.device_id),
+        i64::try_from(first.manifest.chunks.len()).unwrap() + 1
+    );
+}

@@ -1847,7 +1847,12 @@ async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Res
     }
 }
 
-async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
+async fn manifest(
+    State(state): State<AppState>,
+    method: axum::http::Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     let device = match require_authorized_device(&state, &headers) {
         Ok(device) => device,
         Err(status) => return device_auth_reject(status),
@@ -1863,7 +1868,7 @@ async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -
     {
         return denied.into_public_api_response();
     }
-    let scope = state.vehicle_scope(&device);
+    let scope = hub_sync_v1::offer_scope(&state, &device, &method);
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
         hub_sync_v1::BootstrapSelection::Selected => {
@@ -2015,6 +2020,7 @@ async fn signing_keys(State(state): State<AppState>, uri: Uri, headers: HeaderMa
 
 async fn prepared_artefact(
     State(state): State<AppState>,
+    method: axum::http::Method,
     uri: Uri,
     headers: HeaderMap,
 ) -> Response {
@@ -2045,7 +2051,8 @@ async fn prepared_artefact(
         &artifact_id,
     ) {
         Ok(Some(bytes)) => {
-            let leased = hub_sync_v1::lease_prepared_receipt(&state, &device, vehicle_id, &bytes);
+            let scope = hub_sync_v1::offer_scope(&state, &device, &method);
+            let leased = hub_sync_v1::lease_prepared_receipt(&state, scope, vehicle_id, &bytes);
             if let Err(response) = leased {
                 return response;
             }
