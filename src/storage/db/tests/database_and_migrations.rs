@@ -1430,7 +1430,13 @@ fn import_state_compaction_refuses_without_room_and_changes_nothing() {
     set_import_state_compaction_available_bytes(Some(0));
     let refused = HubStore::initialize(temporary.path());
     set_import_state_compaction_available_bytes(None);
-    assert!(matches!(refused, Err(StoreError::Migrate(_))), "{test}: compaction budget");
+    match refused {
+        Err(StoreError::Migrate(rusqlite::Error::SqliteFailure(_, Some(message)))) => {
+            assert!(message.contains("the cut-over is kept"), "{test}: {message}");
+            assert!(!message.contains("nothing was changed"), "{test}: {message}");
+        }
+        other => panic!("{test}: expected a compaction budget refusal, got {other:?}"),
+    }
     assert_eq!(
         import_state_raw_rows(&import_state_raw_catalogue(temporary.path())),
         raw,

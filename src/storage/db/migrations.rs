@@ -211,6 +211,13 @@ macro_rules! import_state_rows_rebuild_table {
     };
 }
 
+/// What a budget refusal tells the owner. Before the cut-over the rung has
+/// written nothing; after it the cut-over is committed and kept, and only the
+/// compaction is owed, which the next writable open retries.
+const IMPORT_STATE_REFUSAL_BEFORE_CUT_OVER: &str = "nothing was changed";
+const IMPORT_STATE_REFUSAL_AFTER_CUT_OVER: &str =
+    "the cut-over is kept and the compaction resumes at the next start once there is room";
+
 /// The `hub_metadata` key the cut-over writes and the compaction removes once
 /// the catalogue is compacted. While it exists, every writable open owes the
 /// compaction. Every store passing the rung, a new one included, is compacted
@@ -339,7 +346,12 @@ fn rebuild_import_state_rows(connection: &Connection) -> Result<(), StoreError> 
     if state_rows != 0 {
         // Replacement and journal each up to one catalogue beside the old
         // one, then the compaction's copy in the temporary directory.
-        admit_import_state_compaction_budget(connection, 2, 1)?;
+        admit_import_state_compaction_budget(
+            connection,
+            2,
+            1,
+            IMPORT_STATE_REFUSAL_BEFORE_CUT_OVER,
+        )?;
     }
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(StoreError::Migrate)?;
@@ -457,7 +469,7 @@ fn import_state_compaction_owed(connection: &Connection) -> Result<bool, StoreEr
 fn compact_catalogue_after_import_state_rebuild(connection: &Connection) -> Result<(), StoreError> {
     // The copy in the temporary directory and the journal beside the
     // catalogue, each up to one catalogue.
-    admit_import_state_compaction_budget(connection, 1, 1)?;
+    admit_import_state_compaction_budget(connection, 1, 1, IMPORT_STATE_REFUSAL_AFTER_CUT_OVER)?;
     connection
         .execute_batch("VACUUM;")
         .map_err(StoreError::Migrate)?;
@@ -482,6 +494,7 @@ fn admit_import_state_compaction_budget(
     connection: &Connection,
     beside: u64,
     temporary: u64,
+    outcome: &str,
 ) -> Result<(), StoreError> {
     let Some(path) = connection.path().filter(|path| !path.is_empty()) else {
         // An in-memory catalogue has no file system to budget.
@@ -508,7 +521,7 @@ fn admit_import_state_compaction_budget(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
                 Some(format!(
                     "the import state compaction needs {needed} bytes free in {}, \
-                     {available} available; nothing was changed",
+                     {available} available; {outcome}",
                     location.display()
                 )),
             )));
