@@ -780,7 +780,16 @@ fn frozen_base_one_digit_change_after_preflight_refuses_the_encrypted_backup() {
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tlbk"))
         .count();
     assert_eq!(published, 0, "nothing was published");
-    // Whole again, the same request succeeds and verifies.
+    // Whole again, the same request succeeds and verifies. The fixture's
+    // planted orphan pack is junk bytes under a digest name, which an
+    // encrypted backup rightly refuses, so it goes first.
+    std::fs::remove_file(
+        store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{}.sqlite.zst", hex::encode([0x3a; 32]))),
+    )
+    .expect("orphan pack removed");
     put_metadata(store, &key, &frozen_value_from(&fixture.base));
     let report = create_encrypted_backup(store, &request()).expect("whole backup");
     verify_encrypted_backup(&report.path, PASSWORD).expect("verifies");
