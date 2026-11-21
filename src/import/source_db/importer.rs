@@ -1863,22 +1863,10 @@ fn publish_staged_history_with_limits(
             request.imported_at_ms,
         )?),
     };
-    store.stage_import_generation_session(
-        import_run
-            .run_id
-            .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?,
-        open_session,
-    )?;
-    // Issue #60: a staged import records no capture, so the commit that
-    // changes the history refuses every earlier physical head until the next
-    // import that records one.
-    store.record_uncaptured_import_publication(
-        &publication_gate,
-        import_run
-            .run_id
-            .ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?,
-        vehicle.vehicle_id,
-    )?;
+    let staged_run = import_run.run_id.ok_or(SourceDbImportError::ProjectionStateCaptureMissing)?;
+    store.stage_import_generation_session(staged_run, open_session)?;
+    // Issue #60: no capture, so its history commit refuses older physical heads.
+    store.record_uncaptured_import_publication(&publication_gate, staged_run, vehicle.vehicle_id)?;
     let snapshot_id = Uuid::new_v4();
     let binding = ProjectionBinding {
         installation_id: store.installation_id()?,
