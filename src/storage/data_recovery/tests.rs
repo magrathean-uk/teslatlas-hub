@@ -1658,11 +1658,11 @@ fn restore_refuses_a_kept_archive_member_that_differs() {
     assert!(verify_data_backup(&backup).is_err(), "an unnamed kept file is refused");
 }
 
-/// A live unconverted legacy replay base (a kept record without an archive)
-/// is not silently dropped: a new backup is refused in the directory and the
-/// encrypted format, leaving nothing behind, and carries the base again once
-/// the record is forgotten; a store without kept records backs up and
-/// restores as before.
+/// A legacy replay base (a kept record without an archive) that cannot be
+/// converted to a kept archive (here a stage that is not a database) is not
+/// silently dropped: a new backup is refused in the directory and the
+/// encrypted format, leaving the base untouched; a store without kept records
+/// backs up and restores as before.
 #[test]
 fn backup_refuses_a_live_unconverted_legacy_replay_base() {
     let (temporary, store) = create_fixture();

@@ -597,6 +597,13 @@ impl HubStore {
 
     pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
         let publication_gate = self.try_acquire_publication_gate()?;
+        // A live legacy raw replay base is converted to a kept archive under
+        // this gate, so the backup carries it (the refusal below stays for a
+        // base that did not convert).
+        crate::import::source_db::importer::convert_legacy_kept_bases(self, &publication_gate)
+            .map_err(|(vehicle_id, reason)| {
+                StoreError::BackupLegacyKeptConversion { vehicle_id, reason }
+            })?;
         let credential_backup_admission = match self.credential_format_state()? {
             None => CredentialBackupAdmission::Pending,
             Some(state) if state.converted_at_ms.is_some() && !state.purge_required => {

@@ -345,6 +345,42 @@ fn open_kept_working(
 /// transaction replaces the record only while it is still `kept`, then the
 /// legacy files go. The recorded plan inputs stay: the stage's logical
 /// digest is unchanged. A failure leaves the legacy base as it was.
+fn try_convert_legacy_kept(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    kept: &crate::db::PhysicalV3Kept,
+    binding: &ProjectionBinding,
+    legacy: &SourceDbStage,
+    source: &[u8],
+) -> Result<(), String> {
+    let vehicle_id = binding.vehicle_id;
+    let (archive, logical) = write_kept_pair(store, binding, legacy, source)?;
+    let replaced = logical == kept.stage
+        && store
+            .swap_physical_v3_kept(
+                publication_gate,
+                vehicle_id,
+                Some(kept),
+                Some(&crate::db::PhysicalV3Kept {
+                    stage: kept.stage.clone(),
+                    source: kept.source.clone(),
+                    archive: Some(archive),
+                }),
+                false,
+            )
+            .map_err(|error| error.to_string())?;
+    if !replaced {
+        remove_superseded_kept_files(store, vehicle_id, Some(kept));
+        return Err("the kept record changed or the archive's rows differ".into());
+    }
+    kept_crash_point("swap");
+    let now = store
+        .physical_v3_kept(vehicle_id)
+        .map_err(|error| error.to_string())?;
+    remove_superseded_kept_files(store, vehicle_id, now.as_ref());
+    Ok(())
+}
+
 fn convert_legacy_kept(
     store: &HubStore,
     publication_gate: &PublicationGate,
@@ -354,34 +390,7 @@ fn convert_legacy_kept(
     source: &[u8],
 ) {
     let vehicle_id = binding.vehicle_id;
-    let converted = (|| -> Result<(), String> {
-        let (archive, logical) = write_kept_pair(store, binding, legacy, source)?;
-        let replaced = logical == kept.stage
-            && store
-                .swap_physical_v3_kept(
-                    publication_gate,
-                    vehicle_id,
-                    Some(kept),
-                    Some(&crate::db::PhysicalV3Kept {
-                        stage: kept.stage.clone(),
-                        source: kept.source.clone(),
-                        archive: Some(archive),
-                    }),
-                    false,
-                )
-                .map_err(|error| error.to_string())?;
-        if !replaced {
-            remove_superseded_kept_files(store, vehicle_id, Some(kept));
-            return Err("the kept record changed or the archive's rows differ".into());
-        }
-        kept_crash_point("swap");
-        let now = store
-            .physical_v3_kept(vehicle_id)
-            .map_err(|error| error.to_string())?;
-        remove_superseded_kept_files(store, vehicle_id, now.as_ref());
-        Ok(())
-    })();
-    match converted {
+    match try_convert_legacy_kept(store, publication_gate, kept, binding, legacy, source) {
         Ok(()) => tracing::info!(%vehicle_id, "the kept raw stage was converted to a kept archive"),
         Err(reason) => tracing::warn!(
             %vehicle_id,
@@ -389,6 +398,59 @@ fn convert_legacy_kept(
             "the kept raw stage stays as it is; its conversion is retried at the next handback"
         ),
     }
+}
+
+/// Converts every live legacy kept raw base to a kept archive before a
+/// backup snapshot is taken. The caller holds the publication gate. Each base
+/// is authenticated (source sessions and stage against their record) and goes
+/// through the same verified conversion as a handback's; a failure (space,
+/// corruption, a changed record) is returned with the vehicle and the reason,
+/// and leaves that base, its record and the files as they were.
+pub(crate) fn convert_legacy_kept_bases(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+) -> Result<(), (Uuid, String)> {
+    let vehicles = store
+        .physical_v3_kept_vehicles()
+        .map_err(|error| (Uuid::nil(), error.to_string()))?;
+    for vehicle_id in vehicles {
+        let convert = || -> Result<(), String> {
+            let Some(kept) = store.physical_v3_kept(vehicle_id).map_err(|e| e.to_string())? else {
+                return Ok(());
+            };
+            if kept.archive.is_some() {
+                return Ok(());
+            }
+            let source_bytes = std::fs::read(legacy_kept_source_path(store, vehicle_id))
+                .map_err(|error| format!("the kept source sessions: {error}"))?;
+            if Sha256Digest::of_bytes(&source_bytes).to_string() != kept.source {
+                return Err("the kept source sessions differ from their record".into());
+            }
+            let source: KeptPhysicalSource = serde_json::from_slice(&source_bytes)
+                .map_err(|error| format!("the kept source sessions: {error}"))?;
+            if source.binding.vehicle_id != vehicle_id {
+                return Err("the kept source sessions name another vehicle".into());
+            }
+            let legacy = SourceDbStage::open_sealed_to_copy(kept_stage_path(store, vehicle_id))
+                .map_err(|error| format!("the kept stage: {error}"))?;
+            match legacy.sealed_logical_digest() {
+                Ok(digest) if digest.to_string() == kept.stage => {}
+                Ok(_) => return Err("the kept stage differs from its record".into()),
+                Err(error) => return Err(format!("the kept stage: {error}")),
+            }
+            try_convert_legacy_kept(
+                store,
+                publication_gate,
+                &kept,
+                &source.binding,
+                &legacy,
+                &source_bytes,
+            )
+        };
+        convert().map_err(|reason| (vehicle_id, reason))?;
+        tracing::info!(%vehicle_id, "a legacy kept raw stage was converted before a backup");
+    }
+    Ok(())
 }
 
 /// Writes `bytes` to `path` through a private temporary file and a rename.

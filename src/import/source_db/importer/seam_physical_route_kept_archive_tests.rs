@@ -458,3 +458,99 @@ fn forget_kept_with_a_failed_removal_leaves_every_referenced_file() {
         assert_only_the_recorded_pair(&fixture);
     }
 }
+
+/// A store that still holds a legacy raw base backs up: the base is converted
+/// to a kept archive under the backup's gate, the backup carries the archive,
+/// and the restored store's changed handback publishes what an identical
+/// store's does without a backup in between.
+#[test]
+fn backup_converts_a_legacy_replay_base_and_restores_it_working() {
+    let (fixture, _root, _env) = planned_then_refused(true);
+    let reference = clone_fixture(&fixture);
+    make_legacy(&fixture);
+    let Fixture { _temporary: temporary, store, binding, car, gate, .. } = fixture;
+    drop(gate);
+    let legacy = store.physical_v3_kept(binding.vehicle_id).expect("record").expect("kept");
+    assert!(legacy.archive.is_none());
+
+    let outside = crate::private_tempdir().expect("backup root");
+    let backup = outside.path().join("backup");
+    crate::data_recovery::create_data_backup(&store, &backup).expect("a legacy base backs up");
+    let live = store.physical_v3_kept(binding.vehicle_id).expect("record").expect("kept");
+    let archive = live.archive.as_ref().expect("converted before the snapshot");
+    assert_eq!(live.stage, legacy.stage, "the same rows");
+    let name = kept_archive_name(binding.vehicle_id, archive.generation);
+    let directory = physical_kept_dir(&store);
+    assert!(directory.join(&name).exists());
+    assert!(!directory.join(".staging").join(format!("{}.sqlite", binding.vehicle_id)).exists());
+    assert!(!legacy_kept_source_path(&store, binding.vehicle_id).exists());
+    let carried = backup.join("data").join("packs").join("physical-kept").join(&name);
+    assert!(carried.exists(), "the backup holds the archive");
+    crate::data_recovery::verify_data_backup(&backup).expect("verify");
+
+    let restored_root = outside.path().join("restored");
+    crate::data_recovery::restore_data_backup(&backup, &restored_root).expect("restore");
+    let key = std::fs::read(crate::legacy_owner_credentials::cursor_key_path(&restored_root))
+        .expect("restored cursor key");
+    let restored_store = HubStore::open_existing(&restored_root).expect("restored store");
+    let restored_gate = restored_store.try_acquire_publication_gate().expect("gate");
+    let restored = Fixture {
+        _temporary: temporary,
+        store: restored_store,
+        binding,
+        car,
+        gate: restored_gate,
+        cursor_key: CursorKey::from_bytes(key.as_slice().try_into().expect("32-byte key")),
+    };
+    assert_eq!(kept_record(&restored).archive.as_ref(), Some(archive));
+    let after_restore = handback(&restored);
+    let before_backup = handback(&reference);
+    assert_eq!(after_restore, before_backup);
+    // The restore signs under a fresh cursor key, so pack digests differ; the
+    // changed sets' shapes do not.
+    let shape = |fixture: &Fixture| -> Vec<(i64, i64, i64, i64)> {
+        published_state(fixture)
+            .2
+            .into_iter()
+            .map(|(ordinal, _, rows, bytes, roots)| (ordinal, rows, bytes, roots))
+            .collect()
+    };
+    assert_eq!(shape(&restored), shape(&reference));
+}
+
+/// A conversion that fails (source sessions that no longer match their record)
+/// refuses the backup, names the vehicle and the reason, publishes nothing,
+/// and leaves the legacy pair and its record as they were.
+#[test]
+fn backup_refuses_when_the_legacy_conversion_fails() {
+    let (fixture, _root, _env) = planned_then_refused(true);
+    make_legacy(&fixture);
+    let vehicle = fixture.binding.vehicle_id;
+    let record = kept_record(&fixture);
+    let stage_path = kept_stage_path(&fixture.store, vehicle);
+    let bytes = std::fs::read(&stage_path).expect("legacy stage");
+    let source_path = legacy_kept_source_path(&fixture.store, vehicle);
+    let mut source = std::fs::read(&source_path).expect("legacy source");
+    source.push(b' ');
+    std::fs::write(&source_path, &source).expect("damaged source");
+    let Fixture { _temporary: _keep, store, gate, .. } = fixture;
+    drop(gate);
+
+    let outside = crate::private_tempdir().expect("backup root");
+    let backup = outside.path().join("backup");
+    let error = crate::data_recovery::create_data_backup(&store, &backup)
+        .expect_err("the failed conversion refuses the backup")
+        .to_string();
+    assert!(error.contains(&vehicle.to_string()), "{error}");
+    assert!(error.contains("conversion failed"), "{error}");
+    assert!(!backup.exists(), "nothing is published");
+    assert_eq!(store.physical_v3_kept(vehicle).expect("record"), Some(record));
+    assert_eq!(std::fs::read(&stage_path).expect("stage kept"), bytes);
+    assert_eq!(std::fs::read(&source_path).expect("source kept"), source);
+    let names: Vec<_> = std::fs::read_dir(physical_kept_dir(&store))
+        .expect("kept directory")
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .collect();
+    assert_eq!(names.len(), 1, "no archive pair was left behind");
+}
