@@ -2277,6 +2277,26 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                     }
                 }
             }
+            // Issue #98 review: a rotation between the digest lookup and the
+            // head load leaves the digest on no current head; a live lease of
+            // this device still serves it.
+            Err(crate::db::StoreError::PhysicalV3AdmissionConflict) => {
+                let Ok(now_ms) = current_epoch_ms() else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                match hub_sync_v1::offered_pack(&state, scope, digest, now_ms) {
+                    Ok(Some((pack, delta))) => {
+                        delta_pack = delta;
+                        leased = true;
+                        (pack, true)
+                    }
+                    Ok(None) => {
+                        tracing::error!(%digest, "admitted physical pack moved during lookup");
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                    Err(response) => return response,
+                }
+            }
             Err(error) => {
                 tracing::error!(%error, %digest, "cannot load admitted physical pack");
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();

@@ -1282,6 +1282,10 @@ impl HubStore {
             .optional()
             .map_err(StoreError::Query)?;
         drop(connection);
+        #[cfg(test)]
+        if let Some(rotate) = ROTATE_DURING_PHYSICAL_PACK_LOOKUP.with(|hook| hook.take()) {
+            rotate();
+        }
         let Some(vehicle_id) = vehicle_id else {
             return Ok(None);
         };
@@ -1610,6 +1614,10 @@ type PhysicalAdmissionReadHook = Box<dyn FnOnce()>;
 #[cfg(test)]
 thread_local! {
     pub(crate) static ROTATE_DURING_PHYSICAL_ADMISSION_READ:
+        std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
+    /// Runs between the digest's head lookup and the head load of
+    /// `pending_physical_v3_pack_for_digest` (issue #98 review finding 4).
+    pub(crate) static ROTATE_DURING_PHYSICAL_PACK_LOOKUP:
         std::cell::Cell<Option<PhysicalAdmissionReadHook>> = const { std::cell::Cell::new(None) };
 }
 

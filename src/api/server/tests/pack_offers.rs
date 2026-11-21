@@ -359,7 +359,6 @@ struct LeasedRotation {
     store: HubStore,
     binding: crate::hub_pack::ProjectionBinding,
     first: crate::db::PendingPhysicalV3Admission,
-    current: crate::db::PendingPhysicalV3Admission,
     phone: Paired,
     now: i64,
 }
@@ -388,8 +387,8 @@ fn leased_rotation() -> LeasedRotation {
     store
         .record_pack_offers_at(phone.device_id, binding.vehicle_id, &first.receipt_id, &offers, now)
         .expect("A leased");
-    let current = rotate(&store, temp.path(), &key, &first, "b", now + 1);
-    LeasedRotation { _temp: temp, store, binding, first, current, phone, now }
+    rotate(&store, temp.path(), &key, &first, "b", now + 1);
+    LeasedRotation { _temp: temp, store, binding, first, phone, now }
 }
 
 fn move_generation(store: &HubStore, vehicle_id: Uuid, by: i64) {
@@ -463,4 +462,92 @@ async fn design_later_98_leased_download_stops_when_the_grant_or_generation_move
             _ => move_generation(store, fixture.binding.vehicle_id, -1),
         }
     }
+}
+
+#[tokio::test]
+async fn design_later_98_lease_serves_a_pack_whose_head_rotates_during_lookup() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x98; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding, first) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("a"), &store, &key, 3, "offers98", 1);
+    let first = store.stage_pending_physical_v3_admission(&gate, first).expect("A");
+    drop(gate);
+    let phone = pair(&store, "leased phone", now);
+    let offers = first
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| crate::db::PackOffer {
+            digest: chunk.sha256,
+            kind: crate::db::PackOfferKind::Physical,
+        })
+        .collect::<Vec<_>>();
+    store
+        .record_pack_offers_at(phone.device_id, binding.vehicle_id, &first.receipt_id, &offers, now)
+        .expect("A leased");
+    let app = paired_router(store.clone(), &key);
+    // B replaces A after the lookup found the digest on A, before A loads.
+    let (_, successor) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("b"), &store, &key, 1, "offers98", 2);
+    let digest = first
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| chunk.sha256)
+        .find(|digest| successor.manifest.chunks.iter().all(|chunk| chunk.sha256 != *digest))
+        .expect("a chunk of A that B does not repeat");
+    let (writer, vehicle_id, prior) = (store.clone(), binding.vehicle_id, first.receipt_id.clone());
+    let rotated = std::rc::Rc::new(std::cell::Cell::new(false));
+    let seen = rotated.clone();
+    crate::db::ROTATE_DURING_PHYSICAL_PACK_LOOKUP.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let gate = writer.try_acquire_publication_gate().expect("gate");
+            writer
+                .rotate_pending_physical_v3_admission_at(&gate, successor, now + 1)
+                .expect("rotation");
+            writer
+                .activate_pending_physical_v3_rotation_at(&gate, vehicle_id, &prior, now + 1)
+                .expect("public successor");
+            seen.set(true);
+        })));
+    });
+    let served = app.clone().oneshot(get(&pack_uri(digest), &phone.bearer, None)).await.unwrap();
+    assert!(rotated.get(), "the head rotated during the lookup");
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(Sha256Digest::of_bytes(&body(served).await), digest);
+    // Without a lease the same race stays the retryable 503.
+    let other = pair(&store, "other phone", now);
+    let (_, third) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("c"), &store, &key, 2, "offers98", 3);
+    let current = store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+        .expect("head B")
+        .expect("B public");
+    let unleased = current
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| chunk.sha256)
+        .find(|digest| third.manifest.chunks.iter().all(|chunk| chunk.sha256 != *digest))
+        .expect("a chunk of B that C does not repeat");
+    let writer = store.clone();
+    crate::db::ROTATE_DURING_PHYSICAL_PACK_LOOKUP.with(|hook| {
+        hook.set(Some(Box::new(move || {
+            let gate = writer.try_acquire_publication_gate().expect("gate");
+            writer
+                .rotate_pending_physical_v3_admission_at(&gate, third, now + 2)
+                .expect("rotation");
+            writer
+                .activate_pending_physical_v3_rotation_at(&gate, vehicle_id, &current.receipt_id, now + 2)
+                .expect("public successor");
+        })));
+    });
+    let refused = app.oneshot(get(&pack_uri(unleased), &other.bearer, None)).await.unwrap();
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
