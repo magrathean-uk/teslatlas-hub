@@ -240,10 +240,8 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        delete_expired_pack_offers(
-            &transaction,
-            now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS),
-        )?;
+        let expiry_cutoff_ms = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
+        delete_expired_pack_offers(&transaction, expiry_cutoff_ms)?;
         // The selected head must still be the served head, read inside this
         // write so no rotation or import revision can commit in between.
         let head: Option<(String, i64)> = transaction
@@ -284,8 +282,12 @@ impl HubStore {
             tracing::info!(%vehicle_id, "pack offer refused: the device or its grant moved");
             return Err(StoreError::PhysicalV3AdmissionConflict);
         }
-        let mut device_bytes = leased_bytes(&transaction, Some(device.as_str()), now_ms)?;
-        let mut store_bytes = leased_bytes(&transaction, None, now_ms)?;
+        // Every row still in the reference set counts, expired rows inside
+        // their grace too: a clock stepped back across their expiry makes
+        // them live again beside the new rows (issue #98 review finding 6).
+        let mut device_bytes =
+            leased_bytes(&transaction, Some(device.as_str()), expiry_cutoff_ms)?;
+        let mut store_bytes = leased_bytes(&transaction, None, expiry_cutoff_ms)?;
         let mut unleased = 0_usize;
         for offer in offers {
             let digest = offer.digest.to_string();
@@ -301,9 +303,11 @@ impl HubStore {
                 tracing::info!(%vehicle_id, "pack offer refused: the object left the catalogue");
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             };
-            let held = holds_live_lease(&transaction, &digest, Some(device.as_str()), now_ms)?;
+            let held =
+                holds_lease_row(&transaction, &digest, Some(device.as_str()), expiry_cutoff_ms)?;
             let device_charge = if held { 0 } else { bytes };
-            let held_in_store = held || holds_live_lease(&transaction, &digest, None, now_ms)?;
+            let held_in_store =
+                held || holds_lease_row(&transaction, &digest, None, expiry_cutoff_ms)?;
             let store_charge = if held_in_store { 0 } else { bytes };
             if device_bytes + device_charge > budgets.device_bytes
                 || store_bytes + store_charge > budgets.store_bytes
@@ -441,12 +445,13 @@ impl HubStore {
     }
 }
 
-/// The bytes unexpired live leases hold at `now_ms`, each digest once: of one
-/// device, or (`None`) across the store.
+/// The bytes the live lease rows still in the reference set hold (expiry
+/// after `expiry_cutoff_ms`, so expired rows inside their grace count), each
+/// digest once: of one device, or (`None`) across the store.
 fn leased_bytes(
     transaction: &Transaction<'_>,
     device: Option<&str>,
-    now_ms: i64,
+    expiry_cutoff_ms: i64,
 ) -> Result<i64, StoreError> {
     transaction
         .query_row(
@@ -459,19 +464,20 @@ fn leased_bytes(
                 live_pack_offer_predicate!(),
                 " GROUP BY offer.sha256)"
             ),
-            params![device, now_ms],
+            params![device, expiry_cutoff_ms],
             |row| row.get(0),
         )
         .map_err(StoreError::Query)
 }
 
-/// Whether an unexpired live lease at `now_ms` names `digest`: of one device,
-/// or (`None`) of any device.
-fn holds_live_lease(
+/// Whether a live lease row still in the reference set (expiry after
+/// `expiry_cutoff_ms`) names `digest`, so its bytes are already counted: of
+/// one device, or (`None`) of any device.
+fn holds_lease_row(
     transaction: &Transaction<'_>,
     digest: &str,
     device: Option<&str>,
-    now_ms: i64,
+    expiry_cutoff_ms: i64,
 ) -> Result<bool, StoreError> {
     transaction
         .query_row(
@@ -482,7 +488,7 @@ fn holds_live_lease(
                 live_pack_offer_predicate!(),
                 ")"
             ),
-            params![digest, device, now_ms],
+            params![digest, device, expiry_cutoff_ms],
             |row| row.get(0),
         )
         .map_err(StoreError::Query)

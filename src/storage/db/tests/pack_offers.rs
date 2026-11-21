@@ -678,3 +678,65 @@ fn design_later_98_observed_expiry_survives_a_clock_moved_back_and_a_restart() {
     // The device's other leases are untouched.
     assert!(leased(&fixture, fixture.device, fixture.offered.manifest.chunks[0].sha256, inside));
 }
+
+#[test]
+fn design_later_98_byte_budgets_count_expired_leases_inside_their_grace() {
+    let fixture = rotated(0);
+    let store = &fixture.store;
+    let vehicle_id = fixture.binding.vehicle_id;
+    let head = fixture.current.receipt_id.clone();
+    store.revoke_device_at(fixture.device, fixture.now_ms).expect("revoke fixture device");
+    let objects = fixture
+        .current
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| PackOffer { digest: chunk.sha256, kind: PackOfferKind::Physical })
+        .collect::<Vec<_>>();
+    assert!(objects.len() >= 2, "the fixture head has at least two chunks");
+    // Each object fits alone; no two fit together.
+    let cap = catalogued_bytes(store, objects[0].digest)
+        .max(catalogued_bytes(store, objects[1].digest));
+    let device_cap = PackOfferBudgets { device_bytes: cap, store_bytes: i64::MAX };
+    let store_cap = PackOfferBudgets { device_bytes: i64::MAX, store_bytes: cap };
+    let offer = |device: Uuid, object: usize, at: i64, budgets: PackOfferBudgets| {
+        store
+            .record_pack_offers_with_budgets_at(
+                device,
+                vehicle_id,
+                &head,
+                &objects[object..=object],
+                at,
+                budgets,
+            )
+            .expect("offer is served")
+    };
+    let rows = |object: usize| -> i64 {
+        store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT count(*) FROM device_pack_offers WHERE sha256 = ?1",
+                [objects[object].digest.to_string()],
+                |row| row.get(0),
+            )
+            .expect("lease rows")
+    };
+    let start = fixture.now_ms + 10;
+    assert_eq!(offer(fixture.other_device, 0, start, device_cap), PackOfferRecord::Recorded);
+    assert!(leased(&fixture, fixture.other_device, objects[0].digest, start));
+    // Expired, but inside its grace the old row still counts for the device
+    // and for the store.
+    let in_grace = start + RETENTION + 1;
+    assert_eq!(offer(fixture.other_device, 1, in_grace, device_cap), PackOfferRecord::Recorded);
+    let third = pair(store, "third phone", in_grace);
+    assert_eq!(offer(third, 1, in_grace, store_cap), PackOfferRecord::Recorded);
+    assert_eq!(rows(1), 0, "no new row joins the old one inside its grace");
+    // A clock stepped back across the old expiry revives only the old row.
+    assert!(leased(&fixture, fixture.other_device, objects[0].digest, start));
+    assert_eq!((rows(0), rows(1)), (1, 0));
+    // Past the grace the old row is gone and the next object fits.
+    let after = start + RETENTION + GRACE + 1;
+    assert_eq!(offer(fixture.other_device, 1, after, device_cap), PackOfferRecord::Recorded);
+    assert_eq!((rows(0), rows(1)), (0, 1));
+}
